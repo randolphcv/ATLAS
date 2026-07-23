@@ -49,6 +49,15 @@ from .intake import (
     retry_intake_failures,
     run_intake_job,
 )
+from .local_analysis import (
+    LocalAnalysisRunResult,
+    analysis_scope_preview,
+    create_local_analysis_job,
+    local_runtime_status,
+    recover_local_analysis_jobs,
+    request_local_analysis_cancel,
+    run_local_analysis_job,
+)
 from .repository import asset_detail, catalog_summary, recent_events, search_assets
 from .text_preview import read_text_preview
 
@@ -217,6 +226,34 @@ class _IntakeRunWorker(QRunnable):
             self.signals.failed.emit(str(error))
 
 
+class _LocalAnalysisSignals(QObject):
+    progressed = Signal()
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+
+class _LocalAnalysisWorker(QRunnable):
+    def __init__(self, db_path: Path, job_id: str) -> None:
+        super().__init__()
+        self.db_path = db_path
+        self.job_id = job_id
+        self.signals = _LocalAnalysisSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            self.signals.succeeded.emit(
+                run_local_analysis_job(
+                    self.db_path,
+                    self.job_id,
+                    progress_callback=self.signals.progressed.emit,
+                )
+            )
+        except Exception as error:
+            LOGGER.exception("local analysis job failed")
+            self.signals.failed.emit(str(error))
+
+
 class DesktopController(QObject):
     summaryChanged = Signal()
     databaseHealthChanged = Signal()
@@ -230,6 +267,8 @@ class DesktopController(QObject):
     selectedBeaconThreadChanged = Signal()
     intakeChanged = Signal()
     selectedIntakeJobChanged = Signal()
+    analysisReadinessChanged = Signal()
+    localAnalysisRunningChanged = Signal()
 
     def __init__(self, settings: DesktopSettings) -> None:
         super().__init__()
@@ -247,6 +286,8 @@ class DesktopController(QObject):
         self._selected_beacon_thread: dict[str, Any] = {}
         self._intake_summary: dict[str, Any] = {}
         self._selected_intake_job: dict[str, Any] = {}
+        self._analysis_readiness: dict[str, Any] = {}
+        self._active_local_analysis_job_id = ""
         self._last_catalog_signature: tuple[int, int, int, int] | None = None
         self._workers: list[QRunnable] = []
         self._thread_pool = QThreadPool(self)
@@ -328,12 +369,20 @@ class DesktopController(QObject):
         with connect(self.settings.db_path) as connection:
             migrate(connection)
         recovered = recover_intake_jobs(self.settings.db_path)
+        recovered_analysis = recover_local_analysis_jobs(self.settings.db_path)
         self.refresh()
         if recovered:
             self._set_status(
                 f"Recovered {recovered} interrupted intake job"
                 + ("s" if recovered != 1 else "")
                 + "; ready to resume.",
+                "working",
+            )
+        elif recovered_analysis:
+            self._set_status(
+                f"Recovered {recovered_analysis} interrupted local analysis job"
+                + ("s" if recovered_analysis != 1 else "")
+                + "; prepare analysis to resume.",
                 "working",
             )
 
@@ -388,6 +437,14 @@ class DesktopController(QObject):
     @Property("QVariantMap", notify=selectedIntakeJobChanged)
     def selectedIntakeJob(self) -> dict[str, Any]:
         return self._selected_intake_job
+
+    @Property("QVariantMap", notify=analysisReadinessChanged)
+    def analysisReadiness(self) -> dict[str, Any]:
+        return self._analysis_readiness
+
+    @Property(bool, notify=localAnalysisRunningChanged)
+    def localAnalysisRunning(self) -> bool:
+        return bool(self._active_local_analysis_job_id)
 
     @Property(str, notify=currentViewChanged)
     def currentView(self) -> str:
@@ -484,6 +541,7 @@ class DesktopController(QObject):
             self._load_events()
             self._load_backups()
             self._load_intake_jobs(preserve_selection=True)
+            self.refreshAnalysisReadiness()
             self._load_beacon_threads(preserve_selection=True)
             self._last_refresh = datetime.now().astimezone().strftime("%I:%M:%S %p")
             self._last_catalog_signature = self._catalog_signature()
@@ -801,6 +859,131 @@ class DesktopController(QObject):
         recover_intake_jobs(self.settings.db_path)
         self._load_intake_jobs(preserve_selection=True)
         self._set_status(f"Intake operation failed: {message}", "error")
+
+    @Slot()
+    def refreshAnalysisReadiness(self) -> None:
+        runtime = local_runtime_status()
+        scope = analysis_scope_preview(self.settings.db_path)
+        full_scope = analysis_scope_preview(
+            self.settings.db_path, include_analyzed=True
+        )
+        models = list(runtime.models)
+        self._analysis_readiness = {
+            **scope,
+            "assetsLabel": f"{scope['assets']:,}",
+            "bytesLabel": format_bytes(int(scope["bytes"])),
+            "visualLabel": f"{scope['visual']:,}",
+            "audioLabel": f"{scope['audio']:,}",
+            "otherLabel": f"{scope['other']:,}",
+            "allAssetsLabel": f"{full_scope['assets']:,}",
+            "allBytesLabel": format_bytes(int(full_scope["bytes"])),
+            "allVisualLabel": f"{full_scope['visual']:,}",
+            "allAudioLabel": f"{full_scope['audio']:,}",
+            "allOtherLabel": f"{full_scope['other']:,}",
+            "runtimeAvailable": runtime.available,
+            "runtimeLabel": (
+                f"Local runtime {runtime.version}"
+                if runtime.available
+                else "Local runtime not detected"
+            ),
+            "runtimeDetail": (
+                f"{len(models):,} installed model"
+                + ("s" if len(models) != 1 else "")
+                if runtime.available
+                else "Start an OpenAI-compatible local Ollama endpoint at 127.0.0.1:11434."
+            ),
+            "models": models,
+            "defaultModel": models[0] if models else "",
+            "canStart": runtime.available and bool(models)
+            and full_scope["assets"] > 0,
+        }
+        self.analysisReadinessChanged.emit()
+
+    @Slot(str, bool)
+    def startLocalCatalogAnalysis(
+        self, model: str, include_analyzed: bool
+    ) -> None:
+        if self._busy:
+            return
+        runtime = local_runtime_status()
+        if not runtime.available:
+            self._set_status(
+                "Local model runtime is unavailable. No media was sent anywhere.",
+                "error",
+            )
+            self.refreshAnalysisReadiness()
+            return
+        if model.strip() not in runtime.models:
+            self._set_status("Choose an installed local model.", "error")
+            self.refreshAnalysisReadiness()
+            return
+        try:
+            job_id = create_local_analysis_job(
+                self.settings.db_path,
+                model=model,
+                include_analyzed=include_analyzed,
+                requested_by="human",
+            )
+        except ValueError as error:
+            self._set_status(str(error), "error")
+            return
+        self._busy = True
+        self._active_local_analysis_job_id = job_id
+        self.localAnalysisRunningChanged.emit()
+        self.busyChanged.emit()
+        self._set_status(
+            "Beacon is running local-only contextual analysis…", "working"
+        )
+        worker = _LocalAnalysisWorker(self.settings.db_path, job_id)
+        self._workers.append(worker)
+        worker.signals.progressed.connect(self.refresh)
+        worker.signals.succeeded.connect(
+            lambda result, current=worker: self._local_analysis_succeeded(
+                current, result
+            )
+        )
+        worker.signals.failed.connect(
+            lambda message, current=worker: self._local_analysis_failed(
+                current, message
+            )
+        )
+        self._thread_pool.start(worker)
+
+    def _local_analysis_succeeded(
+        self, worker: _LocalAnalysisWorker, result: LocalAnalysisRunResult
+    ) -> None:
+        self._active_local_analysis_job_id = ""
+        self.localAnalysisRunningChanged.emit()
+        self._finish_worker(worker)
+        self.refresh()
+        self._set_status(
+            f"Local analysis {result.state}: {result.completed:,} candidate"
+            + ("s" if result.completed != 1 else "")
+            + f", {result.failed:,} failed.",
+            "success" if result.state == "complete" else "working",
+        )
+
+    def _local_analysis_failed(
+        self, worker: _LocalAnalysisWorker, message: str
+    ) -> None:
+        self._active_local_analysis_job_id = ""
+        self.localAnalysisRunningChanged.emit()
+        self._finish_worker(worker)
+        recover_local_analysis_jobs(self.settings.db_path)
+        self.refresh()
+        self._set_status(f"Local analysis failed: {message}", "error")
+
+    @Slot()
+    def cancelLocalCatalogAnalysis(self) -> None:
+        if not self._active_local_analysis_job_id:
+            return
+        request_local_analysis_cancel(
+            self.settings.db_path, self._active_local_analysis_job_id
+        )
+        self._set_status(
+            "Local analysis cancellation requested; Beacon will stop between assets.",
+            "working",
+        )
 
     def _load_beacon_threads(self, *, preserve_selection: bool) -> None:
         current_id = (
@@ -1285,6 +1468,15 @@ class DesktopController(QObject):
                     pause_intake_job(self.settings.db_path, worker.job_id)
                 except Exception:
                     LOGGER.exception("could not pause intake during shutdown")
+            elif isinstance(worker, _LocalAnalysisWorker):
+                try:
+                    request_local_analysis_cancel(
+                        self.settings.db_path, worker.job_id
+                    )
+                except Exception:
+                    LOGGER.exception(
+                        "could not cancel local analysis during shutdown"
+                    )
         if self._thread_pool.activeThreadCount():
             LOGGER.info("waiting for in-flight desktop work before shutdown")
             self._thread_pool.waitForDone()

@@ -123,6 +123,31 @@ The complete manifest is rejected if an asset is missing, a source SHA-256 has
 changed, required provenance is absent, or external inference lacks a recorded
 authorization note. Re-importing the same manifest returns the existing run.
 
+## Local catalog analysis
+
+Beacon 0.11.0 provides **Analyze catalog** in the Catalog Operations header. The
+dialog checks `http://127.0.0.1:11434` for a local Ollama-compatible runtime
+and lists installed models. Start remains disabled when the endpoint or models
+are unavailable; Beacon never falls back to a cloud service.
+
+The default scope is assets without an existing contextual-metadata candidate.
+The dialog reports visual, audio, and other asset counts before starting.
+Local jobs persist at schema 9 and recover interrupted items as pending.
+Results use the existing checksum-bound candidate import and never overwrite
+verified facts or execute a move.
+
+The local model receives bounded path context and verified technical metadata.
+Video analysis samples six points across the timeline for detailed stock and
+B-roll context. Audio analysis combines local speech transcription with a
+full-file spectrogram. Analysis fills AI-owned editable metadata; once a human
+changes a field, later reanalysis preserves that field.
+
+Local structured output is validated before atomic candidate import. Models
+that return confidence as a percentage from 1 through 100 are normalized to
+the catalog's 0–1 scale and the normalization is recorded in provenance. An
+empty organization suggestion becomes an explicit human-review-required,
+no-move fallback rather than invalidating an otherwise complete batch.
+
 The System view can create a verified database backup after explicit
 confirmation. Restore and backup deletion are intentionally absent.
 

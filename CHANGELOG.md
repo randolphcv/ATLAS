@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Expanded local visual analysis to six timeline samples and detailed
+  stock/B-roll metadata.
+- Added local faster-whisper speech transcription and full-file spectrogram
+  context for meaningful audio analysis.
+- Added schema-9 field authority so reanalysis refreshes AI-owned editable
+  metadata while preserving human-edited fields.
+- Reanalysis scope now selects all existing catalog assets without a
+  hard-coded count.
+- Added a native Analyze Catalog scope-and-policy dialog with explicit local
+  runtime readiness, installed-model selection, and no cloud fallback.
+- Added schema-8 restartable local analysis jobs and per-asset items.
+- Routed completed local results through checksum-bound candidate import with
+  model, endpoint, policy, scope, confidence, and input provenance.
+- Supplied verified technical metadata, path context, and verified local
+  thumbnails to the local adapter while keeping originals unchanged.
+- Normalize local-model percentage-style confidence values to the candidate
+  0–1 scale with explicit provenance, and insert a non-operative fallback when
+  an organization suggestion is structurally empty.
 - Established the canonical NVMe repository.
 - Added the standard-library Beacon read-only catalog prototype.
 - Added synthetic acceptance tests and operational documentation.

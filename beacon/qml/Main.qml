@@ -420,6 +420,204 @@ ApplicationWindow {
     }
 
     Dialog {
+        id: localAnalysisDialog
+        objectName: "localAnalysisDialog"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 80, 690)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        onOpened: backend.refreshAnalysisReadiness()
+        background: Rectangle {
+            radius: 12
+            color: root.panelRaised
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.margins: 26
+                spacing: 13
+                PanelTitle {
+                    eyebrow: "Beacon analysis"
+                    title: "Analyze the local catalog"
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Create checksum-bound rich metadata with models running on this PC. Beacon fills AI-owned editable fields and preserves human corrections; originals are never changed."
+                    color: root.muted
+                    font.pixelSize: 12
+                    lineHeight: 1.4
+                    wrapMode: Text.WordWrap
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 66
+                    radius: 7
+                    color: root.ink
+                    border.color: backend.analysisReadiness.runtimeAvailable
+                                  ? root.jade : root.brass
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        spacing: 11
+                        Rectangle {
+                            width: 8
+                            height: 8
+                            radius: 4
+                            color: backend.analysisReadiness.runtimeAvailable
+                                   ? root.jade : root.brass
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 3
+                            Text {
+                                text: backend.analysisReadiness.runtimeLabel
+                                      || "Checking local runtime…"
+                                color: root.bone
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: backend.analysisReadiness.runtimeDetail || ""
+                                color: root.muted
+                                font.pixelSize: 9
+                                elide: Text.ElideRight
+                            }
+                        }
+                        PrimaryButton {
+                            text: "Check again"
+                            quiet: true
+                            onClicked: backend.refreshAnalysisReadiness()
+                        }
+                    }
+                }
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 4
+                    columnSpacing: 10
+                    MetricCard {
+                        Layout.fillWidth: true
+                        eyebrow: includeAnalyzedAssets.checked ? "Reanalysis scope" : "Unanalyzed"
+                        value: includeAnalyzedAssets.checked
+                               ? (backend.analysisReadiness.allAssetsLabel || "0")
+                               : (backend.analysisReadiness.assetsLabel || "0")
+                        note: includeAnalyzedAssets.checked
+                              ? (backend.analysisReadiness.allBytesLabel || "0 B")
+                              : (backend.analysisReadiness.bytesLabel || "0 B")
+                        accentColor: root.atlasBright
+                    }
+                    MetricCard {
+                        Layout.fillWidth: true
+                        eyebrow: "Visual"
+                        value: includeAnalyzedAssets.checked
+                               ? (backend.analysisReadiness.allVisualLabel || "0")
+                               : (backend.analysisReadiness.visualLabel || "0")
+                        note: "Images or video"
+                        accentColor: root.atlasBright
+                    }
+                    MetricCard {
+                        Layout.fillWidth: true
+                        eyebrow: "Audio"
+                        value: includeAnalyzedAssets.checked
+                               ? (backend.analysisReadiness.allAudioLabel || "0")
+                               : (backend.analysisReadiness.audioLabel || "0")
+                        note: "Speech + acoustic context"
+                        accentColor: root.brass
+                    }
+                    MetricCard {
+                        Layout.fillWidth: true
+                        eyebrow: "Other"
+                        value: includeAnalyzedAssets.checked
+                               ? (backend.analysisReadiness.allOtherLabel || "0")
+                               : (backend.analysisReadiness.otherLabel || "0")
+                        note: "Bounded context"
+                        accentColor: root.brass
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 5
+                    Text {
+                        text: "LOCAL MODEL"
+                        color: root.muted
+                        font.pixelSize: 8
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: 1.0
+                    }
+                    ComboBox {
+                        id: localAnalysisModel
+                        objectName: "localAnalysisModel"
+                        Layout.fillWidth: true
+                        implicitHeight: 42
+                        model: backend.analysisReadiness.models || []
+                        enabled: backend.analysisReadiness.runtimeAvailable
+                                 && count > 0
+                    }
+                }
+                CheckBox {
+                    id: includeAnalyzedAssets
+                    text: "Reanalyze every catalog asset, including existing candidates"
+                    checked: false
+                    enabled: !backend.busy
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 58
+                    radius: 7
+                    color: Qt.rgba(0.29, 0.55, 0.57, 0.10)
+                    border.color: Qt.rgba(0.39, 0.68, 0.69, 0.24)
+                    Text {
+                        anchors.fill: parent
+                        anchors.margins: 11
+                        text: "LOCAL ONLY  ·  No cloud fallback. Beacon uses six video samples and local speech plus acoustic context. Candidate confidence, limitations, and rich stock metadata remain reviewable."
+                        color: root.bone
+                        font.pixelSize: 9
+                        font.weight: Font.DemiBold
+                        wrapMode: Text.WordWrap
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 18
+                spacing: 10
+                Text {
+                    text: "AI FILLS EDITABLE METADATA"
+                    color: root.brass
+                    font.pixelSize: 9
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.0
+                }
+                Item { Layout.fillWidth: true }
+                PrimaryButton {
+                    text: "Cancel"
+                    quiet: true
+                    onClicked: localAnalysisDialog.close()
+                }
+                PrimaryButton {
+                    objectName: "startLocalAnalysisButton"
+                    text: "Start local analysis"
+                    enabled: !backend.busy
+                             && backend.analysisReadiness.canStart === true
+                             && localAnalysisModel.currentText.length > 0
+                    onClicked: {
+                        backend.startLocalCatalogAnalysis(
+                            localAnalysisModel.currentText,
+                            includeAnalyzedAssets.checked
+                        )
+                        localAnalysisDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
         id: newIntakeDialog
         objectName: "newIntakeDialog"
         modal: true
@@ -1599,6 +1797,21 @@ ApplicationWindow {
                                                 font.pixelSize: 9
                                                 font.weight: Font.DemiBold
                                                 font.letterSpacing: 0.9
+                                            }
+                                            PrimaryButton {
+                                                objectName: "analyzeCatalogButton"
+                                                text: "Analyze catalog"
+                                                quiet: true
+                                                enabled: !backend.busy
+                                                onClicked: localAnalysisDialog.open()
+                                            }
+                                            PrimaryButton {
+                                                objectName: "cancelAnalysisButton"
+                                                text: "Cancel analysis"
+                                                quiet: true
+                                                visible: backend.localAnalysisRunning
+                                                enabled: backend.localAnalysisRunning
+                                                onClicked: backend.cancelLocalCatalogAnalysis()
                                             }
                                             PrimaryButton {
                                                 objectName: "newIntakeButton"

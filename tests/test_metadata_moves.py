@@ -8,6 +8,7 @@ from beacon.catalog import catalog_file, sha256_file
 from beacon.database import SCHEMA_VERSION, connect, database_integrity
 from beacon.managed_moves import move_cataloged_file
 from beacon.metadata import (
+    apply_analysis_metadata,
     get_asset_metadata,
     get_policy,
     save_asset_metadata,
@@ -105,6 +106,50 @@ class EditableMetadataTests(unittest.TestCase):
             get_policy(self.db, "ai.analysis.default_execution"),
             {"mode": "local_only"},
         )
+
+    def test_analysis_refreshes_ai_fields_but_preserves_human_edits(self) -> None:
+        applied = apply_analysis_metadata(
+            self.db,
+            self.asset.asset_id,
+            {
+                "title": "AI title",
+                "description": "AI description",
+                "media_category": "stock footage",
+                "tags": ["blue", "calm"],
+                "stock_metadata": {"dominant_colors": ["blue"]},
+            },
+            run_id="first",
+        )
+        self.assertEqual(applied["display_title"], "AI title")
+        save_asset_metadata(
+            self.db,
+            self.asset.asset_id,
+            {
+                **{key: applied[key] for key in (
+                    "display_title", "description", "media_category", "tags",
+                    "people", "event_date", "place", "client", "project",
+                    "rights", "notes", "organization_path",
+                )},
+                "display_title": "Human title",
+                "tags": ["keeper"],
+            },
+            updated_by="human",
+            source="test-edit",
+        )
+        refreshed = apply_analysis_metadata(
+            self.db,
+            self.asset.asset_id,
+            {
+                "title": "Replacement AI title",
+                "description": "Richer AI description",
+                "media_category": "B-roll",
+                "tags": ["new-ai-tag"],
+            },
+            run_id="second",
+        )
+        self.assertEqual(refreshed["display_title"], "Human title")
+        self.assertEqual(refreshed["tags"], ["keeper"])
+        self.assertEqual(refreshed["description"], "Richer AI description")
 
 
 class ManagedMoveTests(unittest.TestCase):

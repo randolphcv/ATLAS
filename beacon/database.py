@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 9
 
 
 @dataclass(frozen=True)
@@ -206,6 +206,15 @@ def migrate(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_asset_metadata_revisions_asset
             ON asset_metadata_revisions(asset_id, revision DESC);
+        CREATE TABLE IF NOT EXISTS asset_metadata_field_authority (
+            asset_id TEXT NOT NULL
+                REFERENCES assets(id) ON DELETE CASCADE,
+            field TEXT NOT NULL,
+            authority TEXT NOT NULL CHECK(authority IN ('ai', 'human')),
+            source_reference TEXT,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(asset_id, field)
+        );
         CREATE TABLE IF NOT EXISTS managed_moves (
             id TEXT PRIMARY KEY,
             asset_id TEXT NOT NULL REFERENCES assets(id),
@@ -269,8 +278,74 @@ def migrate(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_intake_items_job_state_path
             ON intake_items(job_id, state, relative_path);
+        CREATE TABLE IF NOT EXISTS local_analysis_jobs (
+            id TEXT PRIMARY KEY,
+            state TEXT NOT NULL CHECK(state IN (
+                'queued', 'running', 'paused', 'complete',
+                'partial', 'failed', 'cancelled'
+            )),
+            model TEXT NOT NULL,
+            endpoint TEXT NOT NULL,
+            policy_version TEXT NOT NULL,
+            scope_sha256 TEXT NOT NULL,
+            total_items INTEGER NOT NULL CHECK(total_items >= 0),
+            cancel_requested INTEGER NOT NULL DEFAULT 0
+                CHECK(cancel_requested IN (0, 1)),
+            current_asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+            requested_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT,
+            analysis_run_id TEXT REFERENCES analysis_runs(id) ON DELETE SET NULL,
+            error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_local_analysis_jobs_state_updated
+            ON local_analysis_jobs(state, updated_at DESC);
+        CREATE TABLE IF NOT EXISTS local_analysis_items (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL
+                REFERENCES local_analysis_jobs(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            source_sha256 TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN (
+                'pending', 'running', 'complete', 'failed'
+            )),
+            attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+            result_json TEXT,
+            error TEXT,
+            started_at TEXT,
+            completed_at TEXT,
+            UNIQUE(job_id, asset_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_local_analysis_items_job_state
+            ON local_analysis_items(job_id, state, asset_id);
         """
     )
+    now = _utc_now()
+    for row in connection.execute(
+        """
+        SELECT asset_id,metadata_json,updated_by FROM asset_metadata
+        WHERE lower(updated_by) != 'beacon local analyzer'
+        """
+    ):
+        try:
+            stored = json.loads(row["metadata_json"])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        connection.executemany(
+            """
+            INSERT OR IGNORE INTO asset_metadata_field_authority(
+                asset_id,field,authority,source_reference,updated_at
+            ) VALUES (?, ?, 'human', 'schema-9-backfill', ?)
+            """,
+            (
+                (row["asset_id"], field, now)
+                for field, value in stored.items()
+                if value not in (None, "", [])
+            ),
+        )
     for version in range(1, SCHEMA_VERSION + 1):
         connection.execute(
             "INSERT OR IGNORE INTO schema_version(version) VALUES (?)",

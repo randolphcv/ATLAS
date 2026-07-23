@@ -1,14 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
+
+speech_datas, speech_binaries, speech_hiddenimports = collect_all("faster_whisper")
+for package in ("ctranslate2", "onnxruntime", "av"):
+    speech_binaries += collect_dynamic_libs(package)
+speech_hiddenimports += [
+    "ctranslate2",
+    "tokenizers",
+    "onnxruntime",
+    "av",
+]
 
 a = Analysis(
     ["beacon_app.py"],
     pathex=[".."],
-    binaries=[],
-    datas=[
+    binaries=speech_binaries,
+    datas=speech_datas + [
         ("../beacon/qml", "beacon/qml"),
         ("README_APP.txt", "."),
     ],
-    hiddenimports=[],
+    hiddenimports=speech_hiddenimports,
     hookspath=["hooks"],
     hooksconfig={},
     runtime_hooks=[],
@@ -16,6 +27,8 @@ a = Analysis(
         "PySide6.QtWebEngineCore",
         "PySide6.QtWebEngineQuick",
         "PySide6.QtWebEngineWidgets",
+        "pydantic",
+        "pydantic_core",
     ],
     noarchive=False,
     optimize=0,

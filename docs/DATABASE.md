@@ -1,6 +1,6 @@
 # Database
 
-Schema version 7 separates content, locations, derivatives, audit events,
+Schema version 8 separates content, locations, derivatives, audit events,
 AI-generated candidates, durable Beacon conversations, editable context, and
 managed file operations:
 
@@ -26,6 +26,10 @@ managed file operations:
   totals, current path, cancellation flag, and lifecycle timestamps.
 - `intake_items`: per-job source stat evidence, attempt count, progress state,
   cataloged asset identity, error, and completion timestamps.
+- `local_analysis_jobs`: local endpoint/model, frozen checksum scope, durable
+  lifecycle, progress, cancellation, and the resulting candidate run.
+- `local_analysis_items`: one restartable item per asset, with source checksum,
+  attempts, validated candidate JSON, and failure evidence.
 - `schema_version`: applied schema versions.
 
 SHA-256 is unique in `assets`; paths are unique in `locations`. This recognizes
@@ -51,6 +55,10 @@ Intake snapshots are immutable scopes. A job retries by changing only item
 state and attempts; it does not rewrite the recorded source path, size, modified
 time, or snapshot signature. Completed items stay complete across cancellation,
 pause, retry, app shutdown, and crash recovery.
+
+Local analysis jobs freeze asset IDs and catalog checksums before execution.
+Interrupted running items recover as pending. Completed results pass through
+the same atomic checksum-bound candidate import used by explicit manifests.
 
 Connections use WAL mode, normal synchronous durability, foreign keys, and a
 30-second busy timeout. Health checks run SQLite integrity and foreign-key

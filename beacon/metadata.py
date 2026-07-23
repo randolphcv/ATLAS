@@ -187,6 +187,24 @@ def save_asset_metadata(
             for field in METADATA_FIELDS
             if previous.get(field, empty_metadata()[field]) != metadata[field]
         )
+        authority = (
+            "ai" if updated_by.strip().casefold().startswith("beacon") else "human"
+        )
+        connection.executemany(
+            """
+            INSERT INTO asset_metadata_field_authority(
+                asset_id,field,authority,source_reference,updated_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(asset_id,field) DO UPDATE SET
+                authority=excluded.authority,
+                source_reference=excluded.source_reference,
+                updated_at=excluded.updated_at
+            """,
+            (
+                (asset_id, field, authority, source, timestamp)
+                for field in changed
+            ),
+        )
         record_event(
             connection,
             kind="metadata",
@@ -207,6 +225,67 @@ def save_asset_metadata(
         "updated_at": timestamp,
         "unchanged": False,
     }
+
+
+def apply_analysis_metadata(
+    db_path: Path,
+    asset_id: str,
+    payload: Mapping[str, object],
+    *,
+    run_id: str,
+) -> dict[str, Any]:
+    """Refresh AI-owned editable fields while preserving every human-owned field."""
+    current = get_asset_metadata(db_path, asset_id)
+    editable = {
+        key: current[key]
+        for key in METADATA_FIELDS
+    }
+    with connect(db_path) as connection:
+        authority = {
+            row["field"]: row["authority"]
+            for row in connection.execute(
+                """
+                SELECT field,authority FROM asset_metadata_field_authority
+                WHERE asset_id=?
+                """,
+                (asset_id,),
+            )
+        }
+
+    proposed: dict[str, object] = {
+        "display_title": payload.get("title"),
+        "description": payload.get("description"),
+        "media_category": payload.get("media_category"),
+        "tags": payload.get("tags"),
+    }
+    stock = payload.get("stock_metadata")
+    if isinstance(stock, Mapping):
+        lines: list[str] = ["Beacon stock/B-roll analysis:"]
+        for key, value in stock.items():
+            if value in (None, "", []):
+                continue
+            label = str(key).replace("_", " ").title()
+            rendered = ", ".join(map(str, value)) if isinstance(value, list) else str(value)
+            lines.append(f"{label}: {rendered}")
+        if len(lines) > 1:
+            proposed["notes"] = "\n".join(lines)
+
+    for field, value in proposed.items():
+        if value is None or authority.get(field) == "human":
+            continue
+        if field in LIST_FIELDS:
+            editable[field] = value
+        else:
+            text = str(value).strip()
+            if text:
+                editable[field] = text
+    return save_asset_metadata(
+        db_path,
+        asset_id,
+        editable,
+        updated_by="Beacon local analyzer",
+        source=f"analysis_run:{run_id}",
+    )
 
 
 def set_policy(
