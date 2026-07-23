@@ -1,4 +1,4 @@
-ATLAS Beacon 0.5.0
+ATLAS Beacon 0.6.0
 ==================
 
 Double-click "ATLAS Beacon.exe" to open the native Windows application.

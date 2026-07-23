@@ -48,3 +48,12 @@
   extension tile for files without media derivatives.
 - Verified Beacon 0.5.0 source and packaged behavior against the five-asset
   live catalog, bringing the complete suite to 27 tests.
+- Added schema version 4 with immutable, checksum-bound analysis runs and
+  candidate results stored separately from verified catalog facts.
+- Added idempotent analysis-manifest import with explicit analyzer, policy,
+  execution-location, external-inference authorization, confidence, evidence,
+  privacy, and review-state fields.
+- Added native Beacon Analysis detail cards and search across candidate titles,
+  descriptions, and tags while keeping every organization path advisory.
+- Completed a five-asset Beacon librarian pilot without scanning the active
+  ATLAS inbox or modifying an original.

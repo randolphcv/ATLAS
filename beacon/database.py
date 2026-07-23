@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -100,6 +100,47 @@ def migrate(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_derivatives_asset_kind
             ON derivatives(asset_id, kind);
+        CREATE TABLE IF NOT EXISTS analysis_runs (
+            id TEXT PRIMARY KEY,
+            manifest_sha256 TEXT NOT NULL UNIQUE,
+            analyzer TEXT NOT NULL,
+            analyzer_version TEXT NOT NULL,
+            policy_version TEXT NOT NULL,
+            execution_location TEXT NOT NULL,
+            external_inference INTEGER NOT NULL
+                CHECK(external_inference IN (0, 1)),
+            authorization TEXT,
+            state TEXT NOT NULL
+                CHECK(state IN ('running', 'complete', 'partial', 'failed')),
+            scope_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_analysis_runs_created_at
+            ON analysis_runs(created_at DESC);
+        CREATE TABLE IF NOT EXISTS analysis_results (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES analysis_runs(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            source_sha256 TEXT NOT NULL,
+            analysis_kind TEXT NOT NULL,
+            fingerprint TEXT NOT NULL UNIQUE,
+            payload_json TEXT NOT NULL,
+            provenance_json TEXT NOT NULL,
+            confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+            review_state TEXT NOT NULL
+                CHECK(review_state IN (
+                    'candidate', 'approved', 'rejected', 'superseded'
+                )),
+            created_at TEXT NOT NULL,
+            reviewed_at TEXT,
+            UNIQUE(run_id, asset_id, analysis_kind)
+        );
+        CREATE INDEX IF NOT EXISTS idx_analysis_results_asset_created
+            ON analysis_results(asset_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_analysis_results_review_state
+            ON analysis_results(review_state);
         """
     )
     for version in range(1, SCHEMA_VERSION + 1):

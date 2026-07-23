@@ -114,12 +114,18 @@ def search_assets(
                SELECT 1 FROM locations searched
                WHERE searched.asset_id = a.id AND searched.path LIKE ?
            )
+           OR EXISTS (
+               SELECT 1 FROM analysis_results analyzed
+               WHERE analyzed.asset_id = a.id
+                 AND analyzed.review_state IN ('candidate', 'approved')
+                 AND analyzed.payload_json LIKE ?
+           )
     """
     with connect(db_path) as connection:
         migrate(connection)
         total = connection.execute(
             f"SELECT COUNT(*) FROM assets a {where}",
-            (pattern, pattern, pattern, pattern),
+            (pattern, pattern, pattern, pattern, pattern),
         ).fetchone()[0]
         rows = connection.execute(
             f"""
@@ -141,7 +147,7 @@ def search_assets(
             ORDER BY a.last_seen_at DESC
             LIMIT ? OFFSET ?
             """,
-            (pattern, pattern, pattern, pattern, limit, offset),
+            (pattern, pattern, pattern, pattern, pattern, limit, offset),
         ).fetchall()
     return {
         "items": [_asset_from_row(row) for row in rows],
@@ -199,6 +205,41 @@ def asset_detail(db_path: Path, asset_id: str) -> dict[str, Any] | None:
                 (asset_id,),
             ).fetchall()
         ]
+        analysis_rows = connection.execute(
+            """
+            SELECT
+                r.id,
+                r.analysis_kind,
+                r.confidence,
+                r.review_state,
+                r.created_at,
+                r.payload_json,
+                r.provenance_json,
+                runs.analyzer,
+                runs.analyzer_version,
+                runs.policy_version,
+                runs.execution_location,
+                runs.external_inference
+            FROM analysis_results r
+            JOIN analysis_runs runs ON runs.id = r.run_id
+            WHERE r.asset_id = ?
+            ORDER BY
+                CASE r.review_state
+                    WHEN 'approved' THEN 0
+                    WHEN 'candidate' THEN 1
+                    ELSE 2
+                END,
+                r.created_at DESC
+            """,
+            (asset_id,),
+        ).fetchall()
+        result["analysis"] = []
+        for analysis in analysis_rows:
+            item = dict(analysis)
+            item["payload"] = json.loads(item.pop("payload_json"))
+            item["provenance"] = json.loads(item.pop("provenance_json"))
+            item["external_inference"] = bool(item["external_inference"])
+            result["analysis"].append(item)
         return result
 
 

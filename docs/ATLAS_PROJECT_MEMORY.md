@@ -128,10 +128,12 @@ These are stable unless Connor explicitly changes them:
 
 Phase 0, the Phase 1 synthetic read-only catalog, the Phase 2 local observatory
 foundation, the native desktop client, and the first controlled media use test
-are verified complete through Beacon 0.5.0, including verified thumbnail
+are verified complete through Beacon 0.6.0, including verified thumbnail
 derivatives, native temporary media and text previews, an application-level
-Space shortcut, and an exact default-launch check against the labeled live
-catalog. Production-path indexing remains deliberately unapproved.
+Space shortcut, a checksum-bound candidate-analysis schema, and a five-asset
+Beacon librarian pilot. The exact packaged launch was checked against the
+schema-4 live catalog. Production-path indexing remains deliberately unapproved,
+and the active `J:\Inbox` transfer was excluded from the pilot.
 
 The first implementation target is a read-only vertical slice against synthetic fixtures:
 
@@ -173,6 +175,11 @@ The first implementation target is a read-only vertical slice against synthetic 
 | A normal standalone launch opens and labels the live catalog | Decided in Beacon 0.4.1 | Prevent isolated test databases from being mistaken for the user's working library |
 | Plain text renders inside the native temporary preview | Decided in Beacon 0.5.0 | Make scripts, notes, logs, and metadata inspectable without launching an editor; cap displayed content at 512 KB and reject binary control-heavy input |
 | Space is an application-level preview shortcut | Decided in Beacon 0.5.0 | Keep the selected asset action stable even when a button previously held keyboard focus |
+| AI output lives separately from verified asset facts | Decided in Beacon 0.6.0 | Preserve provenance and prevent probabilistic output from silently becoming canonical technical metadata |
+| Analysis imports are checksum-bound, atomic, and idempotent | Decided in Beacon 0.6.0 | Reject stale or partial result sets and attach intelligence to asset identity rather than filename/location |
+| Every AI result begins as a reviewable candidate | Decided in Beacon 0.6.0 | Keep human judgment over titles, tags, privacy, rights, and archive meaning |
+| Organization suggestions never execute file operations | Decided in Beacon 0.6.0 | Separate librarian advice from approval-based managed intake |
+| External inference requires explicit recorded authorization and execution labeling | Decided in Beacon 0.6.0 | Keep local/cloud boundaries visible and auditable |
 
 ## Decisions Still Open
 

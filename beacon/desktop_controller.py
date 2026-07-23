@@ -435,6 +435,55 @@ class DesktopController(QObject):
                 }
                 for event in detail.get("events", [])
             ]
+            analysis = detail.get("analysis") or []
+            if analysis:
+                candidate = analysis[0]
+                payload = candidate.get("payload") or {}
+                provenance = candidate.get("provenance") or {}
+                detail["analysisCandidate"] = {
+                    "id": candidate.get("id") or "",
+                    "title": payload.get("title") or "Untitled analysis",
+                    "description": payload.get("description") or "",
+                    "mediaCategory": payload.get("media_category") or "",
+                    "tagsLabel": " · ".join(payload.get("tags") or []),
+                    "privacyLabel": " · ".join(
+                        payload.get("privacy_flags") or []
+                    )
+                    or "No privacy flag reported",
+                    "organizationSuggestion": (
+                        payload.get("organization_suggestion") or ""
+                    ),
+                    "verifiedFactsLabel": " · ".join(
+                        provenance.get("verified_facts") or []
+                    ),
+                    "inferencesLabel": " · ".join(
+                        provenance.get("inferences") or []
+                    ),
+                    "confidenceLabel": (
+                        f"{float(candidate.get('confidence') or 0):.0%}"
+                    ),
+                    "reviewStateLabel": str(
+                        candidate.get("review_state") or "candidate"
+                    ).upper(),
+                    "analyzerLabel": (
+                        f"{candidate.get('analyzer') or 'Beacon'} · "
+                        f"{candidate.get('analyzer_version') or 'unversioned'}"
+                    ),
+                    "policyLabel": candidate.get("policy_version") or "",
+                    "executionLabel": (
+                        f"{candidate.get('execution_location') or 'Unknown'}"
+                        + (
+                            " · EXTERNAL INFERENCE"
+                            if candidate.get("external_inference")
+                            else " · LOCAL INFERENCE"
+                        )
+                    ),
+                    "createdLabel": format_timestamp(
+                        candidate.get("created_at")
+                    ),
+                }
+            else:
+                detail["analysisCandidate"] = {}
             self._selected_asset = detail
         self.selectedAssetChanged.emit()
 

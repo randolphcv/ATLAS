@@ -51,9 +51,27 @@
 - add signed installer/update analysis
 - add a tested database restore workflow
 
-## Later — intelligence and managed intake
+## Completed — candidate intelligence foundation
 
-- transcription, scene analysis, and replaceable embeddings
+- schema-backed, checksum-bound analysis runs and candidate results
+- explicit analyzer, policy, execution-location, confidence, and provenance
+- external-inference authorization recorded with the run
+- native candidate metadata display and candidate search
+- approval-only organization suggestions
+- bounded five-asset librarian pilot with the active ATLAS inbox excluded
+
+## Next — repeatable local intelligence
+
+- choose and benchmark replaceable local vision, transcription, and audio
+  understanding adapters
+- add representative-frame and timecoded evidence records
+- add explicit Accept/Reject review without automatic file operations
+- define privacy zones, face-analysis policy, rights flags, and production scope
+- add durable queued jobs for large stable snapshots
+
+## Later — managed intake
+
+- replaceable embeddings and semantic search
 - approval-based organization
 - audited file operations
 - integrations and optional external model adapters

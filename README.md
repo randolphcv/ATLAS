@@ -5,7 +5,7 @@ observes and catalogs files without owning or changing originals.
 
 ## Current application
 
-Beacon 0.5.0 is a native Windows desktop application. It includes:
+Beacon 0.6.0 is a native Windows desktop application. It includes:
 
 - the verified Phase 1 read-only catalog;
 - a branded Qt Quick desktop shell with no embedded browser;
@@ -15,6 +15,11 @@ Beacon 0.5.0 is a native Windows desktop application. It includes:
   plain-text inspection, with a safe metadata fallback for binary formats;
 - a persistent application-level Space shortcut and a larger selected-asset
   thumbnail in the detail header;
+- checksum-bound Beacon analysis candidates with explicit confidence,
+  provenance, privacy flags, execution location, and approval-only organization
+  suggestions;
+- catalog search across candidate titles, descriptions, and tags without
+  merging AI output into verified technical facts;
 - an explicit **LIVE CATALOG** label and automatic refresh when another Beacon
   process updates that catalog;
 - a visible audit-event ledger;
@@ -30,7 +35,7 @@ is not started by the desktop application.
 
 ## Run the Windows app
 
-1. Open `C:\Development\ATLAS\dist\releases\0.5.0\ATLAS Beacon\`.
+1. Open `C:\Development\ATLAS\dist\releases\0.6.0\ATLAS Beacon\`.
 2. Double-click `ATLAS Beacon.exe`.
 3. Open Library, select an asset, and press Space (or click Preview).
 4. Press Space or Escape to close the temporary preview.
@@ -42,7 +47,7 @@ The app does not open a browser or listen on a network port. Keep the entire
 A ready-to-extract package is generated at:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.5.0-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.6.0-win64.zip
 ```
 
 This private development build is not code-signed, so Windows may identify the
@@ -74,3 +79,4 @@ Verification evidence:
 - [`docs/PHASE2_VERIFICATION.md`](docs/PHASE2_VERIFICATION.md)
 - [`docs/DESKTOP_VERIFICATION.md`](docs/DESKTOP_VERIFICATION.md)
 - [`docs/USE_TEST_01.md`](docs/USE_TEST_01.md)
+- [`docs/AI_ANALYSIS_PILOT.md`](docs/AI_ANALYSIS_PILOT.md)

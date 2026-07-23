@@ -1378,6 +1378,155 @@ ApplicationWindow {
                                             ColumnLayout {
                                                 Layout.fillWidth: true
                                                 spacing: 10
+                                                visible: backend.selectedAsset.analysisCandidate
+                                                         && backend.selectedAsset.analysisCandidate.id
+                                                         && backend.selectedAsset.analysisCandidate.id.length > 0
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    Text {
+                                                        text: "BEACON ANALYSIS"
+                                                        color: root.brass
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                        font.letterSpacing: 1.4
+                                                        Layout.fillWidth: true
+                                                    }
+                                                    Rectangle {
+                                                        implicitWidth: analysisStateLabel.implicitWidth + 18
+                                                        implicitHeight: 24
+                                                        radius: 12
+                                                        color: Qt.rgba(0.76, 0.60, 0.35, 0.12)
+                                                        border.color: Qt.rgba(0.76, 0.60, 0.35, 0.28)
+                                                        Text {
+                                                            id: analysisStateLabel
+                                                            anchors.centerIn: parent
+                                                            text: backend.selectedAsset.analysisCandidate.reviewStateLabel || "CANDIDATE"
+                                                            color: root.brass
+                                                            font.pixelSize: 8
+                                                            font.weight: Font.DemiBold
+                                                            font.letterSpacing: 1.0
+                                                        }
+                                                    }
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: backend.selectedAsset.analysisCandidate.executionLabel || ""
+                                                    color: (backend.selectedAsset.analysisCandidate.executionLabel || "").indexOf("EXTERNAL") >= 0
+                                                           ? root.ember : root.jade
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                    font.letterSpacing: 1.0
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: backend.selectedAsset.analysisCandidate.title || ""
+                                                    color: root.bone
+                                                    font.family: "Georgia"
+                                                    font.pixelSize: 20
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: backend.selectedAsset.analysisCandidate.description || ""
+                                                    color: root.bone
+                                                    font.pixelSize: 12
+                                                    lineHeight: 1.35
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                                GridLayout {
+                                                    Layout.fillWidth: true
+                                                    columns: width >= 560 ? 2 : 1
+                                                    columnSpacing: 24
+                                                    rowSpacing: 8
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Category"
+                                                        value: backend.selectedAsset.analysisCandidate.mediaCategory || "Unclassified"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Confidence"
+                                                        value: backend.selectedAsset.analysisCandidate.confidenceLabel || "Not reported"
+                                                    }
+                                                }
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 4
+                                                    Text {
+                                                        text: "CANDIDATE TAGS"
+                                                        color: root.muted
+                                                        font.pixelSize: 8
+                                                        font.weight: Font.DemiBold
+                                                        font.letterSpacing: 1.1
+                                                    }
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: backend.selectedAsset.analysisCandidate.tagsLabel || "No tags proposed"
+                                                        color: root.atlasBright
+                                                        font.pixelSize: 11
+                                                        wrapMode: Text.WordWrap
+                                                    }
+                                                }
+                                                Rectangle {
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: analysisSuggestionColumn.implicitHeight + 20
+                                                    radius: 7
+                                                    color: root.shell
+                                                    border.color: root.line
+                                                    ColumnLayout {
+                                                        id: analysisSuggestionColumn
+                                                        anchors.left: parent.left
+                                                        anchors.right: parent.right
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        anchors.leftMargin: 12
+                                                        anchors.rightMargin: 12
+                                                        spacing: 4
+                                                        Text {
+                                                            text: "ORGANIZATION SUGGESTION · APPROVAL REQUIRED"
+                                                            color: root.brass
+                                                            font.pixelSize: 8
+                                                            font.weight: Font.DemiBold
+                                                            font.letterSpacing: 1.0
+                                                        }
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: backend.selectedAsset.analysisCandidate.organizationSuggestion || "No organization change proposed."
+                                                            color: root.bone
+                                                            font.pixelSize: 11
+                                                            wrapMode: Text.WordWrap
+                                                        }
+                                                    }
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "Privacy"
+                                                    value: backend.selectedAsset.analysisCandidate.privacyLabel || "Not reported"
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: (backend.selectedAsset.analysisCandidate.analyzerLabel || "Beacon")
+                                                          + "  ·  "
+                                                          + (backend.selectedAsset.analysisCandidate.executionLabel || "")
+                                                          + "  ·  "
+                                                          + (backend.selectedAsset.analysisCandidate.createdLabel || "")
+                                                    color: root.muted
+                                                    font.family: "Cascadia Mono"
+                                                    font.pixelSize: 8
+                                                    wrapMode: Text.WrapAnywhere
+                                                }
+                                            }
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                height: 1
+                                                color: root.line
+                                                visible: backend.selectedAsset.analysisCandidate
+                                                         && backend.selectedAsset.analysisCandidate.id
+                                                         && backend.selectedAsset.analysisCandidate.id.length > 0
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 10
                                                 Text {
                                                     text: "OBSERVED LOCATIONS"
                                                     color: root.brass

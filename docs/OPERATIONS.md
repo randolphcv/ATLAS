@@ -39,7 +39,7 @@ Run from source:
 Or double-click:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.5.0\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.6.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 The desktop app has its own Windows window. It does not open a browser, start a
@@ -55,6 +55,23 @@ and video previews stay inside Beacon. Press Space or Escape to close; playback
 stops immediately. Text files are shown as bounded, read-only plain text inside
 Beacon. Binary and unsupported formats display metadata instead of being opened
 in an editor.
+
+Beacon analysis appears separately from technical facts and is visibly labeled
+`CANDIDATE`. The card records confidence and whether inference ran locally or
+externally. Organization paths are suggestions only; Beacon 0.6.0 has no UI or
+worker that moves an original.
+
+An explicitly approved analysis manifest can be imported with:
+
+```powershell
+.\.venv\Scripts\python.exe -m beacon.cli analysis-import `
+  C:\ProgramData\ATLAS\Beacon\analysis-runs\<manifest>.json `
+  --db C:\ProgramData\ATLAS\Beacon\beacon.db
+```
+
+The complete manifest is rejected if an asset is missing, a source SHA-256 has
+changed, required provenance is absent, or external inference lacks a recorded
+authorization note. Re-importing the same manifest returns the existing run.
 
 The System view can create a verified database backup after explicit
 confirmation. Restore and backup deletion are intentionally absent.

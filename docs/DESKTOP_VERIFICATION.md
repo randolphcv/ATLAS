@@ -4,7 +4,7 @@ Verified on the Windows ATLAS host on 2026-07-23.
 
 ## Outcome
 
-Beacon 0.5.0 is a native Qt Quick/QML desktop application. It uses the existing
+Beacon 0.6.0 is a native Qt Quick/QML desktop application. It uses the existing
 read-only catalog, repository, audit, health, and verified-backup modules
 directly. The desktop process does not open a browser, embed a web view, start
 FastAPI, or listen on a network port.
@@ -15,10 +15,15 @@ Space. Plain-text files render in a bounded read-only viewer; binary formats
 retain the metadata-only fallback. Playback stops when the modal preview
 closes.
 
+The selected-asset detail now presents checksum-bound Beacon analysis separately
+from technical facts. Candidate title, description, tags, confidence, privacy
+flags, execution location, and approval-only organization suggestions remain
+visibly labeled as AI output.
+
 ## Automated verification
 
 - Python compilation: passed
-- Unit and integration tests with real FFprobe and FFmpeg: 27 passed
+- Unit and integration tests with real FFprobe and FFmpeg: 30 passed
 - Native catalog model, search, detail, and health tests: passed
 - Non-blocking verified-backup controller test: passed
 - QML window offscreen load test: passed
@@ -41,6 +46,8 @@ The following states were visually reviewed:
 - automatic refresh after an external catalog transaction.
 - larger image and text-fallback tiles in the selected-asset header;
 - selectable read-only text preview with encoding and truncation status.
+- source and packaged Beacon Analysis candidate detail with an explicit external
+  inference label.
 
 Screenshots:
 
@@ -54,32 +61,32 @@ Screenshots:
 Artifact:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.5.0\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.6.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 Package:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.5.0-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.6.0-win64.zip
 ```
 
 The frozen executable passed smoke-test and screenshot modes against the
-schema-3 live database without a `--db` override. Windows file and product
-versions are both `0.5.0`.
+schema-4 live database without a `--db` override. Windows file and product
+versions are both `0.6.0`.
 
 Executable SHA-256:
 
 ```text
-8FE700C5020B0C6C3D4B0FDD7546F3561E222A7BEB990376284034ACDFDF1F8E
+D353EC59051C1978AACE0DC452E6B881CC6C6E740382BD6DB4EEF2B118787FDB
 ```
 
 Package SHA-256:
 
 ```text
-74E009141DC001BB2A73518AC3824377B1600DB5A261028E8526D443021F59D9
+F22B1DE8309D86674B8B07708CEF2B5555AB16E5D271BEDD96A736689F2F2020
 ```
 
-The one-folder bundle contains 1,748 files and 178,039,289 bytes. Its packaging
+The one-folder bundle contains 1,748 files and 178,052,749 bytes. Its packaging
 filter excludes FastAPI, Uvicorn, Pydantic, Qt WebEngine, Qt Quick 3D, charting,
 PDF, and virtual-keyboard capabilities.
 
@@ -89,9 +96,13 @@ identify the publisher as unknown.
 ## Safety boundary
 
 - No production path was observed or indexed
-- No cloud call, service, scheduled task, or watcher was added
+- The only content inference was the explicitly requested five-asset Codex
+  subagent pilot; it is recorded as external inference
+- No production watcher, scheduled task, or cloud connector was added
 - No original file was moved, renamed, edited, or deleted
-- Backup remains the only state-changing desktop action
+- Backup and the explicit candidate-manifest import were the only catalog writes
 - Preview remains read-only; thumbnail writes stay in the runtime derivative tree
+- AI output remains candidate data separate from verified technical facts
+- Organization suggestions did not perform file operations
 - Backup requires explicit confirmation and is integrity-checked before success
 - Restore and backup deletion remain absent

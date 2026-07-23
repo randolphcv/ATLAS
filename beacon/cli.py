@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sqlite3
 from pathlib import Path
 from typing import Sequence
 
+from .analysis import import_analysis_manifest, load_analysis_manifest
 from .catalog import catalog_file, scan_directory, watch_directory
 from .database import connect, migrate
 from .identity import atlas_uri
@@ -47,6 +49,10 @@ def _parser() -> argparse.ArgumentParser:
     inspect = commands.add_parser("inspect")
     inspect.add_argument("asset_id")
     inspect.add_argument("--db", type=Path, required=True)
+
+    analysis_import = commands.add_parser("analysis-import")
+    analysis_import.add_argument("manifest", type=Path)
+    analysis_import.add_argument("--db", type=Path, required=True)
     return parser
 
 
@@ -91,6 +97,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 130
         print(json.dumps({"cataloged": cataloged, "errors": errors}, indent=2))
         return 1 if errors else 0
+    if args.command == "analysis-import":
+        try:
+            result = import_analysis_manifest(
+                args.db,
+                load_analysis_manifest(args.manifest),
+            )
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f"analysis import failed: {error}")
+            return 2
+        print(
+            json.dumps(
+                {
+                    "run_id": result.run_id,
+                    "result_ids": result.result_ids,
+                    "reused": result.reused,
+                },
+                indent=2,
+            )
+        )
+        return 0
 
     with connect(args.db) as connection:
         migrate(connection)
