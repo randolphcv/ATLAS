@@ -68,6 +68,15 @@
 - separate explicit resolution with no conversational file-operation authority
 - initial pilot blockers and optional enrichment questions kept distinct
 
+## Completed — editable context and first managed move
+
+- revisioned, searchable, human-editable contextual metadata in native Library
+- strict separation between editable context, AI candidates, and verified facts
+- recorded local-AI, external-approval, candidate-storage, and move policies
+- checksum-verified, approved-root, non-overwriting managed moves
+- exact catalog-location updates, immutable move evidence, and rollback path
+- independently stable large-Inbox inventory and one live end-to-end proof
+
 ## Next — repeatable local intelligence
 
 - choose and benchmark replaceable local vision, transcription, and audio

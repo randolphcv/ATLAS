@@ -31,7 +31,7 @@ semantics are deliberately decided.
 
 ## Desktop and API
 
-Beacon 0.7.0 is a foreground native Windows application built with Qt Quick/QML
+Beacon 0.8.0 is a foreground native Windows application built with Qt Quick/QML
 and Qt Multimedia.
 Python repository modules feed explicit Qt list models and properties; the
 desktop client reads catalog facts directly and never becomes a second metadata
@@ -49,6 +49,18 @@ approval requests, blockers, clarifications, and human-started requests. A
 plain-English reply is stored as a message and changes the thread to
 `queued_for_beacon`; it cannot directly authorize or execute a file operation.
 Beacon worker execution remains a separate, deliberate process.
+
+Human and Beacon-supplied context lives in revisioned `asset_metadata` records.
+Those records are fully editable in Library and searchable, while source
+checksums and probed technical facts remain immutable evidence. Metadata edits
+do not write into source-media headers.
+
+Managed moves are a separate policy-gated operation. Beacon requires an exact
+catalog asset/location pair, re-hashes the source, restricts destinations to
+approved ATLAS roots, refuses silent overwrite or duplicate merging, performs
+an atomic same-volume rename, verifies the destination hash, and only then
+updates the catalog location and audit ledger. A post-move failure triggers a
+best-effort rollback.
 
 The default double-click launch always opens the live catalog at
 `C:\ProgramData\ATLAS\Beacon\beacon.db`. Custom and isolated use-test databases

@@ -139,6 +139,39 @@ class DesktopControllerTests(unittest.TestCase):
             "Isolated use test",
         )
 
+    def test_editable_metadata_updates_detail_and_library_title(self) -> None:
+        self.controller.saveSelectedAssetMetadata(
+            {
+                "display_title": "Human-readable signal",
+                "description": "Editable human context.",
+                "media_category": "test reference",
+                "tagsText": "signal\nfixture",
+                "peopleText": "Example Person",
+                "event_date": "2026-07-23",
+                "place": "Test bench",
+                "client": "",
+                "project": "Desktop tests",
+                "rights": "Synthetic fixture.",
+                "notes": "No original metadata changed.",
+                "organization_path": "",
+            }
+        )
+
+        self.assertEqual(
+            self.controller.selectedAsset["displayTitle"],
+            "Human-readable signal",
+        )
+        self.assertEqual(
+            self.controller.selectedAsset["catalogMetadata"]["revision"],
+            1,
+        )
+        self.assertEqual(
+            self.controller.assets.get(0)["displayTitle"],
+            "Human-readable signal",
+        )
+        self.controller.setSearchQuery("human-readable")
+        self.assertEqual(self.controller.assets.rowCount(), 1)
+
     def test_beacon_desk_models_create_reply_and_resolve_threads(self) -> None:
         [thread_id] = seed_threads(
             self.db,

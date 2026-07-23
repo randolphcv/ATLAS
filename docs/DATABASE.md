@@ -1,7 +1,8 @@
 # Database
 
-Schema version 5 separates content, locations, derivatives, audit events,
-AI-generated candidates, and durable Beacon conversations:
+Schema version 6 separates content, locations, derivatives, audit events,
+AI-generated candidates, durable Beacon conversations, editable context, and
+managed file operations:
 
 - `assets`: UUID, SHA-256, byte size, optional media metadata, timestamps.
 - `locations`: path, modification timestamp, observation timestamp, asset link.
@@ -15,6 +16,12 @@ AI-generated candidates, and durable Beacon conversations:
   approval flag, optional asset link, and timestamps.
 - `beacon_messages`: ordered Beacon, human, and system messages attached to a
   durable thread.
+- `beacon_policies`: structured operational policy with source provenance.
+- `asset_metadata`: the current editable contextual metadata revision for an
+  asset identity.
+- `asset_metadata_revisions`: immutable history of every contextual edit.
+- `managed_moves`: exact source/destination, checksum, authorization, state,
+  completion, and failure evidence for each managed move.
 - `schema_version`: applied schema versions.
 
 SHA-256 is unique in `assets`; paths are unique in `locations`. This recognizes
@@ -31,6 +38,10 @@ Beacon Desk threads use four explicit states: `awaiting_human`,
 and queues the thread for Beacon. It never parses conversational text into a
 file operation or marks the thread resolved. Resolution is a separate explicit
 action.
+
+Editable metadata is asset-level and follows the permanent asset UUID across
+locations. Verified `assets`, probe metadata, checksums, and derivative lineage
+remain separate and are not edited through the contextual form.
 
 Connections use WAL mode, normal synchronous durability, foreign keys, and a
 30-second busy timeout. Health checks run SQLite integrity and foreign-key

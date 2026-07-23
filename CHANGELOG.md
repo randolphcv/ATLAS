@@ -64,3 +64,15 @@
   states without interpreting conversation text as permission for file actions.
 - Seeded the pilot's three verified scale-up gates separately from three
   optional enrichment conversations.
+- Added schema version 6 with structured Beacon policies, revisioned editable
+  asset metadata, immutable metadata history, and managed-move records.
+- Added a native Library metadata editor covering human titles, descriptions,
+  categories, tags, people, dates, places, clients, projects, rights, notes,
+  and approved organization directories.
+- Added search and display-title support for editable metadata without changing
+  verified technical facts or embedded source-media metadata.
+- Added policy-gated, same-volume managed moves with exact observed-location
+  checks, source/destination SHA-256 verification, approved-root enforcement,
+  reparse rejection, non-overwrite behavior, audit events, and rollback.
+- Reconciled all six pilot Desk replies, verified a stable 7,093-file Inbox
+  snapshot, and completed one real catalog-to-managed-location proof.

@@ -39,7 +39,7 @@ Run from source:
 Or double-click:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.7.0\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.8.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 The desktop app has its own Windows window. It does not open a browser, start a
@@ -58,8 +58,8 @@ in an editor.
 
 Beacon analysis appears separately from technical facts and is visibly labeled
 `CANDIDATE`. The card records confidence and whether inference ran locally or
-externally. Organization paths are suggestions only; Beacon 0.7.0 has no UI or
-worker that moves an original.
+externally. Candidate organization paths remain suggestions until an editable
+organization directory and managed-move policy authorize a separate operation.
 
 The Overview includes **Beacon Desk**. Questions, approval requests, blockers,
 clarifications, and human-started requests persist in the live SQLite catalog.
@@ -71,6 +71,29 @@ Beacon Desk is currently a durable handoff surface, not a continuously running
 AI worker. The UI says `SAVED LOCALLY`; queued messages are reviewed when a
 Beacon analysis session is deliberately run. The active `J:\Inbox` transfer is
 not inspected by opening the Desk.
+
+## Editable metadata and managed moves
+
+Library exposes revisioned contextual fields for title, description, category,
+tags, people, date, place, client, project, rights, notes, and approved
+organization directory. These fields are searchable and editable; saving never
+writes into the media file. SHA-256, byte size, codec, duration, dimensions, and
+other verified facts remain locked evidence.
+
+**Move file** is enabled after an approved organization directory is recorded.
+The operation:
+
+1. requires the exact selected asset and observed source path;
+2. checks the recorded managed-moves policy;
+3. re-hashes the source against the catalog;
+4. permits only `J:\Library`, `J:\Assets`, or `J:\Projects`;
+5. rejects reparse-point traversal and silent overwrite/duplicate merging;
+6. performs a same-volume move and verifies the destination hash;
+7. updates the location and audit records only after verification;
+8. attempts rollback if a post-move check fails.
+
+The original filename is preserved. Other duplicate locations are never
+silently removed.
 
 An explicitly approved analysis manifest can be imported with:
 

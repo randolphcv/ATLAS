@@ -35,6 +35,8 @@ from .desk import (
     thread_detail,
 )
 from .desktop_models import DictListModel
+from .managed_moves import MoveResult, move_cataloged_file
+from .metadata import empty_metadata, save_asset_metadata
 from .repository import asset_detail, catalog_summary, recent_events, search_assets
 from .text_preview import read_text_preview
 
@@ -91,6 +93,47 @@ class _BackupWorker(QRunnable):
             self.signals.failed.emit(str(error))
 
 
+class _MoveSignals(QObject):
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+
+class _MoveWorker(QRunnable):
+    def __init__(
+        self,
+        db_path: Path,
+        asset_id: str,
+        source_path: Path,
+        destination_directory: Path,
+    ) -> None:
+        super().__init__()
+        self.db_path = db_path
+        self.asset_id = asset_id
+        self.source_path = source_path
+        self.destination_directory = destination_directory
+        self.signals = _MoveSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            self.signals.succeeded.emit(
+                move_cataloged_file(
+                    self.db_path,
+                    asset_id=self.asset_id,
+                    source_path=self.source_path,
+                    destination_directory=self.destination_directory,
+                    requested_by="human",
+                    authorization=(
+                        "Native app confirmation under the managed-moves policy "
+                        "approved 2026-07-23"
+                    ),
+                )
+            )
+        except Exception as error:
+            LOGGER.exception("managed move failed")
+            self.signals.failed.emit(str(error))
+
+
 class DesktopController(QObject):
     summaryChanged = Signal()
     databaseHealthChanged = Signal()
@@ -118,7 +161,7 @@ class DesktopController(QObject):
         self._beacon_desk_summary: dict[str, Any] = {}
         self._selected_beacon_thread: dict[str, Any] = {}
         self._last_catalog_signature: tuple[int, int, int, int] | None = None
-        self._workers: list[_BackupWorker] = []
+        self._workers: list[QRunnable] = []
         self._thread_pool = QThreadPool(self)
         self._thread_pool.setMaxThreadCount(1)
 
@@ -126,6 +169,7 @@ class DesktopController(QObject):
             (
                 "assetId",
                 "filename",
+                "displayTitle",
                 "path",
                 "atlasUri",
                 "kind",
@@ -553,6 +597,10 @@ class DesktopController(QObject):
         return {
             "assetId": asset["id"],
             "filename": asset["filename"],
+            "displayTitle": (
+                (asset.get("editable_metadata") or {}).get("display_title")
+                or asset["filename"]
+            ),
             "path": asset.get("primary_path") or "Location unavailable",
             "atlasUri": asset["atlas_uri"],
             "kind": kind,
@@ -628,6 +676,23 @@ class DesktopController(QObject):
                 detail.get("primary_path")
             )
             detail["previewAvailable"] = bool(detail["previewUrl"])
+            editable = empty_metadata()
+            editable.update(detail.get("editable_metadata") or {})
+            detail["catalogMetadata"] = {
+                **editable,
+                "tagsText": "\n".join(editable.get("tags") or []),
+                "peopleText": "\n".join(editable.get("people") or []),
+                "revision": int(detail.get("metadata_revision") or 0),
+                "updatedBy": detail.get("metadata_updated_by") or "",
+                "updatedLabel": format_timestamp(
+                    detail.get("metadata_updated_at")
+                )
+                if detail.get("metadata_updated_at")
+                else "Not edited yet",
+            }
+            detail["displayTitle"] = (
+                editable.get("display_title") or detail.get("filename") or ""
+            )
             detail["locations"] = [
                 {
                     **location,
@@ -641,6 +706,16 @@ class DesktopController(QObject):
                     "timeLabel": format_timestamp(event.get("created_at")),
                 }
                 for event in detail.get("events", [])
+            ]
+            detail["moves"] = [
+                {
+                    **move,
+                    "createdLabel": format_timestamp(move.get("created_at")),
+                    "completedLabel": format_timestamp(move.get("completed_at"))
+                    if move.get("completed_at")
+                    else "",
+                }
+                for move in detail.get("moves", [])
             ]
             analysis = detail.get("analysis") or []
             if analysis:
@@ -694,6 +769,88 @@ class DesktopController(QObject):
             self._selected_asset = detail
         self.selectedAssetChanged.emit()
 
+    @Slot("QVariantMap")
+    def saveSelectedAssetMetadata(self, value: dict[str, Any]) -> None:
+        asset_id = str(self._selected_asset.get("id") or "")
+        if not asset_id:
+            self._set_status("Select an asset before editing metadata.", "error")
+            return
+        try:
+            payload = dict(value)
+            payload["tags"] = str(payload.pop("tagsText", "")).splitlines()
+            payload["people"] = str(payload.pop("peopleText", "")).splitlines()
+            saved = save_asset_metadata(
+                self.settings.db_path,
+                asset_id,
+                payload,
+                updated_by="human",
+                source="native_editor",
+            )
+            self._load_events()
+            self._load_assets(preserve_selection=True)
+            self._set_status(
+                (
+                    "Metadata was already current."
+                    if saved["unchanged"]
+                    else f"Editable metadata saved as revision {saved['revision']}."
+                ),
+                "success",
+            )
+        except (LookupError, ValueError) as error:
+            self._set_status(str(error), "error")
+        except Exception as error:
+            LOGGER.exception("could not save editable metadata")
+            self._set_status(f"Could not save metadata: {error}", "error")
+
+    @Slot(str, str)
+    def moveSelectedAsset(
+        self,
+        source_path: str,
+        destination_directory: str,
+    ) -> None:
+        if self._busy:
+            return
+        asset_id = str(self._selected_asset.get("id") or "")
+        if not asset_id:
+            self._set_status("Select an asset before moving a file.", "error")
+            return
+        self._busy = True
+        self.busyChanged.emit()
+        self._set_status(
+            "Verifying source checksum before the managed move…",
+            "working",
+        )
+        worker = _MoveWorker(
+            self.settings.db_path,
+            asset_id,
+            Path(source_path),
+            Path(destination_directory),
+        )
+        self._workers.append(worker)
+        worker.signals.succeeded.connect(
+            lambda result, current=worker: self._move_succeeded(current, result)
+        )
+        worker.signals.failed.connect(
+            lambda message, current=worker: self._move_failed(current, message)
+        )
+        self._thread_pool.start(worker)
+
+    def _move_succeeded(
+        self,
+        worker: _MoveWorker,
+        result: MoveResult,
+    ) -> None:
+        self._finish_worker(worker)
+        self._set_status(
+            f"Verified managed move complete · {Path(result.destination_path).name}",
+            "success",
+        )
+        self.refresh()
+
+    def _move_failed(self, worker: _MoveWorker, message: str) -> None:
+        self._finish_worker(worker)
+        self._set_status(f"Managed move failed: {message}", "error")
+
     @Slot()
     def createBackup(self) -> None:
         if self._busy:
@@ -726,7 +883,7 @@ class DesktopController(QObject):
         self._finish_worker(worker)
         self._set_status(f"Backup failed: {message}", "error")
 
-    def _finish_worker(self, worker: _BackupWorker) -> None:
+    def _finish_worker(self, worker: QRunnable) -> None:
         if worker in self._workers:
             self._workers.remove(worker)
         self._busy = False

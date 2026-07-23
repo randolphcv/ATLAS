@@ -43,6 +43,12 @@ def _media_summary(value: str | None) -> dict[str, Any]:
 def _asset_from_row(row: sqlite3.Row) -> dict[str, Any]:
     media = _media_summary(row["media_metadata_json"])
     path = row["primary_path"]
+    metadata_json = (
+        row["editable_metadata_json"]
+        if "editable_metadata_json" in row.keys()
+        else None
+    )
+    editable_metadata = json.loads(metadata_json) if metadata_json else {}
     return {
         "id": row["id"],
         "atlas_uri": atlas_uri(row["id"]),
@@ -54,6 +60,7 @@ def _asset_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "filename": Path(path).name if path else "Unknown asset",
         "location_count": row["location_count"],
         "thumbnail_path": row["thumbnail_path"],
+        "editable_metadata": editable_metadata,
         **media,
     }
 
@@ -120,18 +127,47 @@ def search_assets(
                  AND analyzed.review_state IN ('candidate', 'approved')
                  AND analyzed.payload_json LIKE ?
            )
+           OR EXISTS (
+               SELECT 1 FROM asset_metadata editable
+               WHERE editable.asset_id = a.id
+                 AND editable.metadata_json LIKE ?
+           )
     """
     with connect(db_path) as connection:
         migrate(connection)
         total = connection.execute(
             f"SELECT COUNT(*) FROM assets a {where}",
-            (pattern, pattern, pattern, pattern, pattern),
+            (pattern, pattern, pattern, pattern, pattern, pattern),
         ).fetchone()[0]
         rows = connection.execute(
             f"""
             SELECT
                 a.*,
-                MIN(l.path) AS primary_path,
+                (
+                    SELECT preferred.path
+                    FROM locations preferred
+                    WHERE preferred.asset_id = a.id
+                    ORDER BY
+                        CASE
+                            WHEN EXISTS (
+                                SELECT 1 FROM managed_moves managed
+                                WHERE managed.asset_id = preferred.asset_id
+                                  AND managed.destination_path = preferred.path
+                                  AND managed.state = 'complete'
+                            )
+                            THEN 0
+                            WHEN lower(preferred.path) LIKE 'j:\\library\\%'
+                              OR lower(preferred.path) LIKE 'j:\\assets\\%'
+                              OR lower(preferred.path) LIKE 'j:\\projects\\%'
+                            THEN 1
+                            WHEN lower(preferred.path) LIKE 'j:\\inbox\\%'
+                            THEN 2
+                            ELSE 3
+                        END,
+                        preferred.observed_at DESC,
+                        preferred.path
+                    LIMIT 1
+                ) AS primary_path,
                 COUNT(l.id) AS location_count,
                 (
                     SELECT d.path FROM derivatives d
@@ -140,6 +176,11 @@ def search_assets(
                       AND d.state = 'complete'
                     ORDER BY d.verified_at DESC LIMIT 1
                 ) AS thumbnail_path
+                ,(
+                    SELECT editable.metadata_json
+                    FROM asset_metadata editable
+                    WHERE editable.asset_id = a.id
+                ) AS editable_metadata_json
             FROM assets a
             LEFT JOIN locations l ON l.asset_id = a.id
             {where}
@@ -147,7 +188,16 @@ def search_assets(
             ORDER BY a.last_seen_at DESC
             LIMIT ? OFFSET ?
             """,
-            (pattern, pattern, pattern, pattern, pattern, limit, offset),
+            (
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+                limit,
+                offset,
+            ),
         ).fetchall()
     return {
         "items": [_asset_from_row(row) for row in rows],
@@ -164,7 +214,31 @@ def asset_detail(db_path: Path, asset_id: str) -> dict[str, Any] | None:
             """
             SELECT
                 a.*,
-                MIN(l.path) AS primary_path,
+                (
+                    SELECT preferred.path
+                    FROM locations preferred
+                    WHERE preferred.asset_id = a.id
+                    ORDER BY
+                        CASE
+                            WHEN EXISTS (
+                                SELECT 1 FROM managed_moves managed
+                                WHERE managed.asset_id = preferred.asset_id
+                                  AND managed.destination_path = preferred.path
+                                  AND managed.state = 'complete'
+                            )
+                            THEN 0
+                            WHEN lower(preferred.path) LIKE 'j:\\library\\%'
+                              OR lower(preferred.path) LIKE 'j:\\assets\\%'
+                              OR lower(preferred.path) LIKE 'j:\\projects\\%'
+                            THEN 1
+                            WHEN lower(preferred.path) LIKE 'j:\\inbox\\%'
+                            THEN 2
+                            ELSE 3
+                        END,
+                        preferred.observed_at DESC,
+                        preferred.path
+                    LIMIT 1
+                ) AS primary_path,
                 COUNT(l.id) AS location_count,
                 (
                     SELECT d.path FROM derivatives d
@@ -173,6 +247,11 @@ def asset_detail(db_path: Path, asset_id: str) -> dict[str, Any] | None:
                       AND d.state = 'complete'
                     ORDER BY d.verified_at DESC LIMIT 1
                 ) AS thumbnail_path
+                ,(
+                    SELECT editable.metadata_json
+                    FROM asset_metadata editable
+                    WHERE editable.asset_id = a.id
+                ) AS editable_metadata_json
             FROM assets a
             LEFT JOIN locations l ON l.asset_id = a.id
             WHERE a.id = ?
@@ -240,6 +319,37 @@ def asset_detail(db_path: Path, asset_id: str) -> dict[str, Any] | None:
             item["provenance"] = json.loads(item.pop("provenance_json"))
             item["external_inference"] = bool(item["external_inference"])
             result["analysis"].append(item)
+        editable = connection.execute(
+            """
+            SELECT metadata_json, revision, updated_by, updated_at
+            FROM asset_metadata WHERE asset_id = ?
+            """,
+            (asset_id,),
+        ).fetchone()
+        if editable is None:
+            result["editable_metadata"] = {}
+            result["metadata_revision"] = 0
+            result["metadata_updated_by"] = ""
+            result["metadata_updated_at"] = ""
+        else:
+            result["editable_metadata"] = json.loads(editable["metadata_json"])
+            result["metadata_revision"] = int(editable["revision"])
+            result["metadata_updated_by"] = editable["updated_by"]
+            result["metadata_updated_at"] = editable["updated_at"]
+        result["moves"] = [
+            dict(move)
+            for move in connection.execute(
+                """
+                SELECT id, source_path, destination_path, state,
+                       requested_by, authorization, error,
+                       created_at, completed_at
+                FROM managed_moves
+                WHERE asset_id = ?
+                ORDER BY created_at DESC
+                """,
+                (asset_id,),
+            ).fetchall()
+        ]
         return result
 
 

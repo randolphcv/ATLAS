@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 @dataclass(frozen=True)
@@ -178,6 +178,53 @@ def migrate(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_beacon_messages_thread_created
             ON beacon_messages(thread_id, created_at);
+        CREATE TABLE IF NOT EXISTS beacon_policies (
+            key TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_reference TEXT,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS asset_metadata (
+            asset_id TEXT PRIMARY KEY
+                REFERENCES assets(id) ON DELETE CASCADE,
+            metadata_json TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK(revision >= 1),
+            updated_by TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS asset_metadata_revisions (
+            id TEXT PRIMARY KEY,
+            asset_id TEXT NOT NULL
+                REFERENCES assets(id) ON DELETE CASCADE,
+            revision INTEGER NOT NULL CHECK(revision >= 1),
+            metadata_json TEXT NOT NULL,
+            updated_by TEXT NOT NULL,
+            source TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(asset_id, revision)
+        );
+        CREATE INDEX IF NOT EXISTS idx_asset_metadata_revisions_asset
+            ON asset_metadata_revisions(asset_id, revision DESC);
+        CREATE TABLE IF NOT EXISTS managed_moves (
+            id TEXT PRIMARY KEY,
+            asset_id TEXT NOT NULL REFERENCES assets(id),
+            source_path TEXT NOT NULL,
+            destination_path TEXT NOT NULL,
+            source_sha256 TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN (
+                'planned', 'running', 'complete', 'failed', 'rolled_back'
+            )),
+            requested_by TEXT NOT NULL,
+            authorization TEXT NOT NULL,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_managed_moves_asset_created
+            ON managed_moves(asset_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_managed_moves_state
+            ON managed_moves(state);
         """
     )
     for version in range(1, SCHEMA_VERSION + 1):

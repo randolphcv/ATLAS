@@ -49,13 +49,13 @@ class BeaconDeskTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def test_schema_five_and_seed_are_idempotent(self) -> None:
+    def test_current_schema_and_seed_are_idempotent(self) -> None:
         first = seed_threads(self.db, SEEDS)
         second = seed_threads(self.db, SEEDS)
 
         self.assertEqual(len(first), 2)
         self.assertEqual(second, [])
-        self.assertEqual(database_integrity(self.db)["schema_version"], 5)
+        self.assertEqual(database_integrity(self.db)["schema_version"], 6)
         self.assertEqual(desk_summary(self.db)["awaiting_human"], 2)
         self.assertEqual(len(list_threads(self.db)), 2)
 

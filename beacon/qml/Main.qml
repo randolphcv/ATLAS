@@ -203,6 +203,77 @@ ApplicationWindow {
         }
     }
 
+    component EditorField: ColumnLayout {
+        id: editorField
+        property string label
+        property string placeholder
+        property alias text: editorInput.text
+        spacing: 5
+        Text {
+            text: editorField.label.toUpperCase()
+            color: root.muted
+            font.pixelSize: 8
+            font.weight: Font.DemiBold
+            font.letterSpacing: 1.0
+        }
+        TextField {
+            id: editorInput
+            Layout.fillWidth: true
+            implicitHeight: 40
+            placeholderText: editorField.placeholder
+            color: root.bone
+            placeholderTextColor: root.muted
+            selectionColor: root.atlas
+            selectByMouse: true
+            leftPadding: 12
+            rightPadding: 12
+            background: Rectangle {
+                radius: 7
+                color: root.ink
+                border.color: editorInput.activeFocus ? root.atlasBright : root.line
+            }
+        }
+    }
+
+    component EditorArea: ColumnLayout {
+        id: editorArea
+        property string label
+        property string placeholder
+        property int preferredHeight: 92
+        property alias text: editorText.text
+        spacing: 5
+        Text {
+            text: editorArea.label.toUpperCase()
+            color: root.muted
+            font.pixelSize: 8
+            font.weight: Font.DemiBold
+            font.letterSpacing: 1.0
+        }
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.preferredHeight: editorArea.preferredHeight
+            clip: true
+            TextArea {
+                id: editorText
+                placeholderText: editorArea.placeholder
+                color: root.bone
+                placeholderTextColor: root.muted
+                selectionColor: root.atlas
+                selectByMouse: true
+                wrapMode: TextEdit.Wrap
+                leftPadding: 12
+                rightPadding: 12
+                topPadding: 10
+                bottomPadding: 10
+                background: Rectangle {
+                    radius: 7
+                    color: root.ink
+                    border.color: editorText.activeFocus ? root.atlasBright : root.line
+                }
+            }
+        }
+    }
+
     Shortcut {
         sequence: "Ctrl+R"
         onActivated: backend.refresh()
@@ -235,7 +306,9 @@ ApplicationWindow {
                      && !beaconReplyField.activeFocus
                      && !newRequestSubject.activeFocus
                      && !newRequestBody.activeFocus
-                     && !newRequestDialog.visible)
+                     && !newRequestDialog.visible
+                     && !metadataDialog.visible
+                     && !moveDialog.visible)
         onActivated: {
             if (previewDialog.visible)
                 previewDialog.close()
@@ -433,6 +506,294 @@ ApplicationWindow {
                             newRequestBody.text
                         )
                         newRequestDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: metadataDialog
+        objectName: "metadataDialog"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 64, 820)
+        height: Math.min(root.height - 48, 760)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        onOpened: {
+            var metadata = backend.selectedAsset.catalogMetadata || {}
+            metadataTitle.text = metadata.display_title || ""
+            metadataCategory.text = metadata.media_category || ""
+            metadataDescription.text = metadata.description || ""
+            metadataTags.text = metadata.tagsText || ""
+            metadataPeople.text = metadata.peopleText || ""
+            metadataDate.text = metadata.event_date || ""
+            metadataPlace.text = metadata.place || ""
+            metadataClient.text = metadata.client || ""
+            metadataProject.text = metadata.project || ""
+            metadataRights.text = metadata.rights || ""
+            metadataNotes.text = metadata.notes || ""
+            metadataOrganization.text = metadata.organization_path || ""
+            metadataTitle.forceActiveFocus()
+        }
+        background: Rectangle {
+            radius: 12
+            color: root.panelRaised
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 22
+                PanelTitle {
+                    eyebrow: "Editable catalog record"
+                    title: "Asset metadata"
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: "REVISION "
+                          + String((backend.selectedAsset.catalogMetadata || {}).revision || 0)
+                    color: root.jade
+                    font.pixelSize: 9
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.0
+                }
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                contentWidth: availableWidth
+                clip: true
+                ColumnLayout {
+                    width: parent.width
+                    spacing: 12
+                    anchors.margins: 22
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 650 ? 2 : 1
+                        columnSpacing: 12
+                        rowSpacing: 12
+                        EditorField {
+                            id: metadataTitle
+                            Layout.fillWidth: true
+                            label: "Display title"
+                            placeholder: "A human-readable title"
+                        }
+                        EditorField {
+                            id: metadataCategory
+                            Layout.fillWidth: true
+                            label: "Media category"
+                            placeholder: "Portrait, campaign video, music asset…"
+                        }
+                        EditorField {
+                            id: metadataProject
+                            Layout.fillWidth: true
+                            label: "Project"
+                            placeholder: "Project or collection"
+                        }
+                        EditorField {
+                            id: metadataClient
+                            Layout.fillWidth: true
+                            label: "Client"
+                            placeholder: "Direct or end client"
+                        }
+                        EditorField {
+                            id: metadataDate
+                            Layout.fillWidth: true
+                            label: "Date or time context"
+                            placeholder: "Exact or approximate"
+                        }
+                        EditorField {
+                            id: metadataPlace
+                            Layout.fillWidth: true
+                            label: "Place"
+                            placeholder: "City, venue, or setting"
+                        }
+                    }
+                    EditorArea {
+                        id: metadataDescription
+                        Layout.fillWidth: true
+                        label: "Description"
+                        placeholder: "What this asset contains and why it matters"
+                        preferredHeight: 108
+                    }
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 650 ? 2 : 1
+                        columnSpacing: 12
+                        rowSpacing: 12
+                        EditorArea {
+                            id: metadataTags
+                            Layout.fillWidth: true
+                            label: "Tags · one per line"
+                            placeholder: "campaign\nportrait\nreference"
+                        }
+                        EditorArea {
+                            id: metadataPeople
+                            Layout.fillWidth: true
+                            label: "People · one per line"
+                            placeholder: "Preferred name"
+                        }
+                    }
+                    EditorArea {
+                        id: metadataRights
+                        Layout.fillWidth: true
+                        label: "Rights and restrictions"
+                        placeholder: "Ownership, retention, sharing, or publication limits"
+                    }
+                    EditorArea {
+                        id: metadataNotes
+                        Layout.fillWidth: true
+                        label: "Notes"
+                        placeholder: "Additional human context"
+                    }
+                    EditorField {
+                        id: metadataOrganization
+                        Layout.fillWidth: true
+                        label: "Approved organization directory"
+                        placeholder: "J:\\Library\\…, J:\\Assets\\…, or J:\\Projects\\…"
+                    }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 48
+                        radius: 7
+                        color: root.shell
+                        border.color: root.line
+                        Text {
+                            anchors.fill: parent
+                            anchors.margins: 11
+                            text: "Verified technical facts remain locked. Saving here creates a new editable metadata revision and never writes into the source media."
+                            color: root.muted
+                            font.pixelSize: 10
+                            lineHeight: 1.3
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 16
+                Item { Layout.fillWidth: true }
+                PrimaryButton {
+                    text: "Cancel"
+                    quiet: true
+                    onClicked: metadataDialog.close()
+                }
+                PrimaryButton {
+                    text: "Save revision"
+                    onClicked: {
+                        backend.saveSelectedAssetMetadata({
+                            "display_title": metadataTitle.text,
+                            "description": metadataDescription.text,
+                            "media_category": metadataCategory.text,
+                            "tagsText": metadataTags.text,
+                            "peopleText": metadataPeople.text,
+                            "event_date": metadataDate.text,
+                            "place": metadataPlace.text,
+                            "client": metadataClient.text,
+                            "project": metadataProject.text,
+                            "rights": metadataRights.text,
+                            "notes": metadataNotes.text,
+                            "organization_path": metadataOrganization.text
+                        })
+                        metadataDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: moveDialog
+        objectName: "moveDialog"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 80, 680)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        onOpened: {
+            moveSource.text = backend.selectedAsset.primary_path || ""
+            moveDestination.text =
+                (backend.selectedAsset.catalogMetadata || {}).organization_path || ""
+        }
+        background: Rectangle {
+            radius: 12
+            color: root.panelRaised
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.margins: 24
+                spacing: 12
+                PanelTitle {
+                    eyebrow: "Checksum-verified operation"
+                    title: "Move cataloged file"
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Beacon will re-hash the selected observed location, move it without overwriting another file, verify the destination hash, and then update the catalog. A failure is recorded and rolled back when possible."
+                    color: root.muted
+                    font.pixelSize: 11
+                    lineHeight: 1.35
+                    wrapMode: Text.WordWrap
+                }
+                EditorField {
+                    id: moveSource
+                    Layout.fillWidth: true
+                    label: "Exact observed source"
+                    placeholder: "Select one observed location"
+                }
+                EditorField {
+                    id: moveDestination
+                    Layout.fillWidth: true
+                    label: "Approved destination directory"
+                    placeholder: "J:\\Library\\…, J:\\Assets\\…, or J:\\Projects\\…"
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 52
+                    radius: 7
+                    color: Qt.rgba(0.76, 0.60, 0.35, 0.10)
+                    border.color: Qt.rgba(0.76, 0.60, 0.35, 0.28)
+                    Text {
+                        anchors.fill: parent
+                        anchors.margins: 11
+                        text: "The source filename is preserved. Identical destinations and duplicate locations are never silently merged or deleted."
+                        color: root.brass
+                        font.pixelSize: 10
+                        lineHeight: 1.3
+                        wrapMode: Text.WordWrap
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 16
+                Item { Layout.fillWidth: true }
+                PrimaryButton {
+                    text: "Cancel"
+                    quiet: true
+                    onClicked: moveDialog.close()
+                }
+                PrimaryButton {
+                    text: "Verify & move"
+                    enabled: !backend.busy
+                             && moveSource.text.trim().length > 0
+                             && moveDestination.text.trim().length > 0
+                    onClicked: {
+                        backend.moveSelectedAsset(
+                            moveSource.text,
+                            moveDestination.text
+                        )
+                        moveDialog.close()
                     }
                 }
             }
@@ -1379,6 +1740,7 @@ ApplicationWindow {
                                                 delegate: Rectangle {
                                                     required property string assetId
                                                     required property string filename
+                                                    required property string displayTitle
                                                     required property string kindLabel
                                                     required property string sizeLabel
                                                     required property string path
@@ -1428,7 +1790,7 @@ ApplicationWindow {
                                                             Layout.fillWidth: true
                                                             spacing: 1
                                                             Text {
-                                                                text: filename
+                                                                text: displayTitle
                                                                 color: root.bone
                                                                 font.pixelSize: 12
                                                                 font.weight: Font.DemiBold
@@ -1582,6 +1944,7 @@ ApplicationWindow {
                                         delegate: Rectangle {
                                             required property string assetId
                                             required property string filename
+                                            required property string displayTitle
                                             required property string kindLabel
                                             required property string sizeLabel
                                             required property string metaLine
@@ -1638,7 +2001,7 @@ ApplicationWindow {
                                                     RowLayout {
                                                         Layout.fillWidth: true
                                                         Text {
-                                                            text: filename
+                                                            text: displayTitle
                                                             color: root.bone
                                                             font.pixelSize: 12
                                                             font.weight: Font.DemiBold
@@ -1652,7 +2015,9 @@ ApplicationWindow {
                                                         }
                                                     }
                                                     Text {
-                                                        text: metaLine
+                                                        text: filename
+                                                              + (metaLine.length > 0
+                                                                 ? "  ·  " + metaLine : "")
                                                         color: root.brass
                                                         font.pixelSize: 9
                                                         elide: Text.ElideRight
@@ -1716,7 +2081,7 @@ ApplicationWindow {
                                                         font.letterSpacing: 1.4
                                                     }
                                                     Text {
-                                                        text: backend.selectedAsset.filename || ""
+                                                        text: backend.selectedAsset.displayTitle || ""
                                                         color: root.bone
                                                         font.family: "Georgia"
                                                         font.pixelSize: 25
@@ -1841,6 +2206,125 @@ ApplicationWindow {
                                                 DetailLine { Layout.fillWidth: true; label: "Duration"; value: backend.selectedAsset.durationLabel || "Not reported" }
                                                 DetailLine { Layout.fillWidth: true; label: "Dimensions"; value: backend.selectedAsset.dimensionsLabel || "Not reported" }
                                                 DetailLine { Layout.fillWidth: true; label: "Created"; value: backend.selectedAsset.createdLabel || "" }
+                                            }
+                                            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 10
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: "EDITABLE CATALOG METADATA"
+                                                        color: root.brass
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                        font.letterSpacing: 1.4
+                                                    }
+                                                    Text {
+                                                        text: "REV "
+                                                              + String((backend.selectedAsset.catalogMetadata || {}).revision || 0)
+                                                        color: root.muted
+                                                        font.pixelSize: 8
+                                                        font.weight: Font.DemiBold
+                                                    }
+                                                    PrimaryButton {
+                                                        text: "Edit metadata"
+                                                        quiet: true
+                                                        onClicked: metadataDialog.open()
+                                                    }
+                                                    PrimaryButton {
+                                                        text: "Move file"
+                                                        enabled: ((backend.selectedAsset.catalogMetadata || {}).organization_path || "").length > 0
+                                                        onClicked: moveDialog.open()
+                                                    }
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: (backend.selectedAsset.catalogMetadata || {}).description
+                                                          || "No editable description yet."
+                                                    color: root.bone
+                                                    font.pixelSize: 12
+                                                    lineHeight: 1.35
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                                GridLayout {
+                                                    Layout.fillWidth: true
+                                                    columns: width >= 560 ? 2 : 1
+                                                    columnSpacing: 24
+                                                    rowSpacing: 9
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Title"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).display_title || "Not set"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Category"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).media_category || "Not set"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Project"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).project || "Not set"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Client"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).client || "Not set"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Date"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).event_date || "Not set"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Place"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).place || "Not set"
+                                                    }
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "People"
+                                                    value: ((backend.selectedAsset.catalogMetadata || {}).people || []).join(" · ") || "Not set"
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "Tags"
+                                                    value: ((backend.selectedAsset.catalogMetadata || {}).tags || []).join(" · ") || "Not set"
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "Rights"
+                                                    value: (backend.selectedAsset.catalogMetadata || {}).rights || "Not set"
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "Destination"
+                                                    value: (backend.selectedAsset.catalogMetadata || {}).organization_path || "Not approved yet"
+                                                    mono: true
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    visible: (backend.selectedAsset.moves || []).length > 0
+                                                    label: "Last move"
+                                                    value: (backend.selectedAsset.moves || []).length > 0
+                                                           ? backend.selectedAsset.moves[0].state.toUpperCase()
+                                                             + " · "
+                                                             + backend.selectedAsset.moves[0].destination_path
+                                                           : ""
+                                                    mono: true
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Updated "
+                                                          + ((backend.selectedAsset.catalogMetadata || {}).updatedLabel || "Not edited yet")
+                                                          + "  ·  Context stays editable; verified technical facts stay locked."
+                                                    color: root.muted
+                                                    font.pixelSize: 9
+                                                    wrapMode: Text.WordWrap
+                                                }
                                             }
                                             Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
                                             ColumnLayout {
