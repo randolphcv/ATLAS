@@ -1774,7 +1774,7 @@ ApplicationWindow {
                                     id: intakeCard
                                     objectName: "intakeCard"
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: 402
+                                    Layout.preferredHeight: 472
                                     radius: 10
                                     color: root.panel
                                     border.color: root.line
@@ -2028,6 +2028,52 @@ ApplicationWindow {
                                                             text: backend.selectedIntakeJob.sizeLabel || ""
                                                             color: root.muted
                                                             font.family: "Cascadia Mono"
+                                                            font.pixelSize: 9
+                                                        }
+                                                    }
+                                                    Rectangle {
+                                                        Layout.fillWidth: true
+                                                        height: 1
+                                                        color: root.line
+                                                        visible: backend.analysisReadiness.analysisHasJob === true
+                                                    }
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        visible: backend.analysisReadiness.analysisHasJob === true
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: "CATALOG ANALYSIS  ·  "
+                                                                  + (backend.analysisReadiness.analysisStateLabel || "Not started")
+                                                            color: root.brass
+                                                            font.pixelSize: 8
+                                                            font.weight: Font.DemiBold
+                                                            font.letterSpacing: 0.9
+                                                        }
+                                                        Text {
+                                                            text: backend.analysisReadiness.analysisProgressLabel || "0%"
+                                                            color: root.atlasBright
+                                                            font.family: "Cascadia Mono"
+                                                            font.pixelSize: 14
+                                                            font.weight: Font.DemiBold
+                                                        }
+                                                    }
+                                                    IntakeProgress {
+                                                        Layout.fillWidth: true
+                                                        visible: backend.analysisReadiness.analysisHasJob === true
+                                                        value: backend.analysisReadiness.analysisProgress || 0
+                                                    }
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        visible: backend.analysisReadiness.analysisHasJob === true
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: backend.analysisReadiness.analysisCountLabel || ""
+                                                            color: root.muted
+                                                            font.pixelSize: 10
+                                                        }
+                                                        Text {
+                                                            text: backend.analysisReadiness.analysisFailedLabel || ""
+                                                            color: root.muted
                                                             font.pixelSize: 9
                                                         }
                                                     }

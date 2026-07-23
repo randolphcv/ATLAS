@@ -53,6 +53,7 @@ from .local_analysis import (
     LocalAnalysisRunResult,
     analysis_scope_preview,
     create_local_analysis_job,
+    list_local_analysis_jobs,
     local_runtime_status,
     recover_local_analysis_jobs,
     request_local_analysis_cancel,
@@ -542,6 +543,7 @@ class DesktopController(QObject):
             self._load_backups()
             self._load_intake_jobs(preserve_selection=True)
             self.refreshAnalysisReadiness()
+            self._sync_local_analysis_state()
             self._load_beacon_threads(preserve_selection=True)
             self._last_refresh = datetime.now().astimezone().strftime("%I:%M:%S %p")
             self._last_catalog_signature = self._catalog_signature()
@@ -549,6 +551,37 @@ class DesktopController(QObject):
         except Exception as error:
             LOGGER.exception("desktop refresh failed")
             self._set_status(f"Could not refresh Beacon: {error}", "error")
+
+    def _sync_local_analysis_state(self) -> None:
+        jobs = list_local_analysis_jobs(self.settings.db_path, limit=1)
+        latest = jobs[0] if jobs else None
+        running = latest if latest and latest["state"] == "running" else None
+        previous_id = self._active_local_analysis_job_id
+        previous_busy = self._busy
+        if running:
+            self._active_local_analysis_job_id = str(running["id"])
+            self._busy = True
+            completed = int(running.get("completed_count") or 0)
+            total = int(running.get("total_items") or 0)
+            self._set_status(
+                f"Local analysis running: {completed:,} of {total:,} complete.",
+                "working",
+            )
+        elif previous_id:
+            self._active_local_analysis_job_id = ""
+            self._busy = False
+            if latest:
+                completed = int(latest.get("completed_count") or 0)
+                failed = int(latest.get("failed_count") or 0)
+                self._set_status(
+                    f"Local analysis {latest['state']}: "
+                    f"{completed:,} complete, {failed:,} failed.",
+                    "success" if latest["state"] == "complete" else "working",
+                )
+        if previous_id != self._active_local_analysis_job_id:
+            self.localAnalysisRunningChanged.emit()
+        if previous_busy != self._busy:
+            self.busyChanged.emit()
 
     def _catalog_signature(self) -> tuple[int, int, int, int]:
         database = self.settings.db_path
@@ -867,6 +900,22 @@ class DesktopController(QObject):
         full_scope = analysis_scope_preview(
             self.settings.db_path, include_analyzed=True
         )
+        jobs = list_local_analysis_jobs(self.settings.db_path, limit=1)
+        latest_job = jobs[0] if jobs else None
+        analysis_total = int(
+            latest_job.get("total_items") or 0
+        ) if latest_job else 0
+        analysis_complete = int(
+            latest_job.get("completed_count") or 0
+        ) if latest_job else 0
+        analysis_failed = int(
+            latest_job.get("failed_count") or 0
+        ) if latest_job else 0
+        analysis_processed = analysis_complete + analysis_failed
+        analysis_progress = (
+            min(1.0, analysis_processed / analysis_total)
+            if analysis_total else 0.0
+        )
         models = list(runtime.models)
         self._analysis_readiness = {
             **scope,
@@ -880,6 +929,20 @@ class DesktopController(QObject):
             "allVisualLabel": f"{full_scope['visual']:,}",
             "allAudioLabel": f"{full_scope['audio']:,}",
             "allOtherLabel": f"{full_scope['other']:,}",
+            "analysisHasJob": bool(latest_job),
+            "analysisJobState": (
+                str(latest_job.get("state") or "") if latest_job else ""
+            ),
+            "analysisStateLabel": (
+                str(latest_job.get("state") or "").replace("_", " ").title()
+                if latest_job else "Not started"
+            ),
+            "analysisProgress": analysis_progress,
+            "analysisProgressLabel": f"{analysis_progress:.0%}",
+            "analysisCountLabel": (
+                f"{analysis_complete:,} complete / {analysis_total:,} assets"
+            ),
+            "analysisFailedLabel": f"{analysis_failed:,} failed",
             "runtimeAvailable": runtime.available,
             "runtimeLabel": (
                 f"Local runtime {runtime.version}"

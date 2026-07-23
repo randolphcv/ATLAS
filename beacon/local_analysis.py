@@ -291,18 +291,33 @@ def recover_local_analysis_jobs(db_path: Path) -> int:
     with connect(db_path) as connection:
         migrate(connection)
         jobs = connection.execute(
-            "SELECT id FROM local_analysis_jobs WHERE state='running'"
+            "SELECT id,worker_pid FROM local_analysis_jobs WHERE state='running'"
         ).fetchall()
-        for row in jobs:
+        abandoned = [
+            row for row in jobs
+            if not _process_is_alive(row["worker_pid"])
+        ]
+        for row in abandoned:
             connection.execute(
                 "UPDATE local_analysis_items SET state='pending' WHERE job_id=? AND state='running'",
                 (row["id"],),
             )
             connection.execute(
-                "UPDATE local_analysis_jobs SET state='paused',current_asset_id=NULL,updated_at=? WHERE id=?",
+                "UPDATE local_analysis_jobs SET state='paused',current_asset_id=NULL,worker_pid=NULL,updated_at=? WHERE id=?",
                 (_utc_now(), row["id"]),
             )
-        return len(jobs)
+        return len(abandoned)
+
+
+def _process_is_alive(value: object) -> bool:
+    try:
+        pid = int(value or 0)
+        if pid <= 0:
+            return False
+        os.kill(pid, 0)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
 
 
 def retry_local_analysis_failures(db_path: Path, job_id: str) -> int:
@@ -563,9 +578,10 @@ def run_local_analysis_job(
         connection.execute(
             """
             UPDATE local_analysis_jobs SET state='running',cancel_requested=0,
-              started_at=COALESCE(started_at,?),updated_at=?,error=NULL WHERE id=?
+              started_at=COALESCE(started_at,?),updated_at=?,error=NULL,
+              worker_pid=? WHERE id=?
             """,
-            (_utc_now(), _utc_now(), job_id),
+            (_utc_now(), _utc_now(), os.getpid(), job_id),
         )
 
     while True:
@@ -575,7 +591,7 @@ def run_local_analysis_job(
             ).fetchone())
             if job["cancel_requested"]:
                 connection.execute(
-                    "UPDATE local_analysis_jobs SET state='cancelled',current_asset_id=NULL,updated_at=? WHERE id=?",
+                    "UPDATE local_analysis_jobs SET state='cancelled',current_asset_id=NULL,worker_pid=NULL,updated_at=? WHERE id=?",
                     (_utc_now(), job_id),
                 )
                 counts = _counts(connection, job_id)
@@ -754,7 +770,8 @@ def run_local_analysis_job(
         connection.execute(
             """
             UPDATE local_analysis_jobs SET state=?,current_asset_id=NULL,
-              completed_at=?,updated_at=?,analysis_run_id=?,error=? WHERE id=?
+              completed_at=?,updated_at=?,analysis_run_id=?,error=?,
+              worker_pid=NULL WHERE id=?
             """,
             (
                 state, _utc_now(), _utc_now(), run_id,
