@@ -60,6 +60,14 @@
 - approval-only organization suggestions
 - bounded five-asset librarian pilot with the active ATLAS inbox excluded
 
+## Completed — durable Beacon conversations
+
+- native Overview-page Beacon Desk with master-detail conversation history
+- explicit waiting-for-human and queued-for-Beacon states
+- plain-English replies and human-started requests persisted in SQLite
+- separate explicit resolution with no conversational file-operation authority
+- initial pilot blockers and optional enrichment questions kept distinct
+
 ## Next — repeatable local intelligence
 
 - choose and benchmark replaceable local vision, transcription, and audio

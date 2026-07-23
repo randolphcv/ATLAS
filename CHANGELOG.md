@@ -57,3 +57,10 @@
   descriptions, and tags while keeping every organization path advisory.
 - Completed a five-asset Beacon librarian pilot without scanning the active
   ATLAS inbox or modifying an original.
+- Added schema version 5 with durable Beacon Desk threads and ordered messages.
+- Added a native Overview-page conversation queue for Beacon questions,
+  approval requests, blockers, clarifications, and human-started requests.
+- Added plain-English replies, explicit resolution, and honest local queue
+  states without interpreting conversation text as permission for file actions.
+- Seeded the pilot's three verified scale-up gates separately from three
+  optional enrichment conversations.

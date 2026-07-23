@@ -39,7 +39,7 @@ Run from source:
 Or double-click:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.6.0\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.7.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 The desktop app has its own Windows window. It does not open a browser, start a
@@ -58,8 +58,19 @@ in an editor.
 
 Beacon analysis appears separately from technical facts and is visibly labeled
 `CANDIDATE`. The card records confidence and whether inference ran locally or
-externally. Organization paths are suggestions only; Beacon 0.6.0 has no UI or
+externally. Organization paths are suggestions only; Beacon 0.7.0 has no UI or
 worker that moves an original.
+
+The Overview includes **Beacon Desk**. Questions, approval requests, blockers,
+clarifications, and human-started requests persist in the live SQLite catalog.
+Replying changes an open thread to `queued_for_beacon`; it does not execute a
+scan, upload, rename, move, delete, or metadata promotion. **Resolve** is a
+separate explicit action.
+
+Beacon Desk is currently a durable handoff surface, not a continuously running
+AI worker. The UI says `SAVED LOCALLY`; queued messages are reviewed when a
+Beacon analysis session is deliberately run. The active `J:\Inbox` transfer is
+not inspected by opening the Desk.
 
 An explicitly approved analysis manifest can be imported with:
 

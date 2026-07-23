@@ -4,7 +4,7 @@ Verified on the Windows ATLAS host on 2026-07-23.
 
 ## Outcome
 
-Beacon 0.6.0 is a native Qt Quick/QML desktop application. It uses the existing
+Beacon 0.7.0 is a native Qt Quick/QML desktop application. It uses the existing
 read-only catalog, repository, audit, health, and verified-backup modules
 directly. The desktop process does not open a browser, embed a web view, start
 FastAPI, or listen on a network port.
@@ -20,14 +20,24 @@ from technical facts. Candidate title, description, tags, confidence, privacy
 flags, execution location, and approval-only organization suggestions remain
 visibly labeled as AI output.
 
+The Overview now contains Beacon Desk, a persistent native master-detail
+conversation surface. It distinguishes questions waiting for the human from
+replies queued for Beacon, supports human-started requests, keeps approval
+language separate from execution authority, and only closes a thread through an
+explicit Resolve action.
+
 ## Automated verification
 
 - Python compilation: passed
-- Unit and integration tests with real FFprobe and FFmpeg: 30 passed
+- Unit and integration tests with real FFprobe and FFmpeg: 38 passed
 - Native catalog model, search, detail, and health tests: passed
 - Non-blocking verified-backup controller test: passed
 - QML window offscreen load test: passed
 - Application-level Space shortcut with a focused action button: passed
+- Space inserts text in the Beacon reply composer without opening preview:
+  passed
+- Schema-5 Beacon thread/message persistence, seed idempotency, queue
+  transitions, and explicit resolution: passed
 - Dependency check: passed
 
 ## Rendered verification
@@ -48,6 +58,8 @@ The following states were visually reviewed:
 - selectable read-only text preview with encoding and truncation status.
 - source and packaged Beacon Analysis candidate detail with an explicit external
   inference label.
+- source and exact packaged Beacon Desk Overview with six live conversations;
+- new-request, reply, approval-boundary, and resolved-state controller flows.
 
 Screenshots:
 
@@ -55,38 +67,39 @@ Screenshots:
 - [`images/desktop-library.png`](images/desktop-library.png)
 - [`images/desktop-system.png`](images/desktop-system.png)
 - [`images/desktop-packaged.png`](images/desktop-packaged.png)
+- [`images/beacon-desk.png`](images/beacon-desk.png)
 
 ## Executable verification
 
 Artifact:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.6.0\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.7.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 Package:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.6.0-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.7.0-win64.zip
 ```
 
 The frozen executable passed smoke-test and screenshot modes against the
-schema-4 live database without a `--db` override. Windows file and product
-versions are both `0.6.0`.
+schema-5 live database without a `--db` override. Windows file and product
+versions are both `0.7.0`.
 
 Executable SHA-256:
 
 ```text
-D353EC59051C1978AACE0DC452E6B881CC6C6E740382BD6DB4EEF2B118787FDB
+D927B5E92BCAA384F0652B896F8D7DEEDD1B34071CA0A2DE94C34957417CE28D
 ```
 
 Package SHA-256:
 
 ```text
-F22B1DE8309D86674B8B07708CEF2B5555AB16E5D271BEDD96A736689F2F2020
+13EDD6DD265A6F156C517103B67C608953F670AE57CBF56A9D83959F6855F328
 ```
 
-The one-folder bundle contains 1,748 files and 178,052,749 bytes. Its packaging
+The one-folder bundle contains 1,748 files and 178,094,165 bytes. Its packaging
 filter excludes FastAPI, Uvicorn, Pydantic, Qt WebEngine, Qt Quick 3D, charting,
 PDF, and virtual-keyboard capabilities.
 
@@ -100,9 +113,11 @@ identify the publisher as unknown.
   subagent pilot; it is recorded as external inference
 - No production watcher, scheduled task, or cloud connector was added
 - No original file was moved, renamed, edited, or deleted
-- Backup and the explicit candidate-manifest import were the only catalog writes
+- Backup, the explicit candidate-manifest import, schema migration, and seeded
+  Beacon conversations were the only catalog writes
 - Preview remains read-only; thumbnail writes stay in the runtime derivative tree
 - AI output remains candidate data separate from verified technical facts
 - Organization suggestions did not perform file operations
+- Beacon replies cannot directly authorize or perform file operations
 - Backup requires explicit confirmation and is integrity-checked before success
 - Restore and backup deletion remain absent

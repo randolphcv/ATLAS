@@ -231,7 +231,11 @@ ApplicationWindow {
         autoRepeat: false
         enabled: previewDialog.visible
                  || (backend.selectedAsset.id !== undefined
-                     && !searchField.activeFocus)
+                     && !searchField.activeFocus
+                     && !beaconReplyField.activeFocus
+                     && !newRequestSubject.activeFocus
+                     && !newRequestBody.activeFocus
+                     && !newRequestDialog.visible)
         onActivated: {
             if (previewDialog.visible)
                 previewDialog.close()
@@ -311,6 +315,124 @@ ApplicationWindow {
                     onClicked: {
                         backupDialog.close()
                         backend.createBackup()
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: newRequestDialog
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 80, 640)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        onOpened: {
+            newRequestSubject.text = ""
+            newRequestBody.text = ""
+            newRequestSubject.forceActiveFocus()
+        }
+        background: Rectangle {
+            radius: 12
+            color: root.panelRaised
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.margins: 26
+                spacing: 12
+                PanelTitle {
+                    eyebrow: "Beacon desk"
+                    title: "Start a new conversation"
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Ask for analysis, request context, or clarify protocol. The message is saved locally for Beacon; it does not authorize a file operation."
+                    color: root.muted
+                    font.pixelSize: 12
+                    lineHeight: 1.35
+                    wrapMode: Text.WordWrap
+                }
+                TextField {
+                    id: newRequestSubject
+                    Layout.fillWidth: true
+                    implicitHeight: 42
+                    placeholderText: "Subject"
+                    color: root.bone
+                    placeholderTextColor: root.muted
+                    selectionColor: root.atlas
+                    selectByMouse: true
+                    leftPadding: 13
+                    rightPadding: 13
+                    maximumLength: 160
+                    background: Rectangle {
+                        radius: 7
+                        color: root.ink
+                        border.color: newRequestSubject.activeFocus
+                                      ? root.atlasBright : root.line
+                    }
+                }
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 180
+                    clip: true
+                    TextArea {
+                        id: newRequestBody
+                        placeholderText: "What would you like Beacon to help with?"
+                        color: root.bone
+                        placeholderTextColor: root.muted
+                        selectionColor: root.atlas
+                        selectByMouse: true
+                        wrapMode: TextEdit.Wrap
+                        leftPadding: 13
+                        rightPadding: 13
+                        topPadding: 12
+                        bottomPadding: 12
+                        background: Rectangle {
+                            radius: 7
+                            color: root.ink
+                            border.color: newRequestBody.activeFocus
+                                          ? root.atlasBright : root.line
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: root.line
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 18
+                spacing: 10
+                Text {
+                    text: "SAVED LOCALLY"
+                    color: root.jade
+                    font.pixelSize: 9
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.1
+                }
+                Item { Layout.fillWidth: true }
+                PrimaryButton {
+                    text: "Cancel"
+                    quiet: true
+                    onClicked: newRequestDialog.close()
+                }
+                PrimaryButton {
+                    text: "Save for Beacon"
+                    enabled: newRequestSubject.text.trim().length > 0
+                             && newRequestBody.text.trim().length > 0
+                             && newRequestBody.text.length <= 8000
+                    onClicked: {
+                        backend.createBeaconThread(
+                            newRequestSubject.text,
+                            newRequestBody.text
+                        )
+                        newRequestDialog.close()
                     }
                 }
             }
@@ -875,6 +997,352 @@ ApplicationWindow {
                                         value: backend.summary.failuresLabel || "0"
                                         note: backend.summary.failures > 0 ? "Review the operation ledger" : "No recorded failures"
                                         accentColor: backend.summary.failures > 0 ? root.ember : root.jade
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 548
+                                    radius: 10
+                                    color: root.panel
+                                    border.color: root.line
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 18
+                                        spacing: 12
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            PanelTitle {
+                                                eyebrow: "Beacon desk"
+                                                title: "Open conversations"
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            ColumnLayout {
+                                                spacing: 2
+                                                Text {
+                                                    Layout.alignment: Qt.AlignRight
+                                                    text: (backend.beaconDeskSummary.awaitingLabel || "0")
+                                                          + " WAITING FOR YOU  ·  "
+                                                          + (backend.beaconDeskSummary.queuedLabel || "0")
+                                                          + " QUEUED"
+                                                    color: root.muted
+                                                    font.pixelSize: 9
+                                                    font.weight: Font.DemiBold
+                                                    font.letterSpacing: 0.8
+                                                }
+                                                Text {
+                                                    Layout.alignment: Qt.AlignRight
+                                                    text: backend.beaconDeskSummary.connectionLabel
+                                                          || "SAVED LOCALLY"
+                                                    color: root.jade
+                                                    font.pixelSize: 9
+                                                    font.weight: Font.DemiBold
+                                                    font.letterSpacing: 1.1
+                                                }
+                                            }
+                                            PrimaryButton {
+                                                text: "New request"
+                                                onClicked: newRequestDialog.open()
+                                            }
+                                        }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            implicitHeight: 42
+                                            radius: 7
+                                            color: root.shell
+                                            border.color: root.line
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 13
+                                                anchors.rightMargin: 13
+                                                spacing: 10
+                                                Rectangle {
+                                                    width: 7
+                                                    height: 7
+                                                    radius: 4
+                                                    color: root.brass
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Messages persist in this catalog. Beacon reviews queued replies during an analysis session; the app does not pretend a worker is continuously online."
+                                                    color: root.muted
+                                                    font.pixelSize: 10
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            spacing: 12
+                                            Rectangle {
+                                                Layout.preferredWidth: 392
+                                                Layout.fillHeight: true
+                                                radius: 8
+                                                color: root.shell
+                                                border.color: root.line
+                                                ListView {
+                                                    id: beaconThreadList
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+                                                    clip: true
+                                                    spacing: 7
+                                                    model: backend.beaconThreads
+                                                    delegate: Rectangle {
+                                                        required property string threadId
+                                                        required property string subject
+                                                        required property string kindLabel
+                                                        required property string priority
+                                                        required property string state
+                                                        required property string stateLabel
+                                                        required property string preview
+                                                        required property string updatedLabel
+                                                        required property bool requiresApproval
+                                                        width: ListView.view.width
+                                                        height: 96
+                                                        radius: 7
+                                                        color: backend.selectedBeaconThread.id === threadId
+                                                               ? Qt.rgba(0.29, 0.55, 0.57, 0.18)
+                                                               : beaconThreadHover.containsMouse
+                                                                 ? root.panelRaised : root.panel
+                                                        border.color: backend.selectedBeaconThread.id === threadId
+                                                                      ? root.atlas : root.line
+                                                        MouseArea {
+                                                            id: beaconThreadHover
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            onClicked: backend.selectBeaconThread(threadId)
+                                                        }
+                                                        ColumnLayout {
+                                                            anchors.fill: parent
+                                                            anchors.margins: 10
+                                                            spacing: 3
+                                                            RowLayout {
+                                                                Layout.fillWidth: true
+                                                                Text {
+                                                                    text: kindLabel.toUpperCase()
+                                                                    color: requiresApproval
+                                                                           ? root.brass : root.atlasBright
+                                                                    font.pixelSize: 8
+                                                                    font.weight: Font.DemiBold
+                                                                    font.letterSpacing: 1.0
+                                                                }
+                                                                Item { Layout.fillWidth: true }
+                                                                Rectangle {
+                                                                    width: 6
+                                                                    height: 6
+                                                                    radius: 3
+                                                                    color: state === "awaiting_human"
+                                                                           ? root.brass : root.atlasBright
+                                                                }
+                                                                Text {
+                                                                    text: stateLabel.toUpperCase()
+                                                                    color: root.muted
+                                                                    font.pixelSize: 8
+                                                                    font.weight: Font.DemiBold
+                                                                }
+                                                            }
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: subject
+                                                                color: root.bone
+                                                                font.pixelSize: 12
+                                                                font.weight: Font.DemiBold
+                                                                elide: Text.ElideRight
+                                                            }
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: preview
+                                                                color: root.muted
+                                                                font.pixelSize: 9
+                                                                elide: Text.ElideRight
+                                                            }
+                                                            Text {
+                                                                text: updatedLabel
+                                                                color: root.muted
+                                                                font.pixelSize: 8
+                                                            }
+                                                        }
+                                                    }
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        width: Math.min(260, parent.width - 30)
+                                                        visible: parent.count === 0
+                                                        text: "No open conversations. Start a new request whenever you need Beacon."
+                                                        color: root.muted
+                                                        font.pixelSize: 11
+                                                        lineHeight: 1.35
+                                                        wrapMode: Text.WordWrap
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                    }
+                                                }
+                                            }
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                Layout.fillHeight: true
+                                                radius: 8
+                                                color: root.shell
+                                                border.color: root.line
+                                                ColumnLayout {
+                                                    anchors.fill: parent
+                                                    anchors.margins: 14
+                                                    spacing: 10
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        ColumnLayout {
+                                                            Layout.fillWidth: true
+                                                            spacing: 2
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: backend.selectedBeaconThread.subject
+                                                                      || "Select a conversation"
+                                                                color: root.bone
+                                                                font.family: "Georgia"
+                                                                font.pixelSize: 18
+                                                                elide: Text.ElideRight
+                                                            }
+                                                            Text {
+                                                                text: backend.selectedBeaconThread.id
+                                                                      ? (backend.selectedBeaconThread.kindLabel || "Conversation").toUpperCase()
+                                                                        + "  ·  "
+                                                                        + (backend.selectedBeaconThread.stateLabel || "")
+                                                                      : "BEACON DESK"
+                                                                color: backend.selectedBeaconThread.state === "awaiting_human"
+                                                                       ? root.brass : root.muted
+                                                                font.pixelSize: 8
+                                                                font.weight: Font.DemiBold
+                                                                font.letterSpacing: 1.0
+                                                            }
+                                                        }
+                                                        PrimaryButton {
+                                                            visible: backend.selectedBeaconThread.id !== undefined
+                                                            text: "Resolve"
+                                                            quiet: true
+                                                            onClicked: backend.resolveBeaconThread()
+                                                        }
+                                                    }
+                                                    Rectangle {
+                                                        visible: backend.selectedBeaconThread.requiresApproval === true
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: visible ? 38 : 0
+                                                        radius: 6
+                                                        color: Qt.rgba(0.76, 0.60, 0.35, 0.10)
+                                                        border.color: Qt.rgba(0.76, 0.60, 0.35, 0.28)
+                                                        Text {
+                                                            anchors.fill: parent
+                                                            anchors.margins: 10
+                                                            text: "APPROVAL REQUEST  ·  Your reply records guidance only; it cannot move or change files."
+                                                            color: root.brass
+                                                            font.pixelSize: 9
+                                                            font.weight: Font.DemiBold
+                                                            elide: Text.ElideRight
+                                                        }
+                                                    }
+                                                    ListView {
+                                                        id: beaconMessageList
+                                                        Layout.fillWidth: true
+                                                        Layout.fillHeight: true
+                                                        clip: true
+                                                        spacing: 8
+                                                        model: backend.beaconMessages
+                                                        onCountChanged: positionViewAtEnd()
+                                                        delegate: Rectangle {
+                                                            required property string author
+                                                            required property string authorLabel
+                                                            required property string body
+                                                            required property string timeLabel
+                                                            width: ListView.view.width
+                                                            height: messageBody.implicitHeight + 48
+                                                            radius: 7
+                                                            color: author === "human"
+                                                                   ? Qt.rgba(0.29, 0.55, 0.57, 0.14)
+                                                                   : root.panel
+                                                            border.color: root.line
+                                                            ColumnLayout {
+                                                                anchors.fill: parent
+                                                                anchors.margins: 10
+                                                                spacing: 4
+                                                                RowLayout {
+                                                                    Layout.fillWidth: true
+                                                                    Text {
+                                                                        text: authorLabel
+                                                                        color: author === "human"
+                                                                               ? root.atlasBright : root.brass
+                                                                        font.pixelSize: 8
+                                                                        font.weight: Font.DemiBold
+                                                                        font.letterSpacing: 1.0
+                                                                    }
+                                                                    Item { Layout.fillWidth: true }
+                                                                    Text {
+                                                                        text: timeLabel
+                                                                        color: root.muted
+                                                                        font.pixelSize: 8
+                                                                    }
+                                                                }
+                                                                Text {
+                                                                    id: messageBody
+                                                                    Layout.fillWidth: true
+                                                                    text: body
+                                                                    color: root.bone
+                                                                    font.pixelSize: 11
+                                                                    lineHeight: 1.35
+                                                                    wrapMode: Text.WordWrap
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        Layout.preferredHeight: 72
+                                                        Layout.minimumHeight: 72
+                                                        Layout.maximumHeight: 72
+                                                        Layout.fillHeight: false
+                                                        spacing: 8
+                                                        ScrollView {
+                                                            Layout.fillWidth: true
+                                                            Layout.preferredHeight: 72
+                                                            Layout.minimumHeight: 72
+                                                            Layout.maximumHeight: 72
+                                                            clip: true
+                                                            TextArea {
+                                                                id: beaconReplyField
+                                                                objectName: "beaconReplyField"
+                                                                enabled: backend.selectedBeaconThread.id !== undefined
+                                                                placeholderText: backend.selectedBeaconThread.id !== undefined
+                                                                                 ? "Reply in plain English…"
+                                                                                 : "Select a conversation to reply"
+                                                                color: root.bone
+                                                                placeholderTextColor: root.muted
+                                                                selectionColor: root.atlas
+                                                                selectByMouse: true
+                                                                wrapMode: TextEdit.Wrap
+                                                                leftPadding: 11
+                                                                rightPadding: 11
+                                                                topPadding: 9
+                                                                bottomPadding: 9
+                                                                background: Rectangle {
+                                                                    radius: 7
+                                                                    color: root.ink
+                                                                    border.color: beaconReplyField.activeFocus
+                                                                                  ? root.atlasBright : root.line
+                                                                }
+                                                            }
+                                                        }
+                                                        PrimaryButton {
+                                                            Layout.alignment: Qt.AlignBottom
+                                                            text: "Send reply"
+                                                            enabled: backend.selectedBeaconThread.id !== undefined
+                                                                     && beaconReplyField.text.trim().length > 0
+                                                                     && beaconReplyField.text.length <= 8000
+                                                            onClicked: {
+                                                                backend.replyToBeaconThread(beaconReplyField.text)
+                                                                beaconReplyField.text = ""
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 

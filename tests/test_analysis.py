@@ -96,7 +96,7 @@ class AnalysisResultTests(unittest.TestCase):
             hashlib.sha256(self.source.read_bytes()).hexdigest(),
             self.before,
         )
-        self.assertEqual(database_integrity(self.db)["schema_version"], 4)
+        self.assertEqual(database_integrity(self.db)["schema_version"], 5)
 
         detail = asset_detail(self.db, self.asset.asset_id)
         self.assertIsNotNone(detail)

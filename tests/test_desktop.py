@@ -15,6 +15,7 @@ from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
 from beacon.catalog import catalog_file
 from beacon.desktop import DEFAULT_RUNTIME, _catalog_label
 from beacon.desktop_controller import DesktopController, DesktopSettings
+from beacon.desk import seed_threads
 from beacon.text_preview import read_text_preview
 
 
@@ -137,6 +138,54 @@ class DesktopControllerTests(unittest.TestCase):
             ),
             "Isolated use test",
         )
+
+    def test_beacon_desk_models_create_reply_and_resolve_threads(self) -> None:
+        [thread_id] = seed_threads(
+            self.db,
+            (
+                {
+                    "seed_key": "desktop:test-question",
+                    "subject": "Choose the local boundary",
+                    "kind": "approval",
+                    "priority": "important",
+                    "requires_approval": True,
+                    "body": "Should analysis remain local?",
+                },
+            ),
+        )
+        self.controller.refresh()
+
+        self.assertEqual(self.controller.beaconThreads.rowCount(), 1)
+        self.assertEqual(
+            self.controller.selectedBeaconThread["id"],
+            thread_id,
+        )
+        self.assertEqual(self.controller.beaconMessages.rowCount(), 1)
+        self.assertEqual(
+            self.controller.beaconDeskSummary["awaiting_human"],
+            1,
+        )
+
+        self.controller.replyToBeaconThread("Yes. Keep it local.")
+        self.assertEqual(
+            self.controller.selectedBeaconThread["state"],
+            "queued_for_beacon",
+        )
+        self.assertEqual(self.controller.beaconMessages.rowCount(), 2)
+        self.assertIn("No file action", self.controller.statusMessage)
+
+        self.controller.createBeaconThread(
+            "Review a naming rule",
+            "Ask me which abbreviations matter.",
+        )
+        self.assertEqual(self.controller.beaconThreads.rowCount(), 2)
+        self.assertEqual(
+            self.controller.selectedBeaconThread["subject"],
+            "Review a naming rule",
+        )
+
+        self.controller.resolveBeaconThread()
+        self.assertEqual(self.controller.beaconThreads.rowCount(), 1)
 
     def test_external_catalog_changes_refresh_automatically(self) -> None:
         second = self.source.parent / "second-signal.txt"
@@ -271,6 +320,96 @@ def verify_closed():
     app.exit(14 if window.property("previewOpen") else 0)
 
 QTimer.singleShot(250, press_with_button_focused)
+raise SystemExit(app.exec())
+"""
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    script,
+                    str(root / "beacon.db"),
+                    str(root / "backups"),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+            )
+
+    def test_space_types_in_beacon_reply_without_opening_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "desk-hotkey.txt"
+            source.write_text("Space should stay in the reply.", encoding="utf-8")
+            catalog_file(
+                source,
+                root / "beacon.db",
+                stability_seconds=0,
+                include_media_probe=False,
+            )
+            environment = os.environ.copy()
+            environment["QT_QPA_PLATFORM"] = "offscreen"
+            environment["QT_QUICK_BACKEND"] = "software"
+            script = r"""
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QObject, QMetaObject, QTimer, Qt, QUrl
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuickControls2 import QQuickStyle
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication
+
+from beacon.desk import seed_threads
+from beacon.desktop_controller import DesktopController, DesktopSettings
+
+db = Path(sys.argv[1])
+seed_threads(
+    db,
+    ({
+        "seed_key": "desktop:reply-hotkey",
+        "subject": "Reply without opening preview",
+        "kind": "question",
+        "priority": "normal",
+        "body": "Type a reply here.",
+    },),
+)
+QQuickStyle.setStyle("Fusion")
+app = QApplication(["beacon-reply-hotkey-test"])
+controller = DesktopController(DesktopSettings(db, Path(sys.argv[2])))
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("backend", controller)
+engine.rootContext().setContextProperty("previewMuted", True)
+qml = Path.cwd() / "beacon" / "qml" / "Main.qml"
+engine.load(QUrl.fromLocalFile(str(qml)))
+if not engine.rootObjects():
+    raise SystemExit(20)
+window = engine.rootObjects()[0]
+reply = window.findChild(QObject, "beaconReplyField")
+if reply is None:
+    raise SystemExit(21)
+
+def press_space_in_reply():
+    QMetaObject.invokeMethod(reply, "forceActiveFocus")
+    if not reply.property("activeFocus"):
+        app.exit(22)
+        return
+    QTest.keyClick(window, Qt.Key.Key_Space)
+    QTimer.singleShot(150, verify)
+
+def verify():
+    if window.property("previewOpen"):
+        app.exit(23)
+        return
+    app.exit(0 if reply.property("text") == " " else 24)
+
+QTimer.singleShot(250, press_space_in_reply)
 raise SystemExit(app.exec())
 """
             result = subprocess.run(

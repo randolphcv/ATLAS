@@ -9,6 +9,8 @@
 - **Runtime:** local NVMe state under `C:\ProgramData\ATLAS\Beacon`.
 - **Archive:** protected managed storage exposed through `J:\`.
 - **Desktop:** native Qt Quick observation and recovery interface.
+- **Beacon Desk:** durable local human/Beacon conversations and queue state;
+  never a file-operation interpreter.
 - **API:** optional localhost-only integration adapter.
 
 ## Phase 1 flow
@@ -29,7 +31,7 @@ semantics are deliberately decided.
 
 ## Desktop and API
 
-Beacon 0.4.1 is a foreground native Windows application built with Qt Quick/QML
+Beacon 0.7.0 is a foreground native Windows application built with Qt Quick/QML
 and Qt Multimedia.
 Python repository modules feed explicit Qt list models and properties; the
 desktop client reads catalog facts directly and never becomes a second metadata
@@ -41,6 +43,12 @@ can be opened in a modal temporary preview with Space. Images are fit to the
 window; audio and video are decoded locally with native Qt playback; unsupported
 formats receive a metadata-only safety view. Closing the preview stops playback.
 No preview action opens an editor or writes to the observed path.
+
+The Overview uses a master-detail Beacon Desk for persistent questions,
+approval requests, blockers, clarifications, and human-started requests. A
+plain-English reply is stored as a message and changes the thread to
+`queued_for_beacon`; it cannot directly authorize or execute a file operation.
+Beacon worker execution remains a separate, deliberate process.
 
 The default double-click launch always opens the live catalog at
 `C:\ProgramData\ATLAS\Beacon\beacon.db`. Custom and isolated use-test databases

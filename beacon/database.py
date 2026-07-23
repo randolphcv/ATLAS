@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 @dataclass(frozen=True)
@@ -141,6 +141,43 @@ def migrate(connection: sqlite3.Connection) -> None:
             ON analysis_results(asset_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_analysis_results_review_state
             ON analysis_results(review_state);
+        CREATE TABLE IF NOT EXISTS beacon_threads (
+            id TEXT PRIMARY KEY,
+            subject TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN (
+                'blocker', 'question', 'clarification', 'approval', 'request'
+            )),
+            priority TEXT NOT NULL CHECK(priority IN (
+                'normal', 'important', 'urgent'
+            )),
+            state TEXT NOT NULL CHECK(state IN (
+                'awaiting_human', 'queued_for_beacon', 'resolved', 'closed'
+            )),
+            origin TEXT NOT NULL CHECK(origin IN (
+                'beacon', 'human', 'system'
+            )),
+            requires_approval INTEGER NOT NULL DEFAULT 0
+                CHECK(requires_approval IN (0, 1)),
+            asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+            seed_key TEXT UNIQUE,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            resolved_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_beacon_threads_state_updated
+            ON beacon_threads(state, updated_at DESC);
+        CREATE TABLE IF NOT EXISTS beacon_messages (
+            id TEXT PRIMARY KEY,
+            thread_id TEXT NOT NULL
+                REFERENCES beacon_threads(id) ON DELETE CASCADE,
+            author TEXT NOT NULL CHECK(author IN (
+                'beacon', 'human', 'system'
+            )),
+            body TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_beacon_messages_thread_created
+            ON beacon_messages(thread_id, created_at);
         """
     )
     for version in range(1, SCHEMA_VERSION + 1):

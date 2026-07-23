@@ -26,6 +26,14 @@ from .database import (
     list_backups,
     migrate,
 )
+from .desk import (
+    create_human_thread,
+    desk_summary,
+    list_threads,
+    reply_to_thread,
+    resolve_thread,
+    thread_detail,
+)
 from .desktop_models import DictListModel
 from .repository import asset_detail, catalog_summary, recent_events, search_assets
 from .text_preview import read_text_preview
@@ -92,6 +100,8 @@ class DesktopController(QObject):
     busyChanged = Signal()
     statusChanged = Signal()
     lastRefreshChanged = Signal()
+    beaconDeskChanged = Signal()
+    selectedBeaconThreadChanged = Signal()
 
     def __init__(self, settings: DesktopSettings) -> None:
         super().__init__()
@@ -105,6 +115,8 @@ class DesktopController(QObject):
         self._status_message = ""
         self._status_kind = "neutral"
         self._last_refresh = ""
+        self._beacon_desk_summary: dict[str, Any] = {}
+        self._selected_beacon_thread: dict[str, Any] = {}
         self._last_catalog_signature: tuple[int, int, int, int] | None = None
         self._workers: list[_BackupWorker] = []
         self._thread_pool = QThreadPool(self)
@@ -139,6 +151,30 @@ class DesktopController(QObject):
         self._backups = DictListModel(
             ("name", "path", "sizeLabel", "timeLabel")
         )
+        self._beacon_threads = DictListModel(
+            (
+                "threadId",
+                "subject",
+                "kind",
+                "kindLabel",
+                "priority",
+                "state",
+                "stateLabel",
+                "preview",
+                "updatedLabel",
+                "requiresApproval",
+                "messageCount",
+            )
+        )
+        self._beacon_messages = DictListModel(
+            (
+                "messageId",
+                "author",
+                "authorLabel",
+                "body",
+                "timeLabel",
+            )
+        )
 
         self.settings.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.settings.backup_dir.mkdir(parents=True, exist_ok=True)
@@ -158,6 +194,14 @@ class DesktopController(QObject):
     def backups(self) -> QObject:
         return self._backups
 
+    @Property(QObject, constant=True)
+    def beaconThreads(self) -> QObject:
+        return self._beacon_threads
+
+    @Property(QObject, constant=True)
+    def beaconMessages(self) -> QObject:
+        return self._beacon_messages
+
     @Property("QVariantMap", notify=summaryChanged)
     def summary(self) -> dict[str, Any]:
         return self._summary
@@ -169,6 +213,14 @@ class DesktopController(QObject):
     @Property("QVariantMap", notify=selectedAssetChanged)
     def selectedAsset(self) -> dict[str, Any]:
         return self._selected_asset
+
+    @Property("QVariantMap", notify=beaconDeskChanged)
+    def beaconDeskSummary(self) -> dict[str, Any]:
+        return self._beacon_desk_summary
+
+    @Property("QVariantMap", notify=selectedBeaconThreadChanged)
+    def selectedBeaconThread(self) -> dict[str, Any]:
+        return self._selected_beacon_thread
 
     @Property(str, notify=currentViewChanged)
     def currentView(self) -> str:
@@ -258,6 +310,7 @@ class DesktopController(QObject):
             self._load_assets(preserve_selection=True)
             self._load_events()
             self._load_backups()
+            self._load_beacon_threads(preserve_selection=True)
             self._last_refresh = datetime.now().astimezone().strftime("%I:%M:%S %p")
             self._last_catalog_signature = self._catalog_signature()
             self.lastRefreshChanged.emit()
@@ -326,6 +379,160 @@ class DesktopController(QObject):
             }
             for backup in list_backups(self.settings.backup_dir)
         )
+
+    def _load_beacon_threads(self, *, preserve_selection: bool) -> None:
+        current_id = (
+            self._selected_beacon_thread.get("id") if preserve_selection else None
+        )
+        summary = desk_summary(self.settings.db_path)
+        self._beacon_desk_summary = {
+            **summary,
+            "openLabel": f"{summary['open']:,}",
+            "awaitingLabel": f"{summary['awaiting_human']:,}",
+            "queuedLabel": f"{summary['queued_for_beacon']:,}",
+            "connectionLabel": "SAVED LOCALLY",
+        }
+        rows = [self._beacon_thread_row(thread) for thread in list_threads(
+            self.settings.db_path
+        )]
+        self._beacon_threads.replace(rows)
+        available_ids = {row["threadId"] for row in rows}
+        if current_id in available_ids:
+            self._select_beacon_thread(str(current_id))
+        elif rows:
+            self._select_beacon_thread(rows[0]["threadId"])
+        else:
+            self._selected_beacon_thread = {}
+            self._beacon_messages.replace(())
+            self.selectedBeaconThreadChanged.emit()
+        self.beaconDeskChanged.emit()
+
+    @staticmethod
+    def _beacon_thread_row(thread: dict[str, Any]) -> dict[str, Any]:
+        state = str(thread.get("state") or "")
+        state_labels = {
+            "awaiting_human": "Waiting for you",
+            "queued_for_beacon": "Queued for Beacon",
+            "resolved": "Resolved",
+            "closed": "Closed",
+        }
+        kind = str(thread.get("kind") or "question")
+        preview = " ".join(str(thread.get("latest_message") or "").split())
+        return {
+            "threadId": thread["id"],
+            "subject": thread["subject"],
+            "kind": kind,
+            "kindLabel": kind.replace("_", " ").title(),
+            "priority": thread.get("priority") or "normal",
+            "state": state,
+            "stateLabel": state_labels.get(state, state.replace("_", " ").title()),
+            "preview": preview,
+            "updatedLabel": format_timestamp(thread.get("updated_at")),
+            "requiresApproval": bool(thread.get("requires_approval")),
+            "messageCount": int(thread.get("message_count") or 0),
+        }
+
+    @Slot(str)
+    def selectBeaconThread(self, thread_id: str) -> None:
+        self._select_beacon_thread(thread_id)
+
+    def _select_beacon_thread(self, thread_id: str) -> None:
+        detail = thread_detail(self.settings.db_path, thread_id)
+        if detail is None:
+            self._selected_beacon_thread = {}
+            self._beacon_messages.replace(())
+        else:
+            state = str(detail.get("state") or "")
+            state_labels = {
+                "awaiting_human": "WAITING FOR YOU",
+                "queued_for_beacon": "QUEUED FOR BEACON",
+                "resolved": "RESOLVED",
+                "closed": "CLOSED",
+            }
+            detail["kindLabel"] = str(
+                detail.get("kind") or "question"
+            ).replace("_", " ").title()
+            detail["stateLabel"] = state_labels.get(
+                state, state.replace("_", " ").upper()
+            )
+            detail["updatedLabel"] = format_timestamp(detail.get("updated_at"))
+            detail["requiresApproval"] = bool(
+                detail.get("requires_approval")
+            )
+            messages = detail.pop("messages", [])
+            self._selected_beacon_thread = detail
+            self._beacon_messages.replace(
+                {
+                    "messageId": message["id"],
+                    "author": message["author"],
+                    "authorLabel": (
+                        "YOU"
+                        if message["author"] == "human"
+                        else str(message["author"]).upper()
+                    ),
+                    "body": message["body"],
+                    "timeLabel": format_timestamp(message.get("created_at")),
+                }
+                for message in messages
+            )
+        self.selectedBeaconThreadChanged.emit()
+
+    @Slot(str, str)
+    def createBeaconThread(self, subject: str, body: str) -> None:
+        try:
+            thread_id = create_human_thread(
+                self.settings.db_path,
+                subject=subject,
+                body=body,
+            )
+            self._selected_beacon_thread = {"id": thread_id}
+            self._load_events()
+            self._load_beacon_threads(preserve_selection=True)
+            self._set_status(
+                "Request saved locally and queued for Beacon.", "success"
+            )
+        except (LookupError, ValueError) as error:
+            self._set_status(str(error), "error")
+        except Exception as error:
+            LOGGER.exception("could not create Beacon thread")
+            self._set_status(f"Could not save request: {error}", "error")
+
+    @Slot(str)
+    def replyToBeaconThread(self, body: str) -> None:
+        thread_id = str(self._selected_beacon_thread.get("id") or "")
+        if not thread_id:
+            self._set_status("Select a Beacon conversation first.", "error")
+            return
+        try:
+            reply_to_thread(self.settings.db_path, thread_id, body)
+            self._load_events()
+            self._load_beacon_threads(preserve_selection=True)
+            self._set_status(
+                "Reply saved locally and queued for Beacon. No file action was taken.",
+                "success",
+            )
+        except (LookupError, ValueError) as error:
+            self._set_status(str(error), "error")
+        except Exception as error:
+            LOGGER.exception("could not reply to Beacon thread")
+            self._set_status(f"Could not save reply: {error}", "error")
+
+    @Slot()
+    def resolveBeaconThread(self) -> None:
+        thread_id = str(self._selected_beacon_thread.get("id") or "")
+        if not thread_id:
+            self._set_status("Select a Beacon conversation first.", "error")
+            return
+        try:
+            resolve_thread(self.settings.db_path, thread_id)
+            self._load_events()
+            self._load_beacon_threads(preserve_selection=False)
+            self._set_status("Beacon conversation marked resolved.", "success")
+        except (LookupError, ValueError) as error:
+            self._set_status(str(error), "error")
+        except Exception as error:
+            LOGGER.exception("could not resolve Beacon thread")
+            self._set_status(f"Could not resolve conversation: {error}", "error")
 
     @staticmethod
     def _asset_row(asset: dict[str, Any]) -> dict[str, Any]:
