@@ -4,9 +4,11 @@ import hashlib
 import json
 import logging
 import sqlite3
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from .database import connect, migrate
@@ -109,7 +111,16 @@ def scan_directory(
     db_path: Path,
     stability_seconds: float = 2.0,
 ) -> tuple[list[CatalogResult], list[tuple[str, str]]]:
-    inbox = inbox.resolve(strict=True)
+    try:
+        inbox = inbox.resolve(strict=True)
+    except OSError as error:
+        message = f"inbox unavailable: {error}"
+        LOGGER.error("scan failed path=%s error=%s", inbox, message)
+        return [], [(str(inbox), message)]
+    if not inbox.is_dir():
+        message = "inbox is not a directory"
+        LOGGER.error("scan failed path=%s error=%s", inbox, message)
+        return [], [(str(inbox), message)]
     results: list[CatalogResult] = []
     errors: list[tuple[str, str]] = []
     for candidate in sorted(inbox.iterdir()):
@@ -122,3 +133,48 @@ def scan_directory(
             errors.append((str(candidate), str(error)))
     return results, errors
 
+
+def watch_directory(
+    inbox: Path,
+    db_path: Path,
+    stability_seconds: float = 2.0,
+    poll_seconds: float = 1.0,
+    max_cycles: int | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> tuple[int, int]:
+    """Watch a directory in the foreground and catalog new or changed files."""
+    seen: dict[str, tuple[int, int]] = {}
+    cataloged = 0
+    error_count = 0
+    cycles = 0
+    while max_cycles is None or cycles < max_cycles:
+        try:
+            resolved = inbox.resolve(strict=True)
+            if not resolved.is_dir():
+                raise NotADirectoryError(str(resolved))
+            candidates = sorted(resolved.iterdir())
+        except OSError as error:
+            error_count += 1
+            LOGGER.error("watch inbox unavailable path=%s error=%s", inbox, error)
+            candidates = []
+
+        for candidate in candidates:
+            if not candidate.is_file() or candidate.is_symlink():
+                continue
+            try:
+                stat = candidate.stat()
+                current = (stat.st_size, stat.st_mtime_ns)
+                if seen.get(str(candidate)) == current:
+                    continue
+                catalog_file(candidate, db_path, stability_seconds)
+                stable = candidate.stat()
+                seen[str(candidate)] = (stable.st_size, stable.st_mtime_ns)
+                cataloged += 1
+            except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
+                error_count += 1
+                LOGGER.exception("watch catalog failed path=%s", candidate)
+
+        cycles += 1
+        if max_cycles is None or cycles < max_cycles:
+            sleep(poll_seconds)
+    return cataloged, error_count

@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import sqlite3
+import subprocess
 import tempfile
 import unittest
+import wave
 from pathlib import Path
+from unittest.mock import patch
 
-from beacon.catalog import catalog_file, scan_directory
+from beacon.catalog import catalog_file, scan_directory, sha256_file, watch_directory
+from beacon.media import probe
 from beacon.stability import wait_until_stable
 
 
@@ -70,12 +76,113 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(result.st_size, 2)
         self.assertEqual(calls, 2)
 
+    def test_changed_during_hash_is_rejected_without_database_record(self) -> None:
+        source = self._write("changing.bin", b"before")
+
+        def hash_then_change(path: Path) -> str:
+            checksum = sha256_file(path)
+            path.write_bytes(b"after-content")
+            return checksum
+
+        with patch("beacon.catalog.sha256_file", side_effect=hash_then_change):
+            with self.assertRaisesRegex(RuntimeError, "changed while hashing"):
+                catalog_file(source, self.db, 0, include_media_probe=False)
+        self.assertFalse(self.db.exists())
+
+    def test_unavailable_inbox_returns_actionable_error(self) -> None:
+        missing = self.root / "unavailable"
+        with self.assertLogs("beacon.catalog", level="ERROR"):
+            results, errors = scan_directory(missing, self.db, 0)
+        self.assertEqual(results, [])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("inbox unavailable", errors[0][1])
+
+    def test_foreground_watcher_catalogs_synthetic_file(self) -> None:
+        source = self._write("noticed.txt", b"noticed by Beacon")
+        cataloged, errors = watch_directory(
+            self.inbox,
+            self.db,
+            stability_seconds=0,
+            poll_seconds=0,
+            max_cycles=2,
+            sleep=lambda _: None,
+        )
+        self.assertEqual(cataloged, 1)
+        self.assertEqual(errors, 0)
+        self.assertEqual(source.read_bytes(), b"noticed by Beacon")
+
     def test_scan_continues_after_individual_error(self) -> None:
-        source = self._write("valid.txt", b"valid")
-        results, errors = scan_directory(self.inbox, self.db, 0)
+        first = self._write("first.txt", b"first")
+        second = self._write("second.txt", b"second")
+        real_catalog = catalog_file
+
+        def fail_one(path: Path, *args: object, **kwargs: object):
+            if path.name == "first.txt":
+                raise OSError("synthetic read failure")
+            return real_catalog(path, *args, **kwargs)
+
+        with patch("beacon.catalog.catalog_file", side_effect=fail_one):
+            with self.assertLogs("beacon.catalog", level="ERROR"):
+                results, errors = scan_directory(self.inbox, self.db, 0)
         self.assertEqual(len(results), 1)
-        self.assertEqual(errors, [])
-        self.assertTrue(source.exists())
+        self.assertEqual(len(errors), 1)
+        self.assertIn("synthetic read failure", errors[0][1])
+        self.assertTrue(first.exists())
+        self.assertTrue(second.exists())
+
+    def test_ffprobe_timeout_becomes_retryable_metadata(self) -> None:
+        source = self._write("timeout.wav", b"synthetic")
+        with patch.dict(os.environ, {"BEACON_FFPROBE": "synthetic-ffprobe"}):
+            with patch(
+                "beacon.media.subprocess.run",
+                side_effect=subprocess.TimeoutExpired("ffprobe", 60),
+            ):
+                metadata = probe(source)
+        self.assertIsNotNone(metadata)
+        assert metadata is not None
+        self.assertIsNone(metadata["returncode"])
+        self.assertIn("timed out", metadata["error"])
+
+    @unittest.skipUnless(
+        os.environ.get("BEACON_FFPROBE"),
+        "set BEACON_FFPROBE to run the real media probe acceptance tests",
+    )
+    def test_ffprobe_extracts_generated_wave_metadata(self) -> None:
+        source = self.inbox / "silence.wav"
+        with wave.open(str(source), "wb") as stream:
+            stream.setnchannels(1)
+            stream.setsampwidth(2)
+            stream.setframerate(8_000)
+            stream.writeframes(b"\x00\x00" * 800)
+        metadata = probe(source)
+        self.assertIsNotNone(metadata)
+        assert metadata is not None
+        self.assertEqual(metadata["streams"][0]["codec_name"], "pcm_s16le")
+        result = catalog_file(source, self.db, 0)
+        with sqlite3.connect(self.db) as connection:
+            stored = connection.execute(
+                "SELECT media_metadata_json FROM assets WHERE id = ?",
+                (result.asset_id,),
+            ).fetchone()[0]
+        connection.close()
+        self.assertEqual(json.loads(stored)["streams"][0]["codec_name"], "pcm_s16le")
+
+    @unittest.skipUnless(
+        os.environ.get("BEACON_FFPROBE"),
+        "set BEACON_FFPROBE to run the real media probe acceptance tests",
+    )
+    def test_corrupt_media_is_cataloged_with_probe_error(self) -> None:
+        source = self._write("corrupt.wav", b"not a wave file")
+        result = catalog_file(source, self.db, 0)
+        with sqlite3.connect(self.db) as connection:
+            stored = connection.execute(
+                "SELECT media_metadata_json FROM assets WHERE id = ?",
+                (result.asset_id,),
+            ).fetchone()[0]
+        connection.close()
+        metadata = json.loads(stored)
+        self.assertNotEqual(metadata["returncode"], 0)
+        self.assertTrue(metadata["error"])
 
 
 if __name__ == "__main__":

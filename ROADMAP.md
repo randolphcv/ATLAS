@@ -1,6 +1,6 @@
 # ATLAS Roadmap
 
-## Now — dependable catalog
+## Completed — dependable synthetic catalog
 
 - synthetic read-only intake
 - stability detection
@@ -9,12 +9,14 @@
 - CLI and structured logs
 - unavailable/corrupt-path tests
 
-## Next — local dashboard and derivatives
+## Next — hardening and local dashboard
 
+- approve an exact non-production pilot scope
+- tune stability thresholds with representative copy patterns
+- database backup, restore, retention, and integrity checks
 - FastAPI adapter and browser UI
 - job history and visible processing states
 - thumbnails and proxies with recorded lineage
-- database backup/restore verification
 
 ## Later — intelligence and managed intake
 
@@ -22,4 +24,3 @@
 - approval-based organization
 - audited file operations
 - integrations and optional external model adapters
-

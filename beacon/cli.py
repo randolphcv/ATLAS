@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Sequence
 
-from .catalog import catalog_file, scan_directory
+from .catalog import catalog_file, scan_directory, watch_directory
 from .database import connect, migrate
 from .identity import atlas_uri
 
@@ -14,6 +14,7 @@ from .identity import atlas_uri
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="beacon")
     parser.add_argument("--log-level", default="INFO")
+    parser.add_argument("--log-file", type=Path)
     commands = parser.add_subparsers(dest="command", required=True)
 
     init = commands.add_parser("init")
@@ -29,6 +30,17 @@ def _parser() -> argparse.ArgumentParser:
     scan.add_argument("--db", type=Path, required=True)
     scan.add_argument("--stability-seconds", type=float, default=2.0)
 
+    watch = commands.add_parser("watch")
+    watch.add_argument("inbox", type=Path)
+    watch.add_argument("--db", type=Path, required=True)
+    watch.add_argument("--stability-seconds", type=float, default=2.0)
+    watch.add_argument("--poll-seconds", type=float, default=1.0)
+    watch.add_argument(
+        "--once",
+        action="store_true",
+        help="process one polling cycle and exit",
+    )
+
     listing = commands.add_parser("list")
     listing.add_argument("--db", type=Path, required=True)
 
@@ -40,9 +52,15 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if args.log_file:
+        args.log_file.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(args.log_file, encoding="utf-8"))
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        handlers=handlers,
+        force=True,
     )
     if args.command == "init":
         with connect(args.db) as connection:
@@ -58,6 +76,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.inbox, args.db, args.stability_seconds
         )
         print(json.dumps({"cataloged": len(results), "errors": errors}, indent=2))
+        return 1 if errors else 0
+    if args.command == "watch":
+        try:
+            cataloged, errors = watch_directory(
+                args.inbox,
+                args.db,
+                args.stability_seconds,
+                args.poll_seconds,
+                max_cycles=1 if args.once else None,
+            )
+        except KeyboardInterrupt:
+            print("watch stopped")
+            return 130
+        print(json.dumps({"cataloged": cataloged, "errors": errors}, indent=2))
         return 1 if errors else 0
 
     with connect(args.db) as connection:
@@ -95,4 +127,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

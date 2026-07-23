@@ -10,7 +10,7 @@
 
 ## Phase 1 flow
 
-1. Poll a configured sandbox inbox.
+1. Poll a configured sandbox inbox from an ordinary foreground process.
 2. Require matching size and modification time across stability observations.
 3. Stream SHA-256 without modifying the file.
 4. Derive a provisional UUIDv5 from the content hash.
@@ -27,4 +27,3 @@ semantics are deliberately decided.
 The scanner skips symlinks and non-files. It performs no move, rename, write, or
 delete operation against observed paths. SQLite foreign keys and unique
 constraints make retries idempotent.
-
