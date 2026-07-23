@@ -127,8 +127,9 @@ These are stable unless Connor explicitly changes them:
 ## Current Phase
 
 Phase 0, the Phase 1 synthetic read-only catalog, the Phase 2 local observatory
-foundation, and the Beacon 0.3.0 native desktop client are verified complete.
-Production-path indexing remains deliberately unapproved.
+foundation, the native desktop client, and the first controlled media use test
+are verified complete through Beacon 0.3.1. Production-path indexing remains
+deliberately unapproved.
 
 The first implementation target is a read-only vertical slice against synthetic fixtures:
 
@@ -164,6 +165,7 @@ The first implementation target is a read-only vertical slice against synthetic 
 | Windows build is a PyInstaller one-folder bundle | Decided for current builds | Easier diagnosis and no per-launch temporary extraction |
 | Database backups remain on local NVMe for now | Decided for Phase 2 | Verified recovery artifacts without treating same-pool copies as disaster recovery |
 | Portable Markdown documentation lives under `J:\System\Documentation\ATLAS\` | Decided | Keep the storage root limited to operational folders while retaining one discoverable context bundle |
+| Common raster images use explicit FFprobe handling | Decided in Beacon 0.3.1 | Preserve image kind and dimensions while suppressing meaningless single-frame duration |
 
 ## Decisions Still Open
 
@@ -201,6 +203,15 @@ Before declaring Phase 1 complete, retain evidence for:
 ## Durable Failure Notes
 
 Add entries only when a failure produces a reusable lesson:
+
+```text
+Date: 2026-07-23
+Symptom: JPEGs were cataloged safely but appeared as generic files without dimensions.
+Cause: The FFprobe allowlist covered audio/video extensions but not still images.
+Fix: Added explicit common-raster probing, an image-kind marker, and duration suppression.
+Verification: Controlled media copies, source/packaged UI review, and 19 passing tests.
+Prevention: Include representative real format copies in controlled tests before expanding scope.
+```
 
 ```text
 Date:
@@ -247,12 +258,12 @@ Next smallest step:
 ## Current Handoff
 
 Last verified: 2026-07-23 on the Windows ATLAS host  
-Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `7a21da2`  
-Current milestone: Beacon 0.3.0 native desktop client complete  
-Verified complete: schema version 2 read-only catalog; audit-event ledger; SQLite integrity/foreign-key health; verified online backups with atomic placement and SHA-256; native Qt Quick/QML Overview, Library, Operations, and System views; non-blocking desktop backup flow; optional loopback FastAPI adapter; windowed PyInstaller one-folder bundle and ZIP package  
+Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `6c08164`  
+Current milestone: Beacon 0.3.1 and controlled media Use Test 01 complete  
+Verified complete: five explicitly supplied test copies staged from ATLAS to an isolated NVMe run; source/destination SHA-256 equality; image/audio/video technical metadata; checksum duplicate recognition; three-pass restart/idempotency; healthy schema-2 database and verified local backup; native source and packaged UI review; side-by-side windowed PyInstaller release and ZIP package  
 In progress: none  
 Blocked: production pilot still requires an exact approved sandbox/path, privacy scope, and stability policy  
-Files changed: repository under `C:\Development\ATLAS`; Windows bundle under `C:\Development\ATLAS\dist\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; synthetic acceptance runtime under `C:\ProgramData\ATLAS\Beacon\acceptance-20260722-231828`; portable documentation under `J:\System\Documentation\ATLAS\`  
-Tests/live checks: Python compilation passed; 17/17 tests passed with real FFprobe; dependency check passed; source-rendered Overview/Library/System views reviewed; packaged executable smoke and screenshot modes passed; no listener on ports 8765/8766; desktop bundle contains no FastAPI/Uvicorn/Pydantic or Qt WebEngine files; executable SHA-256 `E061A2EDE6B69BF36CD0163A23BFDDC0C3F3EBFE978124E306F690064607706D`; package SHA-256 `3B37799CD081073A6980C6CCEA8B211981C5B46241D74E62EA1013598E63A430`  
+Files changed: repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.3.1\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; private use-test runtime/evidence under `C:\ProgramData\ATLAS\Beacon\use-tests\UseTest-01-20260723-004437`; portable documentation under `J:\System\Documentation\ATLAS\`  
+Tests/live checks: Python compilation passed; 19/19 tests passed with real FFprobe; five stable ATLAS sources and five local copies remained byte-identical; four asset rows, five locations, one duplicate group, zero failures; database and backup integrity passed; source and packaged native library views reviewed; packaged executable smoke passed; executable SHA-256 `B2B4F9865160A7E8475288796A7B4A93C22C6B3ABC8BD249CCF659EB0C54DD53`; package SHA-256 `291245159C6A9DCA238B3D3DFB933E2D75592925333C450719BA3D6B8118D209`  
 Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, real-world copy pause behavior, production stability thresholds, database restore/retention policy, and code-signing strategy  
-Next smallest step: add a tested database restore workflow and explicit long-running job records, then separately define a tiny non-production pilot scope before any real-media observation
+Next smallest step: promote the staged 0.3.1 release after the running older window is closed, then add thumbnails with recorded lineage and a tested database restore workflow
