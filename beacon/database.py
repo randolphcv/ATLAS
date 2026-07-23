@@ -47,6 +47,14 @@ def connect(path: Path) -> Iterator[sqlite3.Connection]:
 
 
 def migrate(connection: sqlite3.Connection) -> None:
+    try:
+        existing_version = int(
+            connection.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_version"
+            ).fetchone()[0]
+        )
+    except sqlite3.OperationalError:
+        existing_version = 0
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS schema_version (
@@ -323,29 +331,30 @@ def migrate(connection: sqlite3.Connection) -> None:
             ON local_analysis_items(job_id, state, asset_id);
         """
     )
-    now = _utc_now()
-    for row in connection.execute(
-        """
-        SELECT asset_id,metadata_json,updated_by FROM asset_metadata
-        WHERE lower(updated_by) != 'beacon local analyzer'
-        """
-    ):
-        try:
-            stored = json.loads(row["metadata_json"])
-        except (TypeError, json.JSONDecodeError):
-            continue
-        connection.executemany(
+    if existing_version < 9:
+        now = _utc_now()
+        for row in connection.execute(
             """
-            INSERT OR IGNORE INTO asset_metadata_field_authority(
-                asset_id,field,authority,source_reference,updated_at
-            ) VALUES (?, ?, 'human', 'schema-9-backfill', ?)
-            """,
-            (
-                (row["asset_id"], field, now)
-                for field, value in stored.items()
-                if value not in (None, "", [])
-            ),
-        )
+            SELECT asset_id,metadata_json,updated_by FROM asset_metadata
+            WHERE lower(updated_by) != 'beacon local analyzer'
+            """
+        ):
+            try:
+                stored = json.loads(row["metadata_json"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            connection.executemany(
+                """
+                INSERT OR IGNORE INTO asset_metadata_field_authority(
+                    asset_id,field,authority,source_reference,updated_at
+                ) VALUES (?, ?, 'human', 'schema-9-backfill', ?)
+                """,
+                (
+                    (row["asset_id"], field, now)
+                    for field, value in stored.items()
+                    if value not in (None, "", [])
+                ),
+            )
     for version in range(1, SCHEMA_VERSION + 1):
         connection.execute(
             "INSERT OR IGNORE INTO schema_version(version) VALUES (?)",

@@ -12,6 +12,7 @@ from beacon.local_analysis import (
     create_local_analysis_job,
     list_local_analysis_jobs,
     recover_local_analysis_jobs,
+    retry_local_analysis_failures,
     request_local_analysis_cancel,
     run_local_analysis_job,
 )
@@ -212,3 +213,23 @@ class LocalAnalysisJobTests(unittest.TestCase):
             )
         finally:
             connection.close()
+
+    def test_failed_items_can_retry_in_the_same_job(self) -> None:
+        calls = 0
+
+        def fail_once(endpoint: str, model: str, asset: dict[str, object]) -> dict:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("bounded fixture failure")
+            return self._analyzer(endpoint, model, asset)
+
+        job_id = create_local_analysis_job(self.db, model="fixture-model")
+        first = run_local_analysis_job(self.db, job_id, analyzer=fail_once)
+        self.assertEqual(first.state, "partial")
+        self.assertEqual(retry_local_analysis_failures(self.db, job_id), 1)
+        second = run_local_analysis_job(
+            self.db, job_id, analyzer=self._analyzer
+        )
+        self.assertEqual(second.state, "complete")
+        self.assertEqual(second.completed, 2)

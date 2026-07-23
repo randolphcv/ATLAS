@@ -305,6 +305,37 @@ def recover_local_analysis_jobs(db_path: Path) -> int:
         return len(jobs)
 
 
+def retry_local_analysis_failures(db_path: Path, job_id: str) -> int:
+    """Return failed items to pending without replacing the durable job."""
+    with connect(db_path) as connection:
+        migrate(connection)
+        job = connection.execute(
+            "SELECT state FROM local_analysis_jobs WHERE id=?", (job_id,)
+        ).fetchone()
+        if job is None:
+            raise LookupError("analysis job not found")
+        if job["state"] == "running":
+            raise ValueError("wait for analysis to stop before retrying failures")
+        cursor = connection.execute(
+            """
+            UPDATE local_analysis_items
+            SET state='pending',error=NULL,started_at=NULL,completed_at=NULL
+            WHERE job_id=? AND state='failed'
+            """,
+            (job_id,),
+        )
+        connection.execute(
+            """
+            UPDATE local_analysis_jobs
+            SET state='paused',cancel_requested=0,current_asset_id=NULL,
+                completed_at=NULL,updated_at=?,error=NULL
+            WHERE id=?
+            """,
+            (_utc_now(), job_id),
+        )
+        return int(cursor.rowcount)
+
+
 def _default_analyzer(
     endpoint: str, model: str, asset: dict[str, Any]
 ) -> dict[str, Any]:
@@ -323,7 +354,11 @@ def _default_analyzer(
         "asking for approval; analysis itself must never move or alter an original."
     )
     stock_properties = {
-        key: {"type": "array", "items": {"type": "string"}}
+        key: {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 20,
+        }
         for key in (
             "people", "apparent_age_groups", "apparent_gender_presentations",
             "facial_expressions", "actions", "wardrobe", "setting",
@@ -339,7 +374,11 @@ def _default_analyzer(
             "title": {"type": "string"},
             "description": {"type": "string"},
             "media_category": {"type": "string"},
-            "tags": {"type": "array", "items": {"type": "string"}},
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "maxItems": 100,
+            },
             "privacy_flags": {"type": "array", "items": {"type": "string"}},
             "organization_suggestion": {"type": "string"},
             "stock_metadata": {
@@ -381,7 +420,7 @@ def _default_analyzer(
                 "messages": [{"role": "system", "content": prompt}, message],
                 "format": schema,
                 "stream": False,
-                "options": {"temperature": 0},
+                "options": {"temperature": 0, "num_predict": 4096},
             },
             timeout=600,
         )
@@ -426,12 +465,22 @@ def _transcribe_audio(source: Path) -> dict[str, Any]:
         str(source), beam_size=5, vad_filter=True, word_timestamps=False
     )
     text = " ".join(segment.text.strip() for segment in segments if segment.text.strip())
+    if len(text) > 8000:
+        third = 2600
+        middle = max(0, (len(text) - third) // 2)
+        text = (
+            text[:third]
+            + "\n[...middle excerpt...]\n"
+            + text[middle:middle + third]
+            + "\n[...ending excerpt...]\n"
+            + text[-third:]
+        )
     return {
         "status": "complete",
         "language": getattr(info, "language", ""),
         "language_probability": getattr(info, "language_probability", None),
-        "transcript": text[:24000],
-        "truncated": len(text) > 24000,
+        "transcript": text,
+        "excerpted": "[...middle excerpt...]" in text,
     }
 
 
@@ -453,6 +502,7 @@ def _prepare_media_context(
     executable = os.environ.get("BEACON_FFMPEG") or shutil.which("ffmpeg")
     temp_root = Path(tempfile.mkdtemp(prefix="beacon-analysis-"))
     if executable and "video" in kinds:
+        images.clear()
         duration = _duration_seconds(metadata)
         times = (
             [duration * fraction for fraction in (0.08, 0.25, 0.42, 0.59, 0.76, 0.92)]
@@ -629,13 +679,26 @@ def run_local_analysis_job(
         ).fetchone())
         completed_rows = connection.execute(
             """
-            SELECT id,result_json FROM local_analysis_items
+            SELECT id,asset_id,result_json FROM local_analysis_items
             WHERE job_id=? AND state='complete' ORDER BY asset_id
             """,
             (job_id,),
         ).fetchall()
+        already_imported = {
+            row["asset_id"]
+            for row in connection.execute(
+                """
+                SELECT results.asset_id,runs.scope_json
+                FROM analysis_results results
+                JOIN analysis_runs runs ON runs.id=results.run_id
+                """
+            )
+            if json.loads(row["scope_json"] or "{}").get("job_id") == job_id
+        }
         results = []
         for row in completed_rows:
+            if row["asset_id"] in already_imported:
+                continue
             candidate = json.loads(row["result_json"])
             confidence, normalization_note = _normalize_confidence(
                 candidate.get("confidence")
