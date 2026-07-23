@@ -29,7 +29,7 @@ semantics are deliberately decided.
 
 ## Desktop and API
 
-Beacon 0.4.0 is a foreground native Windows application built with Qt Quick/QML
+Beacon 0.4.1 is a foreground native Windows application built with Qt Quick/QML
 and Qt Multimedia.
 Python repository modules feed explicit Qt list models and properties; the
 desktop client reads catalog facts directly and never becomes a second metadata
@@ -41,6 +41,13 @@ can be opened in a modal temporary preview with Space. Images are fit to the
 window; audio and video are decoded locally with native Qt playback; unsupported
 formats receive a metadata-only safety view. Closing the preview stops playback.
 No preview action opens an editor or writes to the observed path.
+
+The default double-click launch always opens the live catalog at
+`C:\ProgramData\ATLAS\Beacon\beacon.db`. Custom and isolated use-test databases
+must be supplied explicitly. The Library labels the active context as Live,
+Isolated, or Custom and watches the database/WAL signature so externally
+committed catalog updates appear without making a full integrity pass on every
+timer tick.
 
 The desktop application starts no web server, opens no browser, and listens on
 no port. A separate FastAPI adapter remains available for local integrations

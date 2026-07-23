@@ -38,7 +38,9 @@
 - schema-backed image/video/audio thumbnails with recorded source lineage
 - native Space preview with image fit, audio waveform/playback, video playback,
   and a safe metadata fallback
-- source and packaged Beacon 0.4.0 preview states visually verified
+- exact default-launch Beacon 0.4.1 library and preview states visually verified
+- isolated use-test media promoted to the live catalog only after a verified
+  default-database backup
 
 ## Next — recovery and pilot hardening
 

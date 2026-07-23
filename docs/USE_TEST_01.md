@@ -39,11 +39,11 @@ images. Beacon 0.3.1 adds explicit JPEG, PNG, TIFF, GIF, BMP, and WebP probing,
 preserves the `image` kind, and suppresses FFprobe's meaningless single-frame
 duration. Two automated tests cover the correction.
 
-The complete suite now passes 20 tests with real FFprobe and FFmpeg enabled.
+The complete suite now passes 22 tests with real FFprobe and FFmpeg enabled.
 
 ## Native application verification
 
-The source client and the frozen Beacon 0.4.0 executable were both rendered
+The source client and the frozen Beacon 0.4.1 executable were both rendered
 against the use-test database. The library correctly showed image, video, and
 audio technical metadata, displayed all four unique thumbnails, and exposed
 both locations for the renamed duplicate.
@@ -54,31 +54,38 @@ visual checks used muted playback; ordinary interactive playback remains
 enabled. The fallback path for other file types exposes metadata without
 opening the source in an editor.
 
+The initial standalone launch exposed that UseTest-01 was still intentionally
+isolated from Beacon's live database. No media or catalog records were lost.
+After a verified live-database backup, the five approved NVMe locations were
+cataloged into the live database. The exact no-argument packaged launch then
+showed five total assets: four unique media assets plus the synthetic note. The
+Library now labels that context **Live catalog**.
+
 Private screenshots and detailed filenames remain only in the isolated runtime
 evidence folder; they are intentionally excluded from Git.
 
 Release executable:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.4.0\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.4.1\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 Release package:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.4.0-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.4.1-win64.zip
 ```
 
 Executable SHA-256:
 
 ```text
-426D7DC8DE87685F7436AB1D246833BC7E7C5C2B29AB58F08700880B97FD2570
+914F42EF383B4F1B738986BB0F06FB29AC4241B9D043B8D7A6B5D7CFF352DAA5
 ```
 
 Package SHA-256:
 
 ```text
-0F38CFA8CA75C5B17CC37DC21484DA3F1ABD7D6B935A28A44F000239D49BEB2F
+B0E0F961BD4D3D5CEE22FD7D668D2F1D2E715691BE9F8800010895ED995A0018
 ```
 
 The private development build remains unsigned.

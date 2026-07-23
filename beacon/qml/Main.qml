@@ -205,6 +205,12 @@ ApplicationWindow {
         sequence: "Ctrl+R"
         onActivated: backend.refresh()
     }
+    Timer {
+        interval: 5000
+        running: root.visible
+        repeat: true
+        onTriggered: backend.refreshIfChanged()
+    }
     Shortcut {
         sequence: "Ctrl+F"
         onActivated: {
@@ -1027,7 +1033,10 @@ ApplicationWindow {
                                         PanelTitle { eyebrow: "Permanent record"; title: "Asset library" }
                                         Item { Layout.fillWidth: true }
                                         Text {
-                                            text: (backend.summary.assetsLabel || "0") + " ASSETS"
+                                            text: (backend.catalogLabel || "Catalog").toUpperCase()
+                                                  + "  ·  "
+                                                  + (backend.summary.assetsLabel || "0")
+                                                  + " ASSETS"
                                             color: root.muted
                                             font.pixelSize: 9
                                             font.letterSpacing: 1.0
@@ -1172,12 +1181,13 @@ ApplicationWindow {
                                 color: root.panel
                                 border.color: root.line
                                 ScrollView {
+                                    id: assetDetailScroll
                                     anchors.fill: parent
                                     anchors.margins: 1
                                     clip: true
                                     contentWidth: availableWidth
                                     ColumnLayout {
-                                        width: parent.width
+                                        width: assetDetailScroll.availableWidth
                                         spacing: 0
                                         visible: backend.selectedAsset.id !== undefined
                                         Rectangle {
@@ -1233,17 +1243,17 @@ ApplicationWindow {
                                                 RowLayout {
                                                     spacing: 8
                                                     PrimaryButton {
-                                                        text: "Copy ATLAS ID"
+                                                        text: "Copy ID"
                                                         quiet: true
                                                         onClicked: backend.copyText(backend.selectedAsset.atlas_uri || "")
                                                     }
                                                     PrimaryButton {
-                                                        text: "Show location"
+                                                        text: "Location"
                                                         quiet: true
                                                         onClicked: backend.openFolder(backend.selectedAsset.primary_path || "")
                                                     }
                                                     PrimaryButton {
-                                                        text: "Preview  ·  Space"
+                                                        text: "Preview"
                                                         onClicked: root.openSelectedPreview()
                                                     }
                                                 }
@@ -1271,7 +1281,7 @@ ApplicationWindow {
                                             Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
                                             GridLayout {
                                                 Layout.fillWidth: true
-                                                columns: 2
+                                                columns: width >= 560 ? 2 : 1
                                                 columnSpacing: 24
                                                 rowSpacing: 12
                                                 DetailLine { Layout.fillWidth: true; label: "Type"; value: backend.selectedAsset.kindLabel || "File" }

@@ -36,6 +36,7 @@ LOGGER = logging.getLogger("beacon.desktop")
 class DesktopSettings:
     db_path: Path
     backup_dir: Path
+    catalog_label: str = "Custom catalog"
 
 
 def format_bytes(value: int | None) -> str:
@@ -103,6 +104,7 @@ class DesktopController(QObject):
         self._status_message = ""
         self._status_kind = "neutral"
         self._last_refresh = ""
+        self._last_catalog_signature: tuple[int, int, int, int] | None = None
         self._workers: list[_BackupWorker] = []
         self._thread_pool = QThreadPool(self)
         self._thread_pool.setMaxThreadCount(1)
@@ -200,6 +202,10 @@ class DesktopController(QObject):
         return str(self.settings.backup_dir)
 
     @Property(str, constant=True)
+    def catalogLabel(self) -> str:
+        return self.settings.catalog_label
+
+    @Property(str, constant=True)
     def applicationVersion(self) -> str:
         return __version__
 
@@ -252,10 +258,28 @@ class DesktopController(QObject):
             self._load_events()
             self._load_backups()
             self._last_refresh = datetime.now().astimezone().strftime("%I:%M:%S %p")
+            self._last_catalog_signature = self._catalog_signature()
             self.lastRefreshChanged.emit()
         except Exception as error:
             LOGGER.exception("desktop refresh failed")
             self._set_status(f"Could not refresh Beacon: {error}", "error")
+
+    def _catalog_signature(self) -> tuple[int, int, int, int]:
+        database = self.settings.db_path
+        wal = Path(f"{database}-wal")
+        database_stat = database.stat() if database.exists() else None
+        wal_stat = wal.stat() if wal.exists() else None
+        return (
+            database_stat.st_mtime_ns if database_stat else 0,
+            database_stat.st_size if database_stat else 0,
+            wal_stat.st_mtime_ns if wal_stat else 0,
+            wal_stat.st_size if wal_stat else 0,
+        )
+
+    @Slot()
+    def refreshIfChanged(self) -> None:
+        if self._catalog_signature() != self._last_catalog_signature:
+            self.refresh()
 
     def _load_assets(self, *, preserve_selection: bool) -> None:
         current_id = self._selected_asset.get("id") if preserve_selection else None

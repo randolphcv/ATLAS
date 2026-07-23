@@ -39,11 +39,16 @@ Run from source:
 Or double-click:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.4.0\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.4.1\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 The desktop app has its own Windows window. It does not open a browser, start a
 server, or listen on a port. Closing the window stops it.
+
+A normal double-click opens the **Live catalog** at
+`C:\ProgramData\ATLAS\Beacon\beacon.db`. An explicitly supplied `--db` path is
+visibly labeled **Isolated use test** or **Custom catalog**. Beacon checks for
+database/WAL changes every five seconds and refreshes only after a change.
 
 In Library, select an asset and press Space or click **Preview**. Image, audio,
 and video previews stay inside Beacon. Press Space or Escape to close; playback

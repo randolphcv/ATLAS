@@ -23,6 +23,15 @@ DEFAULT_RUNTIME = (
 )
 
 
+def _catalog_label(path: Path) -> str:
+    resolved = path.resolve()
+    if resolved == (DEFAULT_RUNTIME / "beacon.db").resolve():
+        return "Live catalog"
+    if "use-tests" in {part.lower() for part in resolved.parts}:
+        return "Isolated use test"
+    return "Custom catalog"
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="beacon-desktop")
     parser.add_argument(
@@ -124,6 +133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         DesktopSettings(
             db_path=args.db.resolve(),
             backup_dir=args.backup_dir.resolve(),
+            catalog_label=_catalog_label(args.db),
         )
     )
     app.aboutToQuit.connect(controller.shutdown)

@@ -30,3 +30,12 @@
   3D, charting, PDF, and virtual-keyboard capabilities.
 - Verified Beacon 0.4.0 source and frozen previews against the isolated
   UseTest-01 copies while retaining byte-identical ATLAS sources.
+- Corrected the standalone-launch catalog mismatch exposed after 0.4.0:
+  verified media had remained in the isolated use-test database while the
+  double-clickable app correctly opened its separate live database.
+- Backed up the live catalog, cataloged the approved NVMe copies into it, and
+  verified the exact no-argument packaged launch shows all expected assets.
+- Added explicit Live/Isolated/Custom catalog labels and lightweight automatic
+  refresh when the SQLite database or WAL changes.
+- Added regression coverage for catalog labeling and externally written catalog
+  updates, bringing the suite to 22 tests.

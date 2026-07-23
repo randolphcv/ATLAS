@@ -13,6 +13,7 @@ os.environ.setdefault("QT_QUICK_BACKEND", "software")
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
 
 from beacon.catalog import catalog_file
+from beacon.desktop import DEFAULT_RUNTIME, _catalog_label
 from beacon.desktop_controller import DesktopController, DesktopSettings
 
 
@@ -60,6 +61,7 @@ class DesktopControllerTests(unittest.TestCase):
         )
         self.assertEqual(self.controller.summary["assets"], 1)
         self.assertEqual(self.controller.databaseHealth["state"], "healthy")
+        self.assertEqual(self.controller.catalogLabel, "Custom catalog")
 
         self.controller.setSearchQuery("does-not-exist")
         self.assertEqual(self.controller.assets.rowCount(), 0)
@@ -67,6 +69,31 @@ class DesktopControllerTests(unittest.TestCase):
 
         self.controller.setSearchQuery("native")
         self.assertEqual(self.controller.assets.rowCount(), 1)
+
+    def test_catalog_context_is_explicit(self) -> None:
+        self.assertEqual(
+            _catalog_label(DEFAULT_RUNTIME / "beacon.db"),
+            "Live catalog",
+        )
+        self.assertEqual(
+            _catalog_label(
+                self.root / "use-tests" / "UseTest-01" / "beacon.db"
+            ),
+            "Isolated use test",
+        )
+
+    def test_external_catalog_changes_refresh_automatically(self) -> None:
+        second = self.source.parent / "second-signal.txt"
+        second.write_bytes(b"second synthetic native desktop signal")
+        catalog_file(
+            second,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+        )
+        self.assertEqual(self.controller.assets.rowCount(), 1)
+        self.controller.refreshIfChanged()
+        self.assertEqual(self.controller.assets.rowCount(), 2)
 
     def test_verified_backup_runs_without_blocking_the_controller(self) -> None:
         loop = QEventLoop()
