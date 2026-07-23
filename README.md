@@ -20,7 +20,7 @@ Beacon 0.11.0 is a native Windows desktop application. It includes:
   suggestions;
 - catalog search across candidate titles, descriptions, and tags without
   merging AI output into verified technical facts;
-- a local-only **Analyze catalog** dialog with durable schema-9 jobs, explicit
+- a local-only **Analyze catalog** dialog with durable schema-10 jobs, explicit
   runtime/model readiness, and no silent cloud fallback;
 - a durable **Beacon Desk** on Overview for questions, approval requests,
   blockers, clarifications, plain-English replies, and new human requests;
@@ -42,6 +42,11 @@ Beacon 0.11.0 is a native Windows desktop application. It includes:
 - non-blocking verified local database backups with SHA-256;
 - a windowed, icon-branded Windows application bundle;
 - an optional localhost FastAPI adapter for integrations and development.
+
+Development-environment names are deliberately separate from the product:
+**Ultron** is Codex on the Windows ATLAS workstation, **Jarvis** is Codex on
+Connor's MacBook, and **Beacon** remains the ATLAS application and future
+persistent librarian agent.
 
 No cloud service, watcher against `J:\`, or Windows service is enabled. The API
 is not started by the desktop application.

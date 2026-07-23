@@ -1,7 +1,24 @@
 # ATLAS — Connor Context and Product Direction
 
 Updated: 2026-07-22  
-Purpose: portable context for Codex sessions on the Windows ATLAS host
+Purpose: portable context for **Ultron**, the Codex environment on the Windows
+ATLAS workstation. The separate MacBook Codex environment is **Jarvis**.
+
+## Codex Environment Identity
+
+- **Ultron**: Codex running locally on the Windows ATLAS workstation. This
+  repository, the Beacon runtime, Ollama, Qwen, faster-whisper, the live SQLite
+  catalog, and `J:\` operations are currently local to Ultron's machine.
+- **Jarvis**: Codex running on Connor's MacBook. Jarvis may work through the
+  SMB share or a separate repository/session and must verify Windows runtime
+  state rather than assuming it.
+- **Beacon**: the ATLAS librarian application and future persistent local
+  agent. Beacon is not another name for Ultron and is not currently a spawned
+  Codex subagent.
+
+Connor will address the Windows Codex as Ultron and the MacBook Codex as
+Jarvis. The current Windows hostname remains `DESKTOP-8B4OJIR`; a rename to
+`Ultron` is pending a later restart and must be verified afterward.
 
 This document captures the working preferences and design language that should remain consistent as ATLAS evolves. It is a curated guide, not a transcript archive and not permission to expand scope.
 

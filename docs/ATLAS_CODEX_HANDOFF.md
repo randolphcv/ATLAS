@@ -9,8 +9,18 @@ ATLAS is a modular, long-term media storage and intelligence platform designed t
 
 **Beacon** is the AI librarian inside ATLAS. Beacon observes, analyzes, indexes, organizes, and retrieves files without owning or modifying the originals.
 
-> Current implementation note (2026-07-23): Beacon 0.9.0 is a packaged native
-> Windows app, not a browser-first dashboard. Schema 7 adds explicit recursive
+### Environment names
+
+- **Ultron** is Codex on the Windows ATLAS workstation.
+- **Jarvis** is Codex on Connor's MacBook.
+- **Beacon** is the product/runtime and future persistent local agent, not a
+  Codex subagent and not another name for Ultron.
+
+The Windows hostname was still `DESKTOP-8B4OJIR` when verified on 2026-07-23.
+Connor intends to rename it to `Ultron`, effective only after a later restart.
+
+> Current implementation note (2026-07-23): Beacon 0.11.0 is a packaged native
+> Windows app, not a browser-first dashboard. Schema 10 adds explicit recursive
 > Archive Intake snapshots, durable item-level progress, cancel-between-files,
 > resume, retry-only-failures, and interrupted-session recovery. Intake remains
 > catalog-only and never triggers a managed move. Beacon Desk, revisioned
@@ -20,9 +30,10 @@ ATLAS is a modular, long-term media storage and intelligence platform designed t
 
 ## Immediate Next Task
 
-Run the bounded 25-file live-Inbox reliability pilot described in
-`LIVE_INBOX_HANDOFF.md`. Do not leave the item-limit field blank, begin AI
-analysis, or expand to the remaining Inbox during that first task.
+Let the active bounded 30-asset local reanalysis finish, reconcile candidates
+and editable metadata, and preserve the durable job. The next performance
+improvement is a verified transcript derivative/cache so unchanged audio is
+not retranscribed on later metadata-only passes.
 
 ---
 

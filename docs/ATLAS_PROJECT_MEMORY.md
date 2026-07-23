@@ -22,12 +22,24 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
 
 Jarvis and Ultron are conversational handles for distinct Codex environments. Beacon remains the technical product/module name. Do not rename code, services, packages, paths, databases, schemas, or APIs from Beacon to Ultron unless Connor explicitly requests that separate technical change.
 
+- Current Windows hostname verified on 2026-07-23: `DESKTOP-8B4OJIR`.
+- Connor has requested the Windows hostname `Ultron`; the rename is pending a
+  Windows restart later on 2026-07-23. Do not record it as completed until
+  `$env:COMPUTERNAME` verifies the new value after restart.
+
 ### Windows and Storage
 
 - Host is a Windows desktop with an Intel Core i9, 64 GB RAM, and an MSI Tomahawk motherboard.
 - An NVIDIA GeForce RTX 3060 with 12,288 MiB VRAM and driver 610.74 was
   observed through `nvidia-smi` on 2026-07-23; re-check before selecting or
   benchmarking local models.
+- Local-analysis measurement on 2026-07-23 showed audio transcription as the
+  dominant cost: 11 completed audio items consumed about 43.5 processing
+  minutes (4.0 minutes average), versus about 1 minute for three videos.
+  Qwen occupied about 9.9 GiB of 12 GiB VRAM while faster-whisper ran CPU
+  INT8. The workstation's 64 GB system RAM provides headroom for model caches,
+  transcript/derivative caching, and staged pipelines, but does not by itself
+  replace CPU/GPU compute throughput.
 - ATLAS uses StableBit DrivePool.
 - Reported pooled drive: `J:\`
 - Reported raw usable capacity: approximately 15.5 TB.
@@ -327,12 +339,12 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-23 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, branch `main`; Beacon 0.10.0 local-analysis work is present but not committed
-- Current milestone: bounded live-Inbox reliability pilot passed; packaged local-only contextual analysis is ready for the human Start action
-- Verified complete: prior Desk, analysis-candidate, editable-metadata, and managed-move work; schema-7 deterministic recursive snapshots; item-level progress and attempts; changed-source rejection; cancel, pause, resume, failure-only retry, and interrupted-session recovery; native Overview master-detail intake controls; packaged Beacon 0.9.0 release
-- In progress: no intake or analysis job is running; 25 live-Inbox assets are ready for the first local-only analysis job
-- Blocked: nothing blocks the bounded 25-file pilot; full-corpus expansion remains gated on pilot verification, and asset-specific destinations still require verified or editable context
-- Files changed: merged repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.9.0\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; verified pre-schema-7 recovery copy under `C:\ProgramData\ATLAS\Beacon\backups`; portable documentation under `J:\System\Documentation\ATLAS\`
-- Tests/live checks: Python compilation and 52/52 tests passed with real FFprobe and FFmpeg; exact packaged 0.9.0 rendered a complete three-file nested synthetic intake with source hashes unchanged; synthetic database healthy at schema 7 with zero foreign-key errors; bundle contains 1,748 files and 178,196,704 bytes with zero blocked capabilities; executable SHA-256 `1BC9B4E5376537FC46B0DBC714ED6DC3A50D3E059F74F3800EFFE5C81BE262FB`; package SHA-256 `A2905C2AFAC3D129E63927E8E61DFD178D8179C1C306F870D751AB2F77D4F790`; first packaged 0.9.0 launch migrated the live database cleanly to healthy schema 7 with zero intake jobs; verified pre-schema-7 backup `beacon-pre-schema7-20260723T192234.940229Z.db` SHA-256 `f66387248420bb7c3b2b1ff4d7e9a0b5c8cc8ee3358c05921dbd08fec614ca57`
-- Unverified assumptions: current post-transfer Inbox stability, physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, production throughput, database restore/retention policy, code-signing strategy, local model choices and measured RTX 3060 throughput, external-model cost/authorization, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
-- Next smallest step: in packaged Beacon 0.10.0, review the Analyze Catalog dialog and choose Start local analysis for the 25 unanalyzed assets; then compare candidate quality with the initial five-asset external-assisted pilot
+- Working branch/commit: `C:\Development\ATLAS`, branch `feature/multimodal-analysis-v1`; verified feature history includes `7ab00c2`
+- Current milestone: Beacon 0.11 local multimodal reanalysis of the existing 30-asset catalog is running under a durable process-owned worker
+- Verified complete: bounded 25-file live Inbox reliability pilot; local Ollama/Qwen visual analysis; local faster-whisper transcription and spectrogram context; schema-10 durable jobs, retry-in-place, worker ownership, human-field protection, and native intake plus analysis progress bars
+- In progress: job `92b51ab9-51d4-4ab6-a0ae-c0ee595e89bf` is reanalyzing the same 30 catalog assets; 18 were reported complete by Connor during the latest exchange
+- Blocked: no current blocker; long audio transcription is expected to dominate first-pass elapsed time
+- Files changed: source under `C:\Development\ATLAS`; packaged build under `C:\Development\ATLAS\dist\releases\0.11.0\ATLAS Beacon`; local Whisper model under `C:\ProgramData\ATLAS\Beacon\models\whisper`
+- Tests/live checks: 59-test full suite passed before schema-10 worker ownership; subsequent focused local-analysis and desktop suites passed 21 tests; packaged native UI screenshot verified a visible running analysis bar; live SQLite integrity and foreign keys remained clean
+- Unverified assumptions: post-restart Windows hostname, physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, code signing, ideal Whisper CPU/GPU staging, transcript derivative retention, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
+- Next smallest step: let the current 30-asset job finish, reconcile results and failures, then design persistent transcript derivatives so unchanged audio is not retranscribed during later metadata-only reanalysis
