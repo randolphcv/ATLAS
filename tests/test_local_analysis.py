@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ from beacon.local_analysis import (
     retry_local_analysis_failures,
     request_local_analysis_cancel,
     run_local_analysis_job,
+    _process_is_alive,
 )
 
 
@@ -41,6 +43,10 @@ class LocalAnalysisJobTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp.cleanup()
+
+    def test_worker_liveness_detects_current_and_missing_processes(self) -> None:
+        self.assertTrue(_process_is_alive(os.getpid()))
+        self.assertFalse(_process_is_alive(2_147_483_647))
 
     @staticmethod
     def _analyzer(endpoint: str, model: str, asset: dict[str, object]) -> dict:

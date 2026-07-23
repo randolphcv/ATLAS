@@ -314,6 +314,26 @@ def _process_is_alive(value: object) -> bool:
         pid = int(value or 0)
         if pid <= 0:
             return False
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            process = ctypes.windll.kernel32.OpenProcess(
+                0x1000,  # PROCESS_QUERY_LIMITED_INFORMATION
+                False,
+                pid,
+            )
+            if not process:
+                return False
+            try:
+                exit_code = wintypes.DWORD()
+                if not ctypes.windll.kernel32.GetExitCodeProcess(
+                    process, ctypes.byref(exit_code)
+                ):
+                    return False
+                return exit_code.value == 259  # STILL_ACTIVE
+            finally:
+                ctypes.windll.kernel32.CloseHandle(process)
         os.kill(pid, 0)
         return True
     except (OSError, TypeError, ValueError):
