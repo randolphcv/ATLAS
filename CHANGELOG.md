@@ -18,3 +18,6 @@
 - Moved verified backup execution off the UI thread.
 - Removed browser launch, network listeners, and web dependencies from the
   packaged desktop runtime while retaining the API as an optional adapter.
+- Added explicit JPEG/PNG/TIFF/WebP image probing after the first real use test.
+- Preserved still-image identity and dimensions without displaying FFprobe's
+  synthetic single-frame duration.

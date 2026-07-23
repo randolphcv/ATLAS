@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from beacon.catalog import catalog_file, scan_directory, sha256_file, watch_directory
 from beacon.media import probe
+from beacon.repository import asset_detail
 from beacon.stability import wait_until_stable
 
 
@@ -142,6 +143,55 @@ class CatalogTests(unittest.TestCase):
         assert metadata is not None
         self.assertIsNone(metadata["returncode"])
         self.assertIn("timed out", metadata["error"])
+
+    def test_image_probe_marks_still_image_kind(self) -> None:
+        source = self._write("still.JPG", b"synthetic image bytes")
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "streams": [
+                        {
+                            "codec_name": "mjpeg",
+                            "codec_type": "video",
+                            "width": 4032,
+                            "height": 3024,
+                        }
+                    ]
+                }
+            ),
+            stderr="",
+        )
+        with patch.dict(os.environ, {"BEACON_FFPROBE": "synthetic-ffprobe"}):
+            with patch("beacon.media.subprocess.run", return_value=completed):
+                metadata = probe(source)
+        self.assertIsNotNone(metadata)
+        assert metadata is not None
+        self.assertEqual(metadata["beacon_kind"], "image")
+
+    def test_image_metadata_is_visible_to_desktop_repository(self) -> None:
+        source = self._write("still.jpg", b"synthetic image bytes")
+        metadata = {
+            "beacon_kind": "image",
+            "streams": [
+                {
+                    "codec_name": "mjpeg",
+                    "codec_type": "video",
+                    "width": 4032,
+                    "height": 3024,
+                }
+            ],
+        }
+        with patch("beacon.catalog.probe", return_value=metadata):
+            result = catalog_file(source, self.db, 0)
+        detail = asset_detail(self.db, result.asset_id)
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertEqual(detail["kind"], "image")
+        self.assertEqual(detail["codec"], "mjpeg")
+        self.assertEqual(detail["dimensions"], "4032 × 3024")
+        self.assertIsNone(detail["duration_seconds"])
 
     @unittest.skipUnless(
         os.environ.get("BEACON_FFPROBE"),

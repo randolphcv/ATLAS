@@ -17,6 +17,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 
+from . import __version__
 from .database import (
     BackupResult,
     connect,
@@ -196,6 +197,10 @@ class DesktopController(QObject):
     @Property(str, constant=True)
     def backupDirectory(self) -> str:
         return str(self.settings.backup_dir)
+
+    @Property(str, constant=True)
+    def applicationVersion(self) -> str:
+        return __version__
 
     @Slot(str)
     def setCurrentView(self, view: str) -> None:

@@ -21,13 +21,15 @@ def _media_summary(value: str | None) -> dict[str, Any]:
     metadata = json.loads(value)
     streams = metadata.get("streams") or []
     stream = streams[0] if streams else {}
-    codec_type = stream.get("codec_type")
+    codec_type = metadata.get("beacon_kind") or stream.get("codec_type")
     width = stream.get("width")
     height = stream.get("height")
     duration = stream.get("duration") or (metadata.get("format") or {}).get("duration")
     try:
         duration_seconds = round(float(duration), 3) if duration is not None else None
     except (TypeError, ValueError):
+        duration_seconds = None
+    if codec_type == "image":
         duration_seconds = None
     return {
         "kind": codec_type or ("error" if metadata.get("error") else "file"),
@@ -197,4 +199,3 @@ def recent_events(db_path: Path, limit: int = 20) -> list[dict[str, Any]]:
             (limit,),
         ).fetchall()
     return [dict(row) for row in rows]
-

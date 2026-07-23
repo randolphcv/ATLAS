@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-SUPPORTED_MEDIA_EXTENSIONS = {
+AUDIO_VIDEO_EXTENSIONS = {
     ".aac",
     ".avi",
     ".flac",
@@ -19,6 +19,19 @@ SUPPORTED_MEDIA_EXTENSIONS = {
     ".wav",
     ".webm",
 }
+
+IMAGE_EXTENSIONS = {
+    ".bmp",
+    ".gif",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
+
+SUPPORTED_MEDIA_EXTENSIONS = AUDIO_VIDEO_EXTENSIONS | IMAGE_EXTENSIONS
 
 
 def should_probe(path: Path) -> bool:
@@ -53,6 +66,9 @@ def probe(path: Path) -> dict[str, Any] | None:
     if result.returncode != 0:
         return {"error": result.stderr.strip(), "returncode": result.returncode}
     try:
-        return json.loads(result.stdout)
+        metadata = json.loads(result.stdout)
+        if path.suffix.lower() in IMAGE_EXTENSIONS:
+            metadata["beacon_kind"] = "image"
+        return metadata
     except json.JSONDecodeError as error:
         return {"error": f"invalid ffprobe JSON: {error}", "returncode": 0}

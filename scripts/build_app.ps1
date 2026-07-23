@@ -1,9 +1,27 @@
+param(
+    [string]$OutputRoot = ''
+)
+
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $python = Join-Path $repo '.venv\Scripts\python.exe'
 
 if (-not (Test-Path -LiteralPath $python)) {
     throw 'Create the repository virtual environment before building.'
+}
+
+$version = (& $python -c 'from beacon import __version__; print(__version__)').Trim()
+if (-not $version) {
+    throw 'Could not resolve the Beacon package version.'
+}
+
+if (-not $OutputRoot) {
+    $OutputRoot = Join-Path $repo 'dist'
+}
+$OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
+$allowedDistRoot = [System.IO.Path]::GetFullPath((Join-Path $repo 'dist'))
+if (-not $OutputRoot.StartsWith($allowedDistRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "OutputRoot must stay within $allowedDistRoot"
 }
 
 Push-Location $PSScriptRoot
@@ -15,7 +33,7 @@ try {
     & $python -m PyInstaller `
         --noconfirm `
         --clean `
-        --distpath (Join-Path $repo 'dist') `
+        --distpath $OutputRoot `
         --workpath (Join-Path $repo 'build') `
         .\ATLAS_Beacon.spec
     if ($LASTEXITCODE -ne 0) {
@@ -26,7 +44,7 @@ finally {
     Pop-Location
 }
 
-$artifact = Join-Path $repo 'dist\ATLAS Beacon\ATLAS Beacon.exe'
+$artifact = Join-Path $OutputRoot 'ATLAS Beacon\ATLAS Beacon.exe'
 if (-not (Test-Path -LiteralPath $artifact)) {
     throw "Expected executable was not created: $artifact"
 }
@@ -39,7 +57,7 @@ Copy-Item `
 
 Write-Host "Built: $artifact"
 
-$package = Join-Path $repo 'dist\ATLAS-Beacon-0.3.0-win64.zip'
+$package = Join-Path $repo "dist\ATLAS-Beacon-$version-win64.zip"
 if (Test-Path -LiteralPath $package) {
     Remove-Item -LiteralPath $package -Force
 }

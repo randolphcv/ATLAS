@@ -376,7 +376,7 @@ ApplicationWindow {
                     }
                 }
                 Text {
-                    text: "Beacon 0.3.0"
+                    text: "Beacon " + backend.applicationVersion
                     color: root.muted
                     font.family: "Cascadia Mono"
                     font.pixelSize: 9

@@ -27,6 +27,15 @@
 - icon and Windows version metadata
 - rendered source and packaged-executable verification
 
+## Completed — first controlled media use test
+
+- five explicitly supplied media copies staged from ATLAS to NVMe
+- source/destination SHA-256 equality before cataloging
+- JPEG, WAV, and MP4 technical metadata verified
+- renamed checksum duplicate resolved to one asset with two locations
+- restart/idempotency and database integrity verified
+- ATLAS source hashes verified unchanged after the complete run
+
 ## Next — recovery and pilot hardening
 
 - approve an exact non-production pilot scope
