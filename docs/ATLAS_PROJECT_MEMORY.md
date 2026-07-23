@@ -269,13 +269,13 @@ Next smallest step:
 
 ## Current Handoff
 
-Last verified: 2026-07-23 on the Windows ATLAS host  
-Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `9c9dd80`  
-Current milestone: Beacon 0.4.0 verified thumbnails and native temporary preview complete  
-Verified complete: schema-3 derivative lineage; atomic verified thumbnails for two unique images, one audio waveform, and one video frame; native Space preview with image fit, audio/video playback controls, and safe metadata fallback; source and packaged UI review; hardened side-by-side windowed PyInstaller release and ZIP package  
-In progress: none  
-Blocked: production pilot still requires an exact approved sandbox/path, privacy scope, and stability policy  
-Files changed: repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.4.0\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; private use-test runtime/evidence under `C:\ProgramData\ATLAS\Beacon\use-tests\UseTest-01-20260723-004437`; portable documentation under `J:\System\Documentation\ATLAS\`  
-Tests/live checks: Python compilation passed; 20/20 tests passed with real FFprobe and FFmpeg; five approved ATLAS sources and five local copies remained byte-identical; four asset rows, five locations, four verified derivatives, one duplicate group, zero failures; schema-3 database and backup integrity passed; source and packaged image/audio/video preview states reviewed; packaged executable smoke and capability audit passed; bundle contains 1,748 files and 178,028,742 bytes with zero blocked capabilities; executable SHA-256 `426D7DC8DE87685F7436AB1D246833BC7E7C5C2B29AB58F08700880B97FD2570`; package SHA-256 `0F38CFA8CA75C5B17CC37DC21484DA3F1ABD7D6B935A28A44F000239D49BEB2F`  
-Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, real-world copy pause behavior, production stability thresholds, database restore/retention policy, code-signing strategy, and broad format support beyond the exercised image/audio/video set  
-Next smallest step: add and verify a database restore workflow plus backup retention policy before approving a larger pilot
+- Last verified: 2026-07-23 on the Windows ATLAS host
+- Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `9c9dd80`
+- Current milestone: Beacon 0.4.0 verified thumbnails and native temporary preview complete
+- Verified complete: schema-3 derivative lineage; atomic verified thumbnails for two unique images, one audio waveform, and one video frame; native Space preview with image fit, audio/video playback controls, and safe metadata fallback; source and packaged UI review; hardened side-by-side windowed PyInstaller release and ZIP package
+- In progress: none
+- Blocked: production pilot still requires an exact approved sandbox/path, privacy scope, and stability policy
+- Files changed: repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.4.0\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; private use-test runtime/evidence under `C:\ProgramData\ATLAS\Beacon\use-tests\UseTest-01-20260723-004437`; portable documentation under `J:\System\Documentation\ATLAS\`
+- Tests/live checks: Python compilation passed; 20/20 tests passed with real FFprobe and FFmpeg; five approved ATLAS sources and five local copies remained byte-identical; four asset rows, five locations, four verified derivatives, one duplicate group, zero failures; schema-3 database and backup integrity passed; source and packaged image/audio/video preview states reviewed; packaged executable smoke and capability audit passed; bundle contains 1,748 files and 178,028,742 bytes with zero blocked capabilities; executable SHA-256 `426D7DC8DE87685F7436AB1D246833BC7E7C5C2B29AB58F08700880B97FD2570`; package SHA-256 `0F38CFA8CA75C5B17CC37DC21484DA3F1ABD7D6B935A28A44F000239D49BEB2F`
+- Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, real-world copy pause behavior, production stability thresholds, database restore/retention policy, code-signing strategy, and broad format support beyond the exercised image/audio/video set
+- Next smallest step: add and verify a database restore workflow plus backup retention policy before approving a larger pilot
