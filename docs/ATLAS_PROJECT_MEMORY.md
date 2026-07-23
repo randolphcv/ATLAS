@@ -128,9 +128,10 @@ These are stable unless Connor explicitly changes them:
 
 Phase 0, the Phase 1 synthetic read-only catalog, the Phase 2 local observatory
 foundation, the native desktop client, and the first controlled media use test
-are verified complete through Beacon 0.4.0, including verified thumbnail
-derivatives and native temporary previews. Production-path indexing remains
-deliberately unapproved.
+are verified complete through Beacon 0.4.1, including verified thumbnail
+derivatives, native temporary previews, and an exact default-launch check
+against the labeled live catalog. Production-path indexing remains deliberately
+unapproved.
 
 The first implementation target is a read-only vertical slice against synthetic fixtures:
 
@@ -169,6 +170,7 @@ The first implementation target is a read-only vertical slice against synthetic 
 | Common raster images use explicit FFprobe handling | Decided in Beacon 0.3.1 | Preserve image kind and dimensions while suppressing meaningless single-frame duration |
 | Current thumbnail derivatives live under the local runtime tree with schema-backed lineage | Decided in Beacon 0.4.0 | Keep generated data separate from originals and make it safe to regenerate |
 | Space opens a native temporary preview | Decided in Beacon 0.4.0 | Borrow Finder's low-friction inspection pattern without opening an editor or changing the source |
+| A normal standalone launch opens and labels the live catalog | Decided in Beacon 0.4.1 | Prevent isolated test databases from being mistaken for the user's working library |
 
 ## Decisions Still Open
 
@@ -226,6 +228,15 @@ Prevention: Make the capability audit a required part of every packaged build.
 ```
 
 ```text
+Date: 2026-07-23
+Symptom: The standalone app appeared to lose the media library and showed only the synthetic note.
+Cause: Verification used an explicit isolated UseTest-01 database, while a normal double-click correctly opened the separate live database; promotion to the live catalog had not been performed or communicated.
+Fix: Verified both databases and all source hashes, backed up the live database, cataloged the approved NVMe copies into it, labeled catalog context in the UI, and added change-triggered refresh.
+Verification: Exact no-argument Beacon 0.4.1 launch shows five live assets with thumbnails; preview works; schema 3 is healthy with zero failures; 22 tests pass.
+Prevention: Every release involving representative data must verify the exact no-argument standalone launch in addition to isolated test profiles.
+```
+
+```text
 Date:
 Symptom:
 Cause:
@@ -270,12 +281,12 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-23 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `9c9dd80`
-- Current milestone: Beacon 0.4.0 verified thumbnails and native temporary preview complete
-- Verified complete: schema-3 derivative lineage; atomic verified thumbnails for two unique images, one audio waveform, and one video frame; native Space preview with image fit, audio/video playback controls, and safe metadata fallback; source and packaged UI review; hardened side-by-side windowed PyInstaller release and ZIP package
+- Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `41dce2a`
+- Current milestone: Beacon 0.4.1 live-catalog correction and standalone verification complete
+- Verified complete: verified live-database backup before promotion; five approved NVMe locations cataloged into the live database; explicit Live/Isolated/Custom catalog labeling; change-triggered automatic refresh; responsive asset detail layout; exact no-argument native library and preview review; hardened side-by-side windowed PyInstaller release and ZIP package
 - In progress: none
 - Blocked: production pilot still requires an exact approved sandbox/path, privacy scope, and stability policy
-- Files changed: repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.4.0\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; private use-test runtime/evidence under `C:\ProgramData\ATLAS\Beacon\use-tests\UseTest-01-20260723-004437`; portable documentation under `J:\System\Documentation\ATLAS\`
-- Tests/live checks: Python compilation passed; 20/20 tests passed with real FFprobe and FFmpeg; five approved ATLAS sources and five local copies remained byte-identical; four asset rows, five locations, four verified derivatives, one duplicate group, zero failures; schema-3 database and backup integrity passed; source and packaged image/audio/video preview states reviewed; packaged executable smoke and capability audit passed; bundle contains 1,748 files and 178,028,742 bytes with zero blocked capabilities; executable SHA-256 `426D7DC8DE87685F7436AB1D246833BC7E7C5C2B29AB58F08700880B97FD2570`; package SHA-256 `0F38CFA8CA75C5B17CC37DC21484DA3F1ABD7D6B935A28A44F000239D49BEB2F`
+- Files changed: repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.4.1\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; live runtime under `C:\ProgramData\ATLAS\Beacon`; private use-test runtime/evidence under `C:\ProgramData\ATLAS\Beacon\use-tests\UseTest-01-20260723-004437`; portable documentation under `J:\System\Documentation\ATLAS\`
+- Tests/live checks: Python compilation passed; 22/22 tests passed with real FFprobe and FFmpeg; five approved ATLAS sources and five local copies remained byte-identical; live catalog has five assets, six locations, four verified derivatives, and zero failures; live and isolated schema-3 databases and backups passed integrity; exact no-argument packaged library and video preview states reviewed; packaged capability audit passed; bundle contains 1,748 files and 178,030,027 bytes with zero blocked capabilities; executable SHA-256 `914F42EF383B4F1B738986BB0F06FB29AC4241B9D043B8D7A6B5D7CFF352DAA5`; package SHA-256 `B0E0F961BD4D3D5CEE22FD7D668D2F1D2E715691BE9F8800010895ED995A0018`
 - Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, real-world copy pause behavior, production stability thresholds, database restore/retention policy, code-signing strategy, and broad format support beyond the exercised image/audio/video set
 - Next smallest step: add and verify a database restore workflow plus backup retention policy before approving a larger pilot
