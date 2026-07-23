@@ -35,7 +35,8 @@ Pilot procedure:
    hashing the full Inbox.
 2. Launch the exact Beacon 0.9.0 release from:
    C:\Development\ATLAS\dist\releases\0.9.0\ATLAS Beacon\ATLAS Beacon.exe
-3. Confirm the live database migrates cleanly from schema 6 to schema 7.
+3. Confirm the live database is still healthy at schema 7 with no existing
+   intake jobs.
 4. Create one J:\Inbox intake snapshot with a 25-file limit. Record its job ID,
    snapshot SHA-256, item count, byte count, and chosen paths.
 5. Start the job, allow several files to finish, request Cancel, and verify it
@@ -59,9 +60,9 @@ Keep updates concise because account usage is limited.
 - Beacon feature commit: `72e27ea`
 - Merge commit: `7166de8`
 - Release: Beacon 0.9.0
-- Live catalog before first 0.9.0 launch: healthy schema 6
+- Live catalog: healthy schema 7 after the first 0.9.0 launch
 - Prior post-move Inbox inventory: 7,092 files, 744,696,445,768 bytes
-- No live schema-7 intake job exists yet
+- No live intake job exists yet
 
 The 25 paths selected by deterministic lexical order are a reliability pilot,
 not a representative media sample. After the lifecycle proof is accepted,

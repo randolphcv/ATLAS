@@ -140,9 +140,10 @@ Schema 6 adds revisioned editable context and policy-gated checksum-verified
 managed moves. Schema 7 adds explicit recursive intake snapshots, durable
 per-file state, progress, cancel, resume, failure-only retry, and recovery.
 The exact packaged 0.9.0 application completed a three-file nested synthetic
-intake without changing source hashes. The production catalog remains healthy
-at schema 6 until the first 0.9.0 launch; a verified pre-schema-7 online backup
-exists. The prior packaged launch was checked against the schema-6 live
+intake without changing source hashes. The first 0.9.0 launch migrated the
+production catalog cleanly to schema 7; it is healthy with no intake jobs. A
+verified pre-schema-7 online backup exists. The prior packaged launch was
+checked against the schema-6 live
 catalog. A completed 7,093-file Inbox transfer received a stable read-only
 inventory; one known-checksum Inbox location completed the bounded
 catalog-to-managed-location proof. The resumable intake milestone is complete;
@@ -328,6 +329,6 @@ Next smallest step:
 - In progress: no production intake is running; the prior verified post-move Inbox inventory remains 7,092 files and 744,696,445,768 bytes
 - Blocked: nothing blocks the bounded 25-file pilot; full-corpus expansion remains gated on pilot verification, and asset-specific destinations still require verified or editable context
 - Files changed: merged repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.9.0\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; verified pre-schema-7 recovery copy under `C:\ProgramData\ATLAS\Beacon\backups`; portable documentation under `J:\System\Documentation\ATLAS\`
-- Tests/live checks: Python compilation and 52/52 tests passed with real FFprobe and FFmpeg; exact packaged 0.9.0 rendered a complete three-file nested synthetic intake with source hashes unchanged; synthetic database healthy at schema 7 with zero foreign-key errors; bundle contains 1,748 files and 178,196,704 bytes with zero blocked capabilities; executable SHA-256 `1BC9B4E5376537FC46B0DBC714ED6DC3A50D3E059F74F3800EFFE5C81BE262FB`; package SHA-256 `A2905C2AFAC3D129E63927E8E61DFD178D8179C1C306F870D751AB2F77D4F790`; live database remains healthy at schema 6; verified pre-schema-7 backup `beacon-pre-schema7-20260723T192234.940229Z.db` SHA-256 `f66387248420bb7c3b2b1ff4d7e9a0b5c8cc8ee3358c05921dbd08fec614ca57`
+- Tests/live checks: Python compilation and 52/52 tests passed with real FFprobe and FFmpeg; exact packaged 0.9.0 rendered a complete three-file nested synthetic intake with source hashes unchanged; synthetic database healthy at schema 7 with zero foreign-key errors; bundle contains 1,748 files and 178,196,704 bytes with zero blocked capabilities; executable SHA-256 `1BC9B4E5376537FC46B0DBC714ED6DC3A50D3E059F74F3800EFFE5C81BE262FB`; package SHA-256 `A2905C2AFAC3D129E63927E8E61DFD178D8179C1C306F870D751AB2F77D4F790`; first packaged 0.9.0 launch migrated the live database cleanly to healthy schema 7 with zero intake jobs; verified pre-schema-7 backup `beacon-pre-schema7-20260723T192234.940229Z.db` SHA-256 `f66387248420bb7c3b2b1ff4d7e9a0b5c8cc8ee3358c05921dbd08fec614ca57`
 - Unverified assumptions: current post-transfer Inbox stability, physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, production throughput, database restore/retention policy, code-signing strategy, local model choices and measured RTX 3060 throughput, external-model cost/authorization, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
 - Next smallest step: run the 25-file `J:\Inbox` pilot from Beacon 0.9.0, exercise cancel/resume, verify catalog/database/source evidence, then stop for review before any full-Inbox or AI-analysis expansion
