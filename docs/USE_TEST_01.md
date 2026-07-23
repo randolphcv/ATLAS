@@ -39,11 +39,11 @@ images. Beacon 0.3.1 adds explicit JPEG, PNG, TIFF, GIF, BMP, and WebP probing,
 preserves the `image` kind, and suppresses FFprobe's meaningless single-frame
 duration. Two automated tests cover the correction.
 
-The complete suite now passes 22 tests with real FFprobe and FFmpeg enabled.
+The complete suite now passes 27 tests with real FFprobe and FFmpeg enabled.
 
 ## Native application verification
 
-The source client and the frozen Beacon 0.4.1 executable were both rendered
+The source client and the frozen Beacon 0.5.0 executable were both rendered
 against the use-test database. The library correctly showed image, video, and
 audio technical metadata, displayed all four unique thumbnails, and exposed
 both locations for the renamed duplicate.
@@ -51,8 +51,13 @@ both locations for the renamed duplicate.
 The native temporary preview was exercised for a full image, audio with
 waveform/playback/scrubbing, and video with playback/scrubbing. Automated
 visual checks used muted playback; ordinary interactive playback remains
-enabled. The fallback path for other file types exposes metadata without
-opening the source in an editor.
+enabled. The synthetic text fixture was rendered as bounded, selectable,
+read-only plain text. The fallback path for binary file types exposes metadata
+without opening the source in an editor.
+
+Space was also exercised as an application-level shortcut while the Preview
+button held keyboard focus. It opened and closed the selected asset instead of
+re-pressing the focused button.
 
 The initial standalone launch exposed that UseTest-01 was still intentionally
 isolated from Beacon's live database. No media or catalog records were lost.
@@ -67,25 +72,25 @@ evidence folder; they are intentionally excluded from Git.
 Release executable:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.4.1\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.5.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 Release package:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.4.1-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.5.0-win64.zip
 ```
 
 Executable SHA-256:
 
 ```text
-914F42EF383B4F1B738986BB0F06FB29AC4241B9D043B8D7A6B5D7CFF352DAA5
+8FE700C5020B0C6C3D4B0FDD7546F3561E222A7BEB990376284034ACDFDF1F8E
 ```
 
 Package SHA-256:
 
 ```text
-B0E0F961BD4D3D5CEE22FD7D668D2F1D2E715691BE9F8800010895ED995A0018
+74E009141DC001BB2A73518AC3824377B1600DB5A261028E8526D443021F59D9
 ```
 
 The private development build remains unsigned.

@@ -15,6 +15,56 @@ from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
 from beacon.catalog import catalog_file
 from beacon.desktop import DEFAULT_RUNTIME, _catalog_label
 from beacon.desktop_controller import DesktopController, DesktopSettings
+from beacon.text_preview import read_text_preview
+
+
+class TextPreviewTests(unittest.TestCase):
+    def test_common_text_encodings_are_read_as_plain_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            utf16 = root / "notes.md"
+            utf16.write_text("Beacon reads UTF-16 ✦", encoding="utf-16")
+            windows = root / "legacy.txt"
+            windows.write_bytes(b"caf\xe9 archive")
+
+            utf16_preview = read_text_preview(utf16)
+            windows_preview = read_text_preview(windows)
+
+            self.assertIsNotNone(utf16_preview)
+            self.assertEqual(utf16_preview.text, "Beacon reads UTF-16 ✦")
+            self.assertEqual(utf16_preview.encoding, "UTF-16 LE")
+            self.assertIsNotNone(windows_preview)
+            self.assertEqual(windows_preview.text, "café archive")
+            self.assertEqual(windows_preview.encoding, "Windows-1252")
+
+    def test_utf8_text_without_an_extension_is_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "field-notes"
+            source.write_text("plain text with no suffix", encoding="utf-8")
+
+            preview = read_text_preview(source)
+
+            self.assertIsNotNone(preview)
+            self.assertEqual(preview.text, "plain text with no suffix")
+            self.assertEqual(preview.encoding, "UTF-8")
+
+    def test_text_preview_is_bounded_without_splitting_utf8(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "large.log"
+            source.write_text("A" * 15 + "✦" + "tail", encoding="utf-8")
+
+            preview = read_text_preview(source, max_bytes=17)
+
+            self.assertIsNotNone(preview)
+            self.assertEqual(preview.text, "A" * 15)
+            self.assertTrue(preview.truncated)
+
+    def test_binary_content_is_not_treated_as_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "payload.bin"
+            source.write_bytes(bytes(range(32)) * 32)
+
+            self.assertIsNone(read_text_preview(source))
 
 
 class DesktopControllerTests(unittest.TestCase):
@@ -54,8 +104,14 @@ class DesktopControllerTests(unittest.TestCase):
             self.controller.selectedAsset["atlas_uri"],
             f"atlas://asset/{self.cataloged.asset_id}",
         )
-        self.assertEqual(self.controller.selectedAsset["previewKind"], "file")
+        self.assertEqual(self.controller.selectedAsset["previewKind"], "text")
         self.assertTrue(self.controller.selectedAsset["previewAvailable"])
+        self.assertEqual(
+            self.controller.selectedAsset["textPreview"],
+            "synthetic native desktop signal",
+        )
+        self.assertIn("UTF-8", self.controller.selectedAsset["textPreviewLabel"])
+        self.assertEqual(self.controller.selectedAsset["extensionLabel"], "TXT")
         self.assertTrue(
             self.controller.selectedAsset["previewUrl"].startswith("file:")
         )
@@ -139,6 +195,91 @@ class NativeQmlSmokeTests(unittest.TestCase):
                     "--log-file",
                     str(root / "desktop.log"),
                     "--smoke-test",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+            )
+
+    def test_space_opens_preview_even_when_a_button_has_focus(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "focused-button.txt"
+            source.write_text("Space belongs to preview.", encoding="utf-8")
+            catalog_file(
+                source,
+                root / "beacon.db",
+                stability_seconds=0,
+                include_media_probe=False,
+            )
+            environment = os.environ.copy()
+            environment["QT_QPA_PLATFORM"] = "offscreen"
+            environment["QT_QUICK_BACKEND"] = "software"
+            script = r"""
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QObject, QMetaObject, QTimer, Qt, QUrl
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuickControls2 import QQuickStyle
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication
+
+from beacon.desktop_controller import DesktopController, DesktopSettings
+
+QQuickStyle.setStyle("Fusion")
+app = QApplication(["beacon-hotkey-test"])
+controller = DesktopController(
+    DesktopSettings(Path(sys.argv[1]), Path(sys.argv[2]))
+)
+controller.setCurrentView("library")
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("backend", controller)
+engine.rootContext().setContextProperty("previewMuted", True)
+qml = Path.cwd() / "beacon" / "qml" / "Main.qml"
+engine.load(QUrl.fromLocalFile(str(qml)))
+if not engine.rootObjects():
+    raise SystemExit(10)
+window = engine.rootObjects()[0]
+button = window.findChild(QObject, "detailPreviewButton")
+if button is None:
+    raise SystemExit(11)
+
+def press_with_button_focused():
+    QMetaObject.invokeMethod(button, "forceActiveFocus")
+    if not button.property("activeFocus"):
+        app.exit(12)
+        return
+    QTest.keyClick(window, Qt.Key.Key_Space)
+    QTimer.singleShot(150, verify_open)
+
+def verify_open():
+    if not window.property("previewOpen"):
+        app.exit(13)
+        return
+    QTest.keyClick(window, Qt.Key.Key_Space)
+    QTimer.singleShot(150, verify_closed)
+
+def verify_closed():
+    app.exit(14 if window.property("previewOpen") else 0)
+
+QTimer.singleShot(250, press_with_button_focused)
+raise SystemExit(app.exec())
+"""
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    script,
+                    str(root / "beacon.db"),
+                    str(root / "backups"),
                 ],
                 cwd=Path(__file__).resolve().parents[1],
                 env=environment,

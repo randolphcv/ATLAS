@@ -39,7 +39,7 @@ Run from source:
 Or double-click:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.4.1\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.5.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 The desktop app has its own Windows window. It does not open a browser, start a
@@ -52,8 +52,9 @@ database/WAL changes every five seconds and refreshes only after a change.
 
 In Library, select an asset and press Space or click **Preview**. Image, audio,
 and video previews stay inside Beacon. Press Space or Escape to close; playback
-stops immediately. Other formats display a metadata-only preview instead of
-being opened in an editor.
+stops immediately. Text files are shown as bounded, read-only plain text inside
+Beacon. Binary and unsupported formats display metadata instead of being opened
+in an editor.
 
 The System view can create a verified database backup after explicit
 confirmation. Restore and backup deletion are intentionally absent.

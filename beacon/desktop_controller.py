@@ -28,6 +28,7 @@ from .database import (
 )
 from .desktop_models import DictListModel
 from .repository import asset_detail, catalog_summary, recent_events, search_assets
+from .text_preview import read_text_preview
 
 LOGGER = logging.getLogger("beacon.desktop")
 
@@ -393,7 +394,29 @@ class DesktopController(QObject):
             preview_kind = str(detail.get("kind") or "file")
             if preview_kind not in {"image", "video", "audio"}:
                 preview_kind = "file"
+                primary_path = Path(str(detail.get("primary_path") or ""))
+                text_preview = read_text_preview(primary_path)
+                if text_preview is not None:
+                    preview_kind = "text"
+                    detail["textPreview"] = text_preview.text
+                    detail["textEncoding"] = text_preview.encoding
+                    detail["textPreviewTruncated"] = text_preview.truncated
+                    detail["textPreviewLabel"] = (
+                        f"{text_preview.encoding} · "
+                        f"{format_bytes(text_preview.size_bytes)}"
+                        + (
+                            " · Showing first 512 KB"
+                            if text_preview.truncated
+                            else " · Complete file"
+                        )
+                    )
             detail["previewKind"] = preview_kind
+            suffix = Path(str(detail.get("primary_path") or "")).suffix
+            detail["extensionLabel"] = (
+                suffix.removeprefix(".")[:8].upper()
+                or preview_kind[:4].upper()
+                or "FILE"
+            )
             detail["previewUrl"] = self._local_file_url(
                 detail.get("primary_path")
             )

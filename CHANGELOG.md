@@ -39,3 +39,12 @@
   refresh when the SQLite database or WAL changes.
 - Added regression coverage for catalog labeling and externally written catalog
   updates, bringing the suite to 22 tests.
+- Added bounded, read-only plain-text previews with common UTF and Windows
+  encoding detection, binary rejection, and a 512 KB display cap.
+- Promoted Space to an application-level preview shortcut, prevented mouse
+  clicks from trapping focus on action buttons, and added a real Qt regression
+  test for the focused-button case.
+- Added a larger selected-asset thumbnail to the detail header with a branded
+  extension tile for files without media derivatives.
+- Verified Beacon 0.5.0 source and packaged behavior against the five-asset
+  live catalog, bringing the complete suite to 27 tests.

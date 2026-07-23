@@ -4,22 +4,25 @@ Verified on the Windows ATLAS host on 2026-07-23.
 
 ## Outcome
 
-Beacon 0.4.1 is a native Qt Quick/QML desktop application. It uses the existing
+Beacon 0.5.0 is a native Qt Quick/QML desktop application. It uses the existing
 read-only catalog, repository, audit, health, and verified-backup modules
 directly. The desktop process does not open a browser, embed a web view, start
 FastAPI, or listen on a network port.
 
 The current client also uses Qt Multimedia for local temporary previews. It
 loads verified thumbnail derivatives in Library and opens a selected asset with
-Space. Playback stops when the modal preview closes.
+Space. Plain-text files render in a bounded read-only viewer; binary formats
+retain the metadata-only fallback. Playback stops when the modal preview
+closes.
 
 ## Automated verification
 
 - Python compilation: passed
-- Unit and integration tests with real FFprobe and FFmpeg: 22 passed
+- Unit and integration tests with real FFprobe and FFmpeg: 27 passed
 - Native catalog model, search, detail, and health tests: passed
 - Non-blocking verified-backup controller test: passed
 - QML window offscreen load test: passed
+- Application-level Space shortcut with a focused action button: passed
 - Dependency check: passed
 
 ## Rendered verification
@@ -36,6 +39,8 @@ The following states were visually reviewed:
 - video playback and scrubber.
 - exact no-argument packaged launch against the labeled Live catalog;
 - automatic refresh after an external catalog transaction.
+- larger image and text-fallback tiles in the selected-asset header;
+- selectable read-only text preview with encoding and truncation status.
 
 Screenshots:
 
@@ -49,32 +54,32 @@ Screenshots:
 Artifact:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.4.1\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.5.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 Package:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.4.1-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.5.0-win64.zip
 ```
 
 The frozen executable passed smoke-test and screenshot modes against the
 schema-3 live database without a `--db` override. Windows file and product
-versions are both `0.4.1`.
+versions are both `0.5.0`.
 
 Executable SHA-256:
 
 ```text
-914F42EF383B4F1B738986BB0F06FB29AC4241B9D043B8D7A6B5D7CFF352DAA5
+8FE700C5020B0C6C3D4B0FDD7546F3561E222A7BEB990376284034ACDFDF1F8E
 ```
 
 Package SHA-256:
 
 ```text
-B0E0F961BD4D3D5CEE22FD7D668D2F1D2E715691BE9F8800010895ED995A0018
+74E009141DC001BB2A73518AC3824377B1600DB5A261028E8526D443021F59D9
 ```
 
-The one-folder bundle contains 1,748 files and 178,030,027 bytes. Its packaging
+The one-folder bundle contains 1,748 files and 178,039,289 bytes. Its packaging
 filter excludes FastAPI, Uvicorn, Pydantic, Qt WebEngine, Qt Quick 3D, charting,
 PDF, and virtual-keyboard capabilities.
 

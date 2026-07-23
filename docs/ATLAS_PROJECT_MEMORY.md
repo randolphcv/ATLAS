@@ -128,10 +128,10 @@ These are stable unless Connor explicitly changes them:
 
 Phase 0, the Phase 1 synthetic read-only catalog, the Phase 2 local observatory
 foundation, the native desktop client, and the first controlled media use test
-are verified complete through Beacon 0.4.1, including verified thumbnail
-derivatives, native temporary previews, and an exact default-launch check
-against the labeled live catalog. Production-path indexing remains deliberately
-unapproved.
+are verified complete through Beacon 0.5.0, including verified thumbnail
+derivatives, native temporary media and text previews, an application-level
+Space shortcut, and an exact default-launch check against the labeled live
+catalog. Production-path indexing remains deliberately unapproved.
 
 The first implementation target is a read-only vertical slice against synthetic fixtures:
 
@@ -171,6 +171,8 @@ The first implementation target is a read-only vertical slice against synthetic 
 | Current thumbnail derivatives live under the local runtime tree with schema-backed lineage | Decided in Beacon 0.4.0 | Keep generated data separate from originals and make it safe to regenerate |
 | Space opens a native temporary preview | Decided in Beacon 0.4.0 | Borrow Finder's low-friction inspection pattern without opening an editor or changing the source |
 | A normal standalone launch opens and labels the live catalog | Decided in Beacon 0.4.1 | Prevent isolated test databases from being mistaken for the user's working library |
+| Plain text renders inside the native temporary preview | Decided in Beacon 0.5.0 | Make scripts, notes, logs, and metadata inspectable without launching an editor; cap displayed content at 512 KB and reject binary control-heavy input |
+| Space is an application-level preview shortcut | Decided in Beacon 0.5.0 | Keep the selected asset action stable even when a button previously held keyboard focus |
 
 ## Decisions Still Open
 
@@ -234,6 +236,15 @@ Cause: Verification used an explicit isolated UseTest-01 database, while a norma
 Fix: Verified both databases and all source hashes, backed up the live database, cataloged the approved NVMe copies into it, labeled catalog context in the UI, and added change-triggered refresh.
 Verification: Exact no-argument Beacon 0.4.1 launch shows five live assets with thumbnails; preview works; schema 3 is healthy with zero failures; 22 tests pass.
 Prevention: Every release involving representative data must verify the exact no-argument standalone launch in addition to isolated test profiles.
+```
+
+```text
+Date: 2026-07-23
+Symptom: After an action button received focus, Space could activate that button instead of previewing the currently selected asset.
+Cause: The preview shortcut used the default window context and primary action buttons accepted click focus.
+Fix: Promoted Space to an application-level, non-repeating shortcut; limited primary buttons to tab focus; returned focus to the asset list when preview closed.
+Verification: A real offscreen Qt test force-focuses the Preview button and confirms Space opens and closes the selected asset; source and packaged live-catalog renders passed; 27 tests pass.
+Prevention: Treat Finder-style preview as an application command and retain focused-control regression coverage.
 ```
 
 ```text

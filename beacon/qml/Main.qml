@@ -25,6 +25,7 @@ ApplicationWindow {
     property color brass: "#C39A58"
     property color jade: "#6BAA82"
     property color ember: "#C5665A"
+    property bool previewOpen: previewDialog.visible
 
     font.family: "Segoe UI"
 
@@ -156,6 +157,7 @@ ApplicationWindow {
     component PrimaryButton: Button {
         id: primary
         property bool quiet: false
+        focusPolicy: Qt.TabFocus
         implicitHeight: 38
         leftPadding: 16
         rightPadding: 16
@@ -225,9 +227,10 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "Space"
+        context: Qt.ApplicationShortcut
+        autoRepeat: false
         enabled: previewDialog.visible
-                 || (backend.currentView === "library"
-                     && backend.selectedAsset.id !== undefined
+                 || (backend.selectedAsset.id !== undefined
                      && !searchField.activeFocus)
         onActivated: {
             if (previewDialog.visible)
@@ -336,6 +339,8 @@ ApplicationWindow {
             previewPlayer.stop()
             previewPlayer.source = ""
             previewVideo.clearOutput()
+            if (backend.currentView === "library")
+                libraryAssetList.forceActiveFocus()
         }
 
         background: Rectangle {
@@ -457,6 +462,7 @@ ApplicationWindow {
                     width: Math.min(parent.width - 80, 640)
                     spacing: 15
                     visible: previewDialog.previewKind === "file"
+                             && backend.selectedAsset.previewAvailable
                     Rectangle {
                         Layout.alignment: Qt.AlignHCenter
                         width: 68
@@ -506,6 +512,33 @@ ApplicationWindow {
                         label: "Location"
                         value: backend.selectedAsset.primary_path || "Unavailable"
                         mono: true
+                    }
+                }
+
+                ScrollView {
+                    anchors.fill: parent
+                    anchors.margins: 18
+                    visible: previewDialog.previewKind === "text"
+                             && backend.selectedAsset.previewAvailable
+                    clip: true
+                    TextArea {
+                        text: backend.selectedAsset.textPreview || ""
+                        textFormat: TextEdit.PlainText
+                        readOnly: true
+                        selectByMouse: true
+                        wrapMode: TextEdit.NoWrap
+                        color: root.bone
+                        selectionColor: root.atlas
+                        selectedTextColor: root.bone
+                        font.family: "Cascadia Mono"
+                        font.pixelSize: 12
+                        leftPadding: 10
+                        rightPadding: 10
+                        topPadding: 10
+                        bottomPadding: 10
+                        background: Rectangle {
+                            color: "transparent"
+                        }
                     }
                 }
 
@@ -574,10 +607,14 @@ ApplicationWindow {
                     }
                     Text {
                         visible: !previewDialog.playable
-                        text: "Press Space or Escape to return to the library."
+                        text: previewDialog.previewKind === "text"
+                              ? (backend.selectedAsset.textPreviewLabel || "Plain text")
+                                + "  ·  Press Space or Escape to close."
+                              : "Press Space or Escape to return to the library."
                         color: root.muted
                         font.pixelSize: 10
                         Layout.fillWidth: true
+                        elide: Text.ElideRight
                     }
                     Text {
                         visible: previewPlayer.error !== MediaPlayer.NoError
@@ -1068,6 +1105,7 @@ ApplicationWindow {
                                         onTextEdited: searchTimer.restart()
                                     }
                                     ListView {
+                                        id: libraryAssetList
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
                                         clip: true
@@ -1192,23 +1230,64 @@ ApplicationWindow {
                                         visible: backend.selectedAsset.id !== undefined
                                         Rectangle {
                                             Layout.fillWidth: true
-                                            implicitHeight: 158
+                                            implicitHeight: 178
                                             color: root.panelRaised
-                                            ColumnLayout {
+                                            RowLayout {
                                                 anchors.fill: parent
                                                 anchors.margins: 22
-                                                spacing: 7
-                                                RowLayout {
+                                                spacing: 18
+                                                ColumnLayout {
                                                     Layout.fillWidth: true
+                                                    Layout.fillHeight: true
+                                                    spacing: 7
                                                     Text {
                                                         text: (backend.selectedAsset.kindLabel || "File").toUpperCase()
                                                         color: root.brass
                                                         font.pixelSize: 9
                                                         font.weight: Font.DemiBold
                                                         font.letterSpacing: 1.4
+                                                    }
+                                                    Text {
+                                                        text: backend.selectedAsset.filename || ""
+                                                        color: root.bone
+                                                        font.family: "Georgia"
+                                                        font.pixelSize: 25
+                                                        elide: Text.ElideMiddle
                                                         Layout.fillWidth: true
                                                     }
+                                                    Text {
+                                                        text: backend.selectedAsset.atlas_uri || ""
+                                                        color: root.atlasBright
+                                                        font.family: "Cascadia Mono"
+                                                        font.pixelSize: 10
+                                                        elide: Text.ElideMiddle
+                                                        Layout.fillWidth: true
+                                                    }
+                                                    RowLayout {
+                                                        spacing: 8
+                                                        PrimaryButton {
+                                                            text: "Copy ID"
+                                                            quiet: true
+                                                            onClicked: backend.copyText(backend.selectedAsset.atlas_uri || "")
+                                                        }
+                                                        PrimaryButton {
+                                                            text: "Location"
+                                                            quiet: true
+                                                            onClicked: backend.openFolder(backend.selectedAsset.primary_path || "")
+                                                        }
+                                                        PrimaryButton {
+                                                            objectName: "detailPreviewButton"
+                                                            text: "Preview"
+                                                            onClicked: root.openSelectedPreview()
+                                                        }
+                                                    }
+                                                }
+                                                ColumnLayout {
+                                                    Layout.preferredWidth: assetDetailScroll.availableWidth >= 620 ? 166 : 126
+                                                    Layout.fillHeight: true
+                                                    spacing: 7
                                                     Rectangle {
+                                                        Layout.alignment: Qt.AlignRight
                                                         implicitWidth: indexedLabel.implicitWidth + 18
                                                         implicitHeight: 24
                                                         radius: 12
@@ -1223,38 +1302,42 @@ ApplicationWindow {
                                                             font.letterSpacing: 1.0
                                                         }
                                                     }
-                                                }
-                                                Text {
-                                                    text: backend.selectedAsset.filename || ""
-                                                    color: root.bone
-                                                    font.family: "Georgia"
-                                                    font.pixelSize: 25
-                                                    elide: Text.ElideMiddle
-                                                    Layout.fillWidth: true
-                                                }
-                                                Text {
-                                                    text: backend.selectedAsset.atlas_uri || ""
-                                                    color: root.atlasBright
-                                                    font.family: "Cascadia Mono"
-                                                    font.pixelSize: 10
-                                                    elide: Text.ElideMiddle
-                                                    Layout.fillWidth: true
-                                                }
-                                                RowLayout {
-                                                    spacing: 8
-                                                    PrimaryButton {
-                                                        text: "Copy ID"
-                                                        quiet: true
-                                                        onClicked: backend.copyText(backend.selectedAsset.atlas_uri || "")
-                                                    }
-                                                    PrimaryButton {
-                                                        text: "Location"
-                                                        quiet: true
-                                                        onClicked: backend.openFolder(backend.selectedAsset.primary_path || "")
-                                                    }
-                                                    PrimaryButton {
-                                                        text: "Preview"
-                                                        onClicked: root.openSelectedPreview()
+                                                    Rectangle {
+                                                        Layout.fillWidth: true
+                                                        Layout.fillHeight: true
+                                                        radius: 9
+                                                        color: root.ink
+                                                        border.color: root.line
+                                                        clip: true
+                                                        Image {
+                                                            anchors.fill: parent
+                                                            source: backend.selectedAsset.thumbnailUrl || ""
+                                                            visible: source.toString().length > 0
+                                                            fillMode: Image.PreserveAspectCrop
+                                                            asynchronous: true
+                                                            cache: false
+                                                        }
+                                                        Column {
+                                                            anchors.centerIn: parent
+                                                            spacing: 4
+                                                            visible: (backend.selectedAsset.thumbnailUrl || "").length === 0
+                                                            Text {
+                                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                                text: backend.selectedAsset.extensionLabel || "FILE"
+                                                                color: root.atlasBright
+                                                                font.family: "Cascadia Mono"
+                                                                font.pixelSize: 18
+                                                                font.weight: Font.DemiBold
+                                                            }
+                                                            Text {
+                                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                                text: (backend.selectedAsset.previewKind || "file").toUpperCase()
+                                                                color: root.muted
+                                                                font.pixelSize: 8
+                                                                font.weight: Font.DemiBold
+                                                                font.letterSpacing: 1.2
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
