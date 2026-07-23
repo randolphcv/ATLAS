@@ -9,13 +9,20 @@ ATLAS is a modular, long-term media storage and intelligence platform designed t
 
 **Beacon** is the AI librarian inside ATLAS. Beacon observes, analyzes, indexes, organizes, and retrieves files without owning or modifying the originals.
 
-> Current implementation note (2026-07-23): Beacon 0.8.0 is a packaged native
-> Windows app, not a browser-first dashboard. Its schema-5 Beacon Desk persists
-> questions, approval requests, blockers, plain-English human replies, and new
-> requests without treating conversation as file-operation authority. Schema 6
-> adds revisioned editable asset context and policy-gated checksum-verified
-> managed moves bounded to approved ATLAS roots. See
+> Current implementation note (2026-07-23): Beacon 0.9.0 is a packaged native
+> Windows app, not a browser-first dashboard. Schema 7 adds explicit recursive
+> Archive Intake snapshots, durable item-level progress, cancel-between-files,
+> resume, retry-only-failures, and interrupted-session recovery. Intake remains
+> catalog-only and never triggers a managed move. Beacon Desk, revisioned
+> editable context, candidate analysis, and checksum-verified managed moves
+> remain separate authority boundaries. See
 > `ATLAS_PROJECT_MEMORY.md` for the current verified runtime and release state.
+
+## Immediate Next Task
+
+Run the bounded 25-file live-Inbox reliability pilot described in
+`LIVE_INBOX_HANDOFF.md`. Do not leave the item-limit field blank, begin AI
+analysis, or expand to the remaining Inbox during that first task.
 
 ---
 

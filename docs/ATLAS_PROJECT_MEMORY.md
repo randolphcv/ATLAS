@@ -131,17 +131,22 @@ These are stable unless Connor explicitly changes them:
 
 Phase 0, the Phase 1 synthetic read-only catalog, the Phase 2 local observatory
 foundation, the native desktop client, and the first controlled media use test
-are verified complete through Beacon 0.8.0, including verified thumbnail
+are verified complete through Beacon 0.9.0, including verified thumbnail
 derivatives, native temporary media and text previews, an application-level
 Space shortcut, a checksum-bound candidate-analysis schema, and a five-asset
 Beacon librarian pilot. Schema 5 adds the durable native Beacon Desk with
 explicit waiting-for-human, queued-for-Beacon, and resolved conversation states.
 Schema 6 adds revisioned editable context and policy-gated checksum-verified
-managed moves. The exact packaged launch was checked against the schema-6 live
+managed moves. Schema 7 adds explicit recursive intake snapshots, durable
+per-file state, progress, cancel, resume, failure-only retry, and recovery.
+The exact packaged 0.9.0 application completed a three-file nested synthetic
+intake without changing source hashes. The production catalog remains healthy
+at schema 6 until the first 0.9.0 launch; a verified pre-schema-7 online backup
+exists. The prior packaged launch was checked against the schema-6 live
 catalog. A completed 7,093-file Inbox transfer received a stable read-only
 inventory; one known-checksum Inbox location completed the bounded
-catalog-to-managed-location proof. Large-scale recursive intake remains a
-separate resumable-job milestone.
+catalog-to-managed-location proof. The resumable intake milestone is complete;
+the next gate is a bounded 25-file live-Inbox reliability pilot.
 
 The first implementation target is a read-only vertical slice against synthetic fixtures:
 
@@ -196,6 +201,9 @@ The first implementation target is a read-only vertical slice against synthetic 
 | Verified technical facts remain locked outside the editable context record | Decided in Beacon 0.8.0 | Preserve checksum and probe evidence while allowing librarian judgment to evolve |
 | Managed moves require recorded policy, exact catalog location, approved root, and source/destination checksum verification | Decided in Beacon 0.8.0 | Make organization consequential but recoverable, bounded, non-overwriting, and auditable |
 | A completed managed location is preferred as the current path while every duplicate location remains visible | Decided in Beacon 0.8.0 | Present the durable archive location without erasing provenance or silently deduplicating |
+| Recursive intake is an explicit snapshot and never an automatic production watcher | Decided in Beacon 0.9.0 | Keep large-folder work reviewable, bounded, and user-started |
+| Intake persists item-level states and resumes without repeating completed items | Decided in Beacon 0.9.0 | Make cancel, app closure, crash recovery, and failure-only retry dependable |
+| The first live Inbox run is limited to 25 files | Decided for the Beacon 0.9.0 pilot | Prove the real storage path and lifecycle before full-corpus work |
 
 ## Decisions Still Open
 
@@ -211,7 +219,6 @@ Do not silently resolve these:
 - which AI models are local versus optional external adapters;
 - which root conventions are fixed versus configurable;
 - whether derivatives live only under `J:\Beacon\` or may be colocated by policy;
-- terminology and state-machine names for intake jobs;
 - long-term ATLAS visual-token and brand refinements.
 
 ## Required Acceptance Evidence
@@ -315,12 +322,12 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-23 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, branch `feature/ai-analysis`, verified Beacon 0.8.0 implementation commit `da80391`
-- Current milestone: answered Desk reconciliation, editable catalog context, and first real managed move complete
-- Verified complete: all six pilot conversations processed and resolved; local-only/external-gate/candidate-storage/move policies recorded; schema-6 policy, editable-metadata, revision-history, and managed-move records; searchable native metadata editor; approved-root same-volume managed move with checksum verification, non-overwrite behavior, audit, rollback, and duplicate-location preservation; packaged Beacon 0.8.0 release
-- In progress: the stable Inbox now contains 7,092 remaining files and 744,696,445,768 bytes after the bounded managed-move proof
-- Blocked: large-scale processing needs a resumable recursive intake-job ledger and visible progress/cancel/retry UI; asset-specific destinations still depend on verified or editable context rather than filename guessing
-- Files changed: repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.8.0\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; live schema-6 runtime, private reconciliation/import and validation evidence, and schema-5 recovery backup under `C:\ProgramData\ATLAS\Beacon`; one verified managed asset location under `J:\Library`; portable documentation under `J:\System\Documentation\ATLAS\`
-- Tests/live checks: Python compilation and 44/44 tests passed with real FFprobe and FFmpeg; schema-5 pre-migration backup `beacon-20260723T184129.157089Z.db` is healthy with SHA-256 `cd9eec8b37a5afbacecffda8803d76cbdbb12ac596bdbfc2f88e166eca01b234`; live schema-6 database is healthy with five assets, seven locations, five policies, three editable metadata records/revisions, one complete managed move, zero open Desk threads, and zero failed events; the pre-move Inbox had two matching 7,093-file metadata snapshots; the post-move Inbox has 7,092 files and 744,696,445,768 bytes; the destination SHA-256 exactly matches the catalog and the source Inbox path is absent; exact packaged release rendered the managed J: path and exited 0; bundle contains 1,748 files and 178,146,202 bytes with zero blocked capabilities; executable SHA-256 `15375B4C2E5B0E90702914B196E77B12C4A3D9274C7E52BA5A413162BE9646E2`; package SHA-256 `61E12DB4F8CD61540D7BBB1C2357C475CFB7DA7ECC60CAB8608278E6DC0F607D`
-- Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, full `J:\Inbox` size/format/privacy distribution, production stability thresholds, database restore/retention policy, code-signing strategy, local model choices and measured throughput on the RTX 3060, external-model cost/authorization, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
-- Next smallest step: add resumable recursive intake jobs with Overview progress/cancel/retry, then catalog and analyze a representative cohort from each stable top-level Inbox collection before expanding to the remaining corpus
+- Working branch/commit: `C:\Development\ATLAS`, branch `main`, Beacon 0.9.0 feature commit `72e27ea`, merged by `7166de8`
+- Current milestone: resumable Archive Intake merged; bounded live-Inbox reliability pilot ready
+- Verified complete: prior Desk, analysis-candidate, editable-metadata, and managed-move work; schema-7 deterministic recursive snapshots; item-level progress and attempts; changed-source rejection; cancel, pause, resume, failure-only retry, and interrupted-session recovery; native Overview master-detail intake controls; packaged Beacon 0.9.0 release
+- In progress: no production intake is running; the prior verified post-move Inbox inventory remains 7,092 files and 744,696,445,768 bytes
+- Blocked: nothing blocks the bounded 25-file pilot; full-corpus expansion remains gated on pilot verification, and asset-specific destinations still require verified or editable context
+- Files changed: merged repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.9.0\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; verified pre-schema-7 recovery copy under `C:\ProgramData\ATLAS\Beacon\backups`; portable documentation under `J:\System\Documentation\ATLAS\`
+- Tests/live checks: Python compilation and 52/52 tests passed with real FFprobe and FFmpeg; exact packaged 0.9.0 rendered a complete three-file nested synthetic intake with source hashes unchanged; synthetic database healthy at schema 7 with zero foreign-key errors; bundle contains 1,748 files and 178,196,704 bytes with zero blocked capabilities; executable SHA-256 `1BC9B4E5376537FC46B0DBC714ED6DC3A50D3E059F74F3800EFFE5C81BE262FB`; package SHA-256 `A2905C2AFAC3D129E63927E8E61DFD178D8179C1C306F870D751AB2F77D4F790`; live database remains healthy at schema 6; verified pre-schema-7 backup `beacon-pre-schema7-20260723T192234.940229Z.db` SHA-256 `f66387248420bb7c3b2b1ff4d7e9a0b5c8cc8ee3358c05921dbd08fec614ca57`
+- Unverified assumptions: current post-transfer Inbox stability, physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, production throughput, database restore/retention policy, code-signing strategy, local model choices and measured RTX 3060 throughput, external-model cost/authorization, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
+- Next smallest step: run the 25-file `J:\Inbox` pilot from Beacon 0.9.0, exercise cancel/resume, verify catalog/database/source evidence, then stop for review before any full-Inbox or AI-analysis expansion

@@ -77,6 +77,24 @@
 - exact catalog-location updates, immutable move evidence, and rollback path
 - independently stable large-Inbox inventory and one live end-to-end proof
 
+## Completed — resumable archive intake
+
+- schema-7 recursive snapshots with approved-root and reparse-point boundaries
+- durable per-file pending, running, complete, and failed states
+- native Overview progress, current-path, cancel, resume, and retry controls
+- app-close pause and interrupted-session recovery without repeating completed
+  items
+- bounded 25-file default with an explicit blank field required for full scope
+- exact packaged synthetic completion with source hashes unchanged
+
+## Next — bounded live Inbox pilot
+
+- create, but do not exceed, a 25-file `J:\Inbox` snapshot
+- start, cancel between files, and resume the same durable job
+- confirm no completed item is repeated and no source path is changed
+- reconcile asset/location/event deltas and schema-7 integrity
+- stop for human review before full-Inbox processing or AI analysis
+
 ## Next — repeatable local intelligence
 
 - choose and benchmark replaceable local vision, transcription, and audio
@@ -84,7 +102,7 @@
 - add representative-frame and timecoded evidence records
 - add explicit Accept/Reject review without automatic file operations
 - define privacy zones, face-analysis policy, rights flags, and production scope
-- add durable queued jobs for large stable snapshots
+- measure catalog and derivative throughput from the bounded live pilot
 
 ## Later — managed intake
 
