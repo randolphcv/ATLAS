@@ -9,6 +9,12 @@ ATLAS is a modular, long-term media storage and intelligence platform designed t
 
 **Beacon** is the AI librarian inside ATLAS. Beacon observes, analyzes, indexes, organizes, and retrieves files without owning or modifying the originals.
 
+> Current implementation note (2026-07-23): Beacon 0.7.0 is a packaged native
+> Windows app, not a browser-first dashboard. Its schema-5 Beacon Desk persists
+> questions, approval requests, blockers, plain-English human replies, and new
+> requests without treating conversation as file-operation authority. See
+> `ATLAS_PROJECT_MEMORY.md` for the current verified runtime and release state.
+
 ---
 
 ## Current Hardware and Storage State

@@ -131,12 +131,14 @@ These are stable unless Connor explicitly changes them:
 
 Phase 0, the Phase 1 synthetic read-only catalog, the Phase 2 local observatory
 foundation, the native desktop client, and the first controlled media use test
-are verified complete through Beacon 0.6.0, including verified thumbnail
+are verified complete through Beacon 0.7.0, including verified thumbnail
 derivatives, native temporary media and text previews, an application-level
 Space shortcut, a checksum-bound candidate-analysis schema, and a five-asset
-Beacon librarian pilot. The exact packaged launch was checked against the
-schema-4 live catalog. Production-path indexing remains deliberately unapproved,
-and the active `J:\Inbox` transfer was excluded from the pilot.
+Beacon librarian pilot. Schema 5 adds the durable native Beacon Desk with
+explicit waiting-for-human, queued-for-Beacon, and resolved conversation states.
+The exact packaged launch was checked against the schema-5 live catalog.
+Production-path indexing remains deliberately unapproved, and the active
+`J:\Inbox` transfer was excluded from the pilot and Desk implementation.
 
 The first implementation target is a read-only vertical slice against synthetic fixtures:
 
@@ -183,6 +185,10 @@ The first implementation target is a read-only vertical slice against synthetic 
 | Every AI result begins as a reviewable candidate | Decided in Beacon 0.6.0 | Keep human judgment over titles, tags, privacy, rights, and archive meaning |
 | Organization suggestions never execute file operations | Decided in Beacon 0.6.0 | Separate librarian advice from approval-based managed intake |
 | External inference requires explicit recorded authorization and execution labeling | Decided in Beacon 0.6.0 | Keep local/cloud boundaries visible and auditable |
+| Beacon questions and human replies persist as ordered SQLite conversations | Decided in Beacon 0.7.0 | Make blockers and context durable across app restarts and analysis sessions |
+| Human replies queue a conversation but do not resolve it automatically | Decided in Beacon 0.7.0 | Preserve an explicit handshake between supplied context and Beacon review |
+| Conversation never directly authorizes a file operation | Decided in Beacon 0.7.0 | Keep plain-English guidance separate from consequential audited execution |
+| The UI labels the Desk as saved locally rather than implying an always-online worker | Decided in Beacon 0.7.0 | Make actual execution state honest and legible |
 
 ## Decisions Still Open
 
@@ -302,12 +308,12 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-23 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, branch `feature/ai-analysis`, verified Beacon 0.6.0 implementation commit `7bc97e2`
-- Current milestone: checksum-bound candidate-intelligence foundation and five-asset Beacon librarian pilot complete
-- Verified complete: schema-4 analysis runs/results; atomic idempotent manifest import; explicit external-inference authorization; separate candidate title/description/category/tags/privacy/organization metadata; confidence and evidence provenance; candidate search; native analysis detail card; one analysis for a duplicate asset with two locations; packaged Beacon 0.6.0 release
+- Working branch/commit: `C:\Development\ATLAS`, branch `feature/ai-analysis`, verified Beacon 0.7.0 implementation commit `8ab8422`
+- Current milestone: durable Beacon Desk complete; human can now clear pilot gates and supply asset context in the native Overview
+- Verified complete: schema-5 Beacon threads/messages; master-detail Open conversations UI; waiting-for-human and queued-for-Beacon states; plain-English replies; human-started requests; explicit Resolve action; conversation/file-operation authority separation; six idempotently seeded pilot conversations; packaged Beacon 0.7.0 release
 - In progress: Connor reports a large copy into `J:\Inbox`; Beacon has no watcher on it and the active transfer was deliberately not inspected
-- Blocked: large-inbox analysis must wait for copy completion plus an approved stable snapshot, exclusions/privacy zones, analyzer selection, and a measured representative batch
-- Files changed: repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.6.0\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; private candidate manifest under `C:\ProgramData\ATLAS\Beacon\analysis-runs`; private analysis evidence under `C:\ProgramData\ATLAS\Beacon\validation\ai-analysis-pilot`; live runtime under `C:\ProgramData\ATLAS\Beacon`; portable documentation under `J:\System\Documentation\ATLAS\`
-- Tests/live checks: Python compilation and 30/30 tests passed with real FFprobe and FFmpeg; pre-migration live backup `beacon-20260723T171525.208121Z.db` is schema-3 healthy with SHA-256 `abb3e2dd84d28664a36e1445d637eb2b26b21536f078ff7800fc8fefec1c092d`; live schema-4 database is healthy with five assets, six locations, one analysis run, five candidate results, and zero catalog failures; exact manifest re-import reused its run; candidate search passed; all six observed local paths remain byte-identical to catalog SHA-256; source and packaged analysis cards reviewed; packaged QML matches source; capability audit passed; bundle contains 1,748 files and 178,052,749 bytes with zero blocked capabilities; executable SHA-256 `D353EC59051C1978AACE0DC452E6B881CC6C6E740382BD6DB4EEF2B118787FDB`; package SHA-256 `F22B1DE8309D86674B8B07708CEF2B5555AB16E5D271BEDD96A736689F2F2020`
+- Blocked: large-inbox analysis waits on the Desk's copy-completion and policy conversations, then a read-only stable inventory and measured representative batch
+- Files changed: repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.7.0\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; live runtime and schema-4 recovery backup under `C:\ProgramData\ATLAS\Beacon`; private Desk verification under `C:\ProgramData\ATLAS\Beacon\validation\beacon-desk`; portable documentation under `J:\System\Documentation\ATLAS\`
+- Tests/live checks: Python compilation and 38/38 tests passed with real FFprobe and FFmpeg; schema-4 pre-migration backup `beacon-20260723T174813.710503Z.db` is healthy with SHA-256 `90fbd4ed1d809495ebdb123613e0a6ca23add78df4116488a4228bda98cf3ba8`; live schema-5 database is healthy with five assets, six locations, one analysis run, five candidate results, six open threads, and six messages; exact release executable rendered the live Overview and exited 0; bundle contains 1,748 files and 178,094,165 bytes with zero blocked capabilities; executable SHA-256 `D927B5E92BCAA384F0652B896F8D7DEEDD1B34071CA0A2DE94C34957417CE28D`; package SHA-256 `13EDD6DD265A6F156C517103B67C608953F670AE57CBF56A9D83959F6855F328`
 - Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, full `J:\Inbox` size/format/privacy distribution, production stability thresholds, database restore/retention policy, code-signing strategy, local model choices and measured throughput on the RTX 3060, external-model cost/authorization, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
-- Next smallest step: after Connor confirms the copy is finished, take a read-only stable inventory of the exact approved inbox scope and estimate a representative local-first analysis batch before running the full corpus
+- Next smallest step: Connor opens Beacon 0.7.0, answers the three important Desk conversations, and tells Beacon when the copy is finished; then take a read-only stable inventory of the exact approved scope and estimate a representative local-first analysis batch
