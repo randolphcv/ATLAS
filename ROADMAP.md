@@ -9,14 +9,24 @@
 - CLI and structured logs
 - unavailable/corrupt-path tests
 
-## Next — hardening and local dashboard
+## Completed — local observatory foundation
+
+- loopback-only FastAPI adapter
+- branded responsive dashboard
+- catalog search and asset detail
+- visible audit-event ledger
+- integrity/foreign-key health
+- verified online database backup
+- reproducible Windows application bundle
+
+## Next — recovery and pilot hardening
 
 - approve an exact non-production pilot scope
 - tune stability thresholds with representative copy patterns
-- database backup, restore, retention, and integrity checks
-- FastAPI adapter and browser UI
-- job history and visible processing states
-- thumbnails and proxies with recorded lineage
+- add backup retention policy and a tested restore workflow
+- add explicit job records for long-running work
+- add signed installer/update analysis
+- add thumbnails with recorded lineage
 
 ## Later — intelligence and managed intake
 

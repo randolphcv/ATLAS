@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0f10">
+  <title>ATLAS — Beacon</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="ATLAS Beacon home">
+        <span class="brand-mark" aria-hidden="true">
+          <span class="brand-orbit"></span>
+          <span class="brand-core"></span>
+        </span>
+        <span>
+          <span class="brand-name">ATLAS</span>
+          <span class="brand-subtitle">Beacon</span>
+        </span>
+      </a>
+
+      <nav class="primary-nav" aria-label="Primary navigation">
+        <button class="nav-item is-active" data-section-target="overview">
+          <span class="nav-glyph" aria-hidden="true">⌖</span>
+          <span>Overview</span>
+        </button>
+        <button class="nav-item" data-section-target="library">
+          <span class="nav-glyph" aria-hidden="true">▦</span>
+          <span>Library</span>
+        </button>
+        <button class="nav-item" data-section-target="operations">
+          <span class="nav-glyph" aria-hidden="true">≋</span>
+          <span>Operations</span>
+        </button>
+        <button class="nav-item" data-section-target="system">
+          <span class="nav-glyph" aria-hidden="true">◉</span>
+          <span>System</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="local-seal">
+          <span class="status-dot status-dot--jade"></span>
+          <span>
+            <strong>Local node</strong>
+            <small>No cloud connection</small>
+          </span>
+        </div>
+        <p class="version-label">BEACON <span id="app-version">0.2.0</span></p>
+      </div>
+    </aside>
+
+    <main class="main-stage">
+      <header class="topbar">
+        <div>
+          <p class="topbar-kicker">Archive Observatory</p>
+          <p class="topbar-date" id="current-date"></p>
+        </div>
+        <div class="topbar-actions">
+          <span class="privacy-badge">
+            <span class="privacy-lock" aria-hidden="true">◇</span>
+            Private by design
+          </span>
+          <button class="icon-button" id="refresh-button" aria-label="Refresh dashboard" title="Refresh dashboard">↻</button>
+        </div>
+      </header>
+
+      <div class="content-frame">
+        <div class="error-banner" id="error-banner" role="alert" hidden></div>
+
+        <section class="view is-active" data-section="overview" aria-labelledby="overview-title">
+          <article class="hero-panel">
+            <div class="hero-copy">
+              <p class="eyebrow">System state / <span id="hero-state-label">Reading signals</span></p>
+              <h1 id="overview-title">Beacon is <em>attentive.</em></h1>
+              <p class="hero-description">
+                Your catalog is local, legible, and under observation. Originals remain untouched.
+              </p>
+            </div>
+            <div class="hero-signal" aria-hidden="true">
+              <div class="signal-ring signal-ring--outer"></div>
+              <div class="signal-ring signal-ring--middle"></div>
+              <div class="signal-ring signal-ring--inner"></div>
+              <div class="signal-sweep"></div>
+              <div class="signal-point"></div>
+            </div>
+            <div class="hero-meta">
+              <div>
+                <span>Database integrity</span>
+                <strong id="hero-integrity">Checking</strong>
+              </div>
+              <div>
+                <span>Last observation</span>
+                <strong id="hero-last-seen">—</strong>
+              </div>
+            </div>
+          </article>
+
+          <div class="metric-grid" aria-label="Catalog summary">
+            <article class="metric-card">
+              <span class="metric-index">01</span>
+              <p>Known assets</p>
+              <strong id="metric-assets">—</strong>
+              <small>Permanent identities</small>
+            </article>
+            <article class="metric-card">
+              <span class="metric-index">02</span>
+              <p>Observed locations</p>
+              <strong id="metric-locations">—</strong>
+              <small>Ordinary file paths</small>
+            </article>
+            <article class="metric-card">
+              <span class="metric-index">03</span>
+              <p>Duplicate groups</p>
+              <strong id="metric-duplicates">—</strong>
+              <small>Proven by checksum</small>
+            </article>
+            <article class="metric-card">
+              <span class="metric-index">04</span>
+              <p>Catalog footprint</p>
+              <strong id="metric-size">—</strong>
+              <small>Original bytes represented</small>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="panel panel--assets">
+              <header class="panel-heading">
+                <div>
+                  <p class="eyebrow">Recently observed</p>
+                  <h2>Archive signals</h2>
+                </div>
+                <button class="text-button" data-section-jump="library">Open library <span>→</span></button>
+              </header>
+              <div class="compact-assets" id="recent-assets" data-testid="recent-assets">
+                <div class="loading-state">Reading the catalog…</div>
+              </div>
+            </article>
+
+            <article class="panel panel--topology">
+              <header class="panel-heading">
+                <div>
+                  <p class="eyebrow">Catalog topology</p>
+                  <h2>How Beacon observes</h2>
+                </div>
+                <span class="status-pill status-pill--jade">Read only</span>
+              </header>
+              <ol class="state-route">
+                <li class="is-complete">
+                  <span class="route-node">1</span>
+                  <div><strong>Wait for stability</strong><small>Size and modified time settle</small></div>
+                </li>
+                <li class="is-complete">
+                  <span class="route-node">2</span>
+                  <div><strong>Prove identity</strong><small>SHA-256 and permanent UUID</small></div>
+                </li>
+                <li class="is-complete">
+                  <span class="route-node">3</span>
+                  <div><strong>Read the signal</strong><small>Filesystem and media metadata</small></div>
+                </li>
+                <li class="is-complete">
+                  <span class="route-node">4</span>
+                  <div><strong>Record, never alter</strong><small>SQLite catalog and audit event</small></div>
+                </li>
+              </ol>
+            </article>
+
+            <article class="panel panel--activity">
+              <header class="panel-heading">
+                <div>
+                  <p class="eyebrow">Audit trail</p>
+                  <h2>Recent activity</h2>
+                </div>
+                <button class="text-button" data-section-jump="operations">View all <span>→</span></button>
+              </header>
+              <div class="activity-list" id="recent-activity">
+                <div class="loading-state">Consulting the ledger…</div>
+              </div>
+            </article>
+
+            <article class="panel panel--readiness">
+              <header class="panel-heading">
+                <div>
+                  <p class="eyebrow">Recovery posture</p>
+                  <h2>Catalog readiness</h2>
+                </div>
+                <span class="status-pill" id="readiness-pill">Checking</span>
+              </header>
+              <div class="readiness-score">
+                <div class="score-orbit">
+                  <strong id="readiness-score">—</strong>
+                  <span>verified</span>
+                </div>
+                <div class="readiness-list">
+                  <p><span class="checkmark">✓</span> SQLite integrity</p>
+                  <p><span class="checkmark">✓</span> Foreign-key consistency</p>
+                  <p><span class="checkmark">✓</span> Local-only boundary</p>
+                  <p id="backup-readiness"><span class="pending-mark">·</span> Backup not yet observed</p>
+                </div>
+              </div>
+              <button class="primary-button" id="overview-backup-button">Create verified backup</button>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" data-section="library" aria-labelledby="library-title" hidden>
+          <header class="page-heading">
+            <div>
+              <p class="eyebrow">Identity and location</p>
+              <h1 id="library-title">The living catalog</h1>
+              <p>Every identity beside every ordinary path. Nothing hidden, nothing moved.</p>
+            </div>
+            <form class="search-form" id="asset-search">
+              <label class="sr-only" for="asset-search-input">Search assets</label>
+              <span aria-hidden="true">⌕</span>
+              <input id="asset-search-input" type="search" placeholder="Search filename, path, UUID, or checksum" autocomplete="off">
+              <button type="submit">Search</button>
+            </form>
+          </header>
+
+          <div class="library-layout">
+            <article class="panel library-panel">
+              <header class="panel-heading">
+                <div>
+                  <p class="eyebrow">Asset register</p>
+                  <h2><span id="library-count">—</span> identities</h2>
+                </div>
+                <span class="table-hint">Select an asset to inspect</span>
+              </header>
+              <div class="table-wrap">
+                <table class="asset-table">
+                  <thead>
+                    <tr>
+                      <th>Object</th>
+                      <th>Signal</th>
+                      <th>Locations</th>
+                      <th>Last seen</th>
+                    </tr>
+                  </thead>
+                  <tbody id="asset-table-body" data-testid="asset-table-body"></tbody>
+                </table>
+                <div class="loading-state" id="library-loading">Reading the catalog…</div>
+              </div>
+            </article>
+
+            <aside class="detail-panel" id="asset-detail" aria-live="polite">
+              <div class="detail-empty">
+                <span class="empty-mark">⌖</span>
+                <h2>Select an identity</h2>
+                <p>Technical facts, paths, and provenance will appear here.</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" data-section="operations" aria-labelledby="operations-title" hidden>
+          <header class="page-heading">
+            <div>
+              <p class="eyebrow">Provenance ledger</p>
+              <h1 id="operations-title">Operations</h1>
+              <p>A legible history of what Beacon observed and what it produced.</p>
+            </div>
+            <span class="privacy-badge"><span class="status-dot status-dot--jade"></span> Audit enabled</span>
+          </header>
+          <article class="panel operation-ledger">
+            <div class="ledger-header">
+              <span>State</span><span>Operation</span><span>Object</span><span>Observed</span>
+            </div>
+            <div id="operation-list" class="ledger-list"></div>
+          </article>
+        </section>
+
+        <section class="view" data-section="system" aria-labelledby="system-title" hidden>
+          <header class="page-heading">
+            <div>
+              <p class="eyebrow">Local infrastructure</p>
+              <h1 id="system-title">System</h1>
+              <p>Health, recovery artifacts, and the boundary around your archive.</p>
+            </div>
+            <span class="privacy-badge"><span class="privacy-lock">◇</span> 127.0.0.1 only</span>
+          </header>
+          <div class="system-grid">
+            <article class="panel system-health">
+              <header class="panel-heading">
+                <div><p class="eyebrow">Database</p><h2>Integrity report</h2></div>
+                <span class="status-pill" id="system-health-pill">Checking</span>
+              </header>
+              <dl class="fact-list" id="system-facts"></dl>
+            </article>
+            <article class="panel backup-panel">
+              <header class="panel-heading">
+                <div><p class="eyebrow">Recovery</p><h2>Verified backups</h2></div>
+                <button class="primary-button primary-button--compact" id="system-backup-button">New backup</button>
+              </header>
+              <div id="backup-list" class="backup-list"></div>
+            </article>
+            <article class="panel boundary-panel">
+              <header class="panel-heading">
+                <div><p class="eyebrow">Authority boundary</p><h2>What Beacon may do</h2></div>
+              </header>
+              <div class="boundary-columns">
+                <div>
+                  <h3 class="jade-text">Permitted now</h3>
+                  <p>Observe synthetic files</p>
+                  <p>Read technical metadata</p>
+                  <p>Write catalog records</p>
+                  <p>Create verified DB backups</p>
+                </div>
+                <div>
+                  <h3 class="ember-text">Not authorized</h3>
+                  <p>Move or rename originals</p>
+                  <p>Index production storage</p>
+                  <p>Upload media to cloud AI</p>
+                  <p>Delete or deduplicate files</p>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog class="backup-dialog" id="backup-dialog">
+    <form method="dialog">
+      <button class="dialog-close" value="cancel" aria-label="Close">×</button>
+      <p class="eyebrow">Recovery artifact</p>
+      <h2>Create a verified backup?</h2>
+      <p>Beacon will make an online SQLite backup in the local runtime backup directory, verify its integrity, and calculate its SHA-256 checksum.</p>
+      <div class="dialog-note">
+        <span class="status-dot status-dot--brass"></span>
+        This does not copy, move, or alter any original media.
+      </div>
+      <div class="dialog-actions">
+        <button class="secondary-button" value="cancel">Not now</button>
+        <button class="primary-button" id="confirm-backup-button" value="default">Create backup</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
+

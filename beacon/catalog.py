@@ -11,7 +11,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
-from .database import connect, migrate
+from .database import connect, migrate, record_event
 from .identity import asset_uuid
 from .media import probe
 from .stability import wait_until_stable
@@ -95,6 +95,20 @@ def catalog_file(
                 observed_at = excluded.observed_at
             """,
             (identifier, str(source), after_hash.st_mtime_ns, now),
+        )
+        record_event(
+            connection,
+            kind="catalog",
+            state="complete",
+            message=f"Cataloged {source.name}",
+            asset_id=identifier,
+            location_path=str(source),
+            details={
+                "duplicate_content": duplicate,
+                "repeated_location": repeated,
+                "sha256": checksum,
+                "size_bytes": after_hash.st_size,
+            },
         )
     LOGGER.info(
         "cataloged asset_id=%s path=%s duplicate=%s repeated=%s",

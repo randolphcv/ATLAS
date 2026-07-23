@@ -4,14 +4,27 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "atlas-beacon"
-version = "0.1.0"
-description = "Read-only local catalog prototype for ATLAS"
+version = "0.2.0"
+description = "Local-first catalog and dashboard for ATLAS"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi==0.139.2",
+    "tzdata==2026.3; sys_platform == 'win32'",
+    "uvicorn==0.51.0",
+]
 
 [project.scripts]
 beacon = "beacon.cli:main"
+beacon-dashboard = "beacon.app:main"
 
 [tool.setuptools]
-packages = ["beacon"]
+packages = ["beacon", "beacon.web"]
 
+[tool.setuptools.package-data]
+beacon = ["web/*.html", "web/*.css", "web/*.js"]
+
+[project.optional-dependencies]
+dev = [
+    "httpx2==2.7.0",
+    "pyinstaller==6.21.0",
+]
