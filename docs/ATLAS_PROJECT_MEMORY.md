@@ -115,8 +115,8 @@ These are stable unless Connor explicitly changes them:
 
 ## Current Phase
 
-Phase 0 foundations are established. Phase 1 read-only catalog prototype is in
-progress and verified against one synthetic representative fixture.
+Phase 0 foundations and the Phase 1 synthetic read-only catalog milestone are
+verified complete. Production-path indexing remains deliberately unapproved.
 
 The first implementation target is a read-only vertical slice against synthetic fixtures:
 
@@ -142,6 +142,9 @@ The first implementation target is a read-only vertical slice against synthetic 
 | Originals remain ordinary files | Locked principle | Avoid lock-in and preserve access |
 | Cloud is optional for core operation | Locked principle | Privacy and availability |
 | Vector search comes after dependable catalog/search | Decided sequence | Reliability before intelligence |
+| Phase 1 runs as an ordinary foreground CLI | Decided for Phase 1 | Easy to stop, inspect, and recover; no service lifecycle yet |
+| Phase 1 metadata lives in SQLite | Decided for Phase 1 | One inspectable transactional authority; sidecars remain an open later policy |
+| Phase 1 UUID is deterministic from SHA-256 | Provisional | Stable retries and duplicate recognition; edit/version semantics remain open |
 
 ## Decisions Still Open
 
@@ -225,12 +228,12 @@ Next smallest step:
 ## Current Handoff
 
 Last verified: 2026-07-22 on the Windows ATLAS host  
-Working branch/commit: `C:\Development\ATLAS`, branch `main`, no initial commit yet  
-Current milestone: Phase 1 synthetic read-only catalog vertical slice  
-Verified complete: canonical NVMe repository; Git and Python 3.12 installed; SQLite schema; stability observation; SHA-256; deterministic provisional asset UUID; content/location duplicate handling; optional ffprobe adapter; CLI init/add/scan/list/inspect; four automated tests; representative two-pass CLI run; source fixture remained byte-identical  
+Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `802e788`  
+Current milestone: Phase 1 synthetic read-only catalog complete  
+Verified complete: canonical NVMe Git repository; foreground watcher; stability observation; SHA-256; deterministic provisional asset UUID; SQLite schema; content/location duplicate handling; restart idempotency; CLI init/add/scan/watch/list/inspect; structured logs; FFprobe WAV/MP4 metadata; corrupt-media and FFprobe-timeout handling; safe unavailable-path behavior  
 In progress: none  
-Blocked: none for the synthetic prototype  
-Files changed: new repository under `C:\Development\ATLAS`; runtime database and synthetic fixture under `C:\ProgramData\ATLAS\Beacon`; this portable handoff  
-Tests/live checks: Python compile succeeded; 4/4 unit tests passed; repeated catalog pass produced one asset and one location; SHA-256 matched before and after  
-Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent backup strategy, ffprobe behavior on real media, and production copy-stability thresholds  
-Next smallest step: commit the verified baseline, add explicit unavailable-path/corrupt-media cases, then install FFmpeg and test generated synthetic audio/video before considering any real-media scope
+Blocked: production pilot requires an exact approved sandbox/path and stability policy  
+Files changed: repository under `C:\Development\ATLAS`; synthetic acceptance runtime under `C:\ProgramData\ATLAS\Beacon\acceptance-20260722-231828`; this portable handoff  
+Tests/live checks: Python compilation passed; 10/10 tests passed; two independent watcher processes passed; database integrity `ok`; four content assets and five locations; H.264 and PCM metadata verified; unavailable path exited 1 safely; all fixture hashes matched before and after; log matched no common secret patterns  
+Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent backup strategy, real-world copy pause behavior, production stability thresholds, and database backup/restore policy  
+Next smallest step: design the Phase 2 hardening slice—database backup/restore plus a local job/status API—while keeping any real-media pilot separately scoped and explicitly approved
