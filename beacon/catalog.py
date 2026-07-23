@@ -45,6 +45,7 @@ def catalog_file(
     db_path: Path,
     stability_seconds: float = 2.0,
     include_media_probe: bool = True,
+    include_thumbnail_generation: bool = True,
 ) -> CatalogResult:
     source = source.resolve(strict=True)
     if not source.is_file() or source.is_symlink():
@@ -109,6 +110,17 @@ def catalog_file(
                 "sha256": checksum,
                 "size_bytes": after_hash.st_size,
             },
+        )
+    if media is not None and include_thumbnail_generation:
+        # Import here to keep the catalog/thumbnail modules free of an import cycle.
+        from .thumbnails import ensure_thumbnail
+
+        ensure_thumbnail(
+            source,
+            db_path,
+            asset_id=identifier,
+            source_sha256=checksum,
+            media_metadata=media,
         )
     LOGGER.info(
         "cataloged asset_id=%s path=%s duplicate=%s repeated=%s",

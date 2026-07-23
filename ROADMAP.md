@@ -35,6 +35,10 @@
 - renamed checksum duplicate resolved to one asset with two locations
 - restart/idempotency and database integrity verified
 - ATLAS source hashes verified unchanged after the complete run
+- schema-backed image/video/audio thumbnails with recorded source lineage
+- native Space preview with image fit, audio waveform/playback, video playback,
+  and a safe metadata fallback
+- source and packaged Beacon 0.4.0 preview states visually verified
 
 ## Next — recovery and pilot hardening
 
@@ -43,7 +47,7 @@
 - add backup retention policy and a tested restore workflow
 - add explicit job records for long-running work
 - add signed installer/update analysis
-- add thumbnails with recorded lineage
+- add a tested database restore workflow
 
 ## Later — intelligence and managed intake
 

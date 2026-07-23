@@ -15,6 +15,7 @@ from beacon.catalog import catalog_file, scan_directory, sha256_file, watch_dire
 from beacon.media import probe
 from beacon.repository import asset_detail
 from beacon.stability import wait_until_stable
+from beacon.thumbnails import ensure_thumbnail
 
 
 class CatalogTests(unittest.TestCase):
@@ -184,7 +185,12 @@ class CatalogTests(unittest.TestCase):
             ],
         }
         with patch("beacon.catalog.probe", return_value=metadata):
-            result = catalog_file(source, self.db, 0)
+            result = catalog_file(
+                source,
+                self.db,
+                0,
+                include_thumbnail_generation=False,
+            )
         detail = asset_detail(self.db, result.asset_id)
         self.assertIsNotNone(detail)
         assert detail is not None
@@ -192,6 +198,83 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(detail["codec"], "mjpeg")
         self.assertEqual(detail["dimensions"], "4032 × 3024")
         self.assertIsNone(detail["duration_seconds"])
+
+    def test_thumbnail_derivative_is_atomic_verified_and_idempotent(self) -> None:
+        source = self._write("wave.wav", b"synthetic source bytes")
+        source_hash = sha256_file(source)
+        cataloged = catalog_file(
+            source,
+            self.db,
+            0,
+            include_media_probe=False,
+        )
+        metadata = {
+            "streams": [{"codec_name": "pcm_s16le", "codec_type": "audio"}]
+        }
+
+        def fake_ffmpeg(args: list[str], **_: object) -> subprocess.CompletedProcess:
+            Path(args[-1]).write_bytes(b"verified synthetic png")
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+        thumbnail_probe = {
+            "beacon_kind": "image",
+            "streams": [
+                {
+                    "codec_name": "png",
+                    "codec_type": "video",
+                    "width": 640,
+                    "height": 360,
+                }
+            ],
+        }
+        with patch.dict(os.environ, {"BEACON_FFMPEG": "synthetic-ffmpeg"}):
+            with patch("beacon.thumbnails.subprocess.run", side_effect=fake_ffmpeg) as run:
+                with patch("beacon.thumbnails.probe", return_value=thumbnail_probe):
+                    first = ensure_thumbnail(
+                        source,
+                        self.db,
+                        asset_id=cataloged.asset_id,
+                        source_sha256=source_hash,
+                        media_metadata=metadata,
+                    )
+                    second = ensure_thumbnail(
+                        source,
+                        self.db,
+                        asset_id=cataloged.asset_id,
+                        source_sha256=source_hash,
+                        media_metadata=metadata,
+                    )
+
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        assert first is not None and second is not None
+        self.assertTrue(first.created)
+        self.assertFalse(second.created)
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(sha256_file(source), source_hash)
+        self.assertTrue(Path(first.path).is_file())
+        self.assertEqual(list(Path(first.path).parent.glob("*.partial.png")), [])
+        with sqlite3.connect(self.db) as connection:
+            connection.row_factory = sqlite3.Row
+            derivative = connection.execute(
+                """
+                SELECT asset_id, kind, source_sha256, sha256, state
+                FROM derivatives
+                """
+            ).fetchone()
+            complete_events = connection.execute(
+                """
+                SELECT COUNT(*) FROM system_events
+                WHERE kind = 'thumbnail' AND state = 'complete'
+                """
+            ).fetchone()[0]
+        connection.close()
+        self.assertEqual(derivative["asset_id"], cataloged.asset_id)
+        self.assertEqual(derivative["kind"], "thumbnail")
+        self.assertEqual(derivative["source_sha256"], source_hash)
+        self.assertEqual(derivative["sha256"], first.sha256)
+        self.assertEqual(derivative["state"], "complete")
+        self.assertEqual(complete_events, 1)
 
     @unittest.skipUnless(
         os.environ.get("BEACON_FFPROBE"),

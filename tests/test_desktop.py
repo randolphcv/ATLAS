@@ -48,9 +48,15 @@ class DesktopControllerTests(unittest.TestCase):
         row = self.controller.assets.get(0)
         self.assertEqual(row["filename"], "native-signal.txt")
         self.assertEqual(row["assetId"], self.cataloged.asset_id)
+        self.assertEqual(row["thumbnailUrl"], "")
         self.assertEqual(
             self.controller.selectedAsset["atlas_uri"],
             f"atlas://asset/{self.cataloged.asset_id}",
+        )
+        self.assertEqual(self.controller.selectedAsset["previewKind"], "file")
+        self.assertTrue(self.controller.selectedAsset["previewAvailable"])
+        self.assertTrue(
+            self.controller.selectedAsset["previewUrl"].startswith("file:")
         )
         self.assertEqual(self.controller.summary["assets"], 1)
         self.assertEqual(self.controller.databaseHealth["state"], "healthy")

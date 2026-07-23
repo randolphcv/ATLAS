@@ -9,13 +9,38 @@ a = Analysis(
         ("README_APP.txt", "."),
     ],
     hiddenimports=[],
-    hookspath=[],
+    hookspath=["hooks"],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        "PySide6.QtWebEngineCore",
+        "PySide6.QtWebEngineQuick",
+        "PySide6.QtWebEngineWidgets",
+    ],
     noarchive=False,
     optimize=0,
 )
+
+blocked_qt_capabilities = (
+    "data_visualization",
+    "datavisualization",
+    "qtcharts",
+    "qtpdf",
+    "qtquick3d",
+    "qtvirtualkeyboard",
+    "qtwebengine",
+    "virtualkeyboard",
+    "webengine",
+)
+
+
+def keep_beacon_qt_entry(entry):
+    searchable = " ".join(str(value).lower() for value in entry[:2])
+    return not any(name in searchable for name in blocked_qt_capabilities)
+
+
+a.binaries = [entry for entry in a.binaries if keep_beacon_qt_entry(entry)]
+a.datas = [entry for entry in a.datas if keep_beacon_qt_entry(entry)]
 pyz = PYZ(a.pure)
 
 exe = EXE(

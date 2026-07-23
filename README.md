@@ -5,11 +5,14 @@ observes and catalogs files without owning or changing originals.
 
 ## Current application
 
-Beacon 0.3.1 is a native Windows desktop application. It includes:
+Beacon 0.4.0 is a native Windows desktop application. It includes:
 
 - the verified Phase 1 read-only catalog;
 - a branded Qt Quick desktop shell with no embedded browser;
 - catalog search and master-detail asset inspection;
+- verified image, video, and audio thumbnails stored as separate derivatives;
+- a Finder-style Space preview for images, audio, video, and safe metadata
+  fallback for other files;
 - a visible audit-event ledger;
 - SQLite integrity and foreign-key health reporting;
 - non-blocking verified local database backups with SHA-256;
@@ -23,10 +26,11 @@ is not started by the desktop application.
 
 ## Run the Windows app
 
-1. Open `C:\Development\ATLAS\dist\releases\0.3.1\ATLAS Beacon\`.
+1. Open `C:\Development\ATLAS\dist\releases\0.4.0\ATLAS Beacon\`.
 2. Double-click `ATLAS Beacon.exe`.
-3. Use the native Overview, Library, Operations, and System views.
-4. Close the window to stop Beacon.
+3. Open Library, select an asset, and press Space (or click Preview).
+4. Press Space or Escape to close the temporary preview.
+5. Close the window to stop Beacon.
 
 The app does not open a browser or listen on a network port. Keep the entire
 `ATLAS Beacon` folder together; the executable uses its `_internal` directory.
@@ -34,7 +38,7 @@ The app does not open a browser or listen on a network port. Keep the entire
 A ready-to-extract package is generated at:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.3.1-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.4.0-win64.zip
 ```
 
 This private development build is not code-signed, so Windows may identify the

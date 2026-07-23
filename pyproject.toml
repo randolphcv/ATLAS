@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "atlas-beacon"
-version = "0.3.1"
+version = "0.4.0"
 description = "Local-first catalog and native desktop observatory for ATLAS"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.139.2",
     "PySide6-Essentials==6.11.1",
+    "PySide6-Addons==6.11.1",
     "tzdata==2026.3; sys_platform == 'win32'",
     "uvicorn==0.51.0",
 ]

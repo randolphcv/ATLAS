@@ -21,3 +21,12 @@
 - Added explicit JPEG/PNG/TIFF/WebP image probing after the first real use test.
 - Preserved still-image identity and dimensions without displaying FFprobe's
   synthetic single-frame duration.
+- Added schema version 3 with verified, hashed thumbnail-derivative lineage.
+- Added idempotent FFmpeg thumbnails for images, video frames, and audio
+  waveforms without editing source files.
+- Added native Finder-style Space previews with image fit, audio/video playback
+  controls, and safe metadata fallback for other file types.
+- Added Qt Multimedia to the native bundle while explicitly excluding browser,
+  3D, charting, PDF, and virtual-keyboard capabilities.
+- Verified Beacon 0.4.0 source and frozen previews against the isolated
+  UseTest-01 copies while retaining byte-identical ATLAS sources.

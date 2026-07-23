@@ -55,6 +55,42 @@ Copy-Item `
     -Destination (Join-Path $distribution 'README FIRST.txt') `
     -Force
 
+$blockedCapabilities = @(
+    'fastapi',
+    'pydantic',
+    'qtcharts',
+    'qtdatavisualization',
+    'qtpdf',
+    'qtquick3d',
+    'qtvirtualkeyboard',
+    'qtwebengine',
+    'uvicorn',
+    'virtualkeyboard',
+    'webengine'
+)
+$unexpected = @(
+    Get-ChildItem -LiteralPath $distribution -Recurse -File |
+        Where-Object {
+            $candidate = $_.FullName.ToLowerInvariant()
+            @($blockedCapabilities | Where-Object { $candidate.Contains($_) }).Count -gt 0
+        }
+)
+if ($unexpected.Count -gt 0) {
+    $relative = $unexpected |
+        ForEach-Object { $_.FullName.Substring($distribution.Length + 1) }
+    throw "Unexpected capability in desktop bundle: $($relative -join ', ')"
+}
+
+$requiredRuntime = @(
+    (Join-Path $distribution '_internal\PySide6\Qt6Multimedia.dll'),
+    (Join-Path $distribution '_internal\PySide6\qml\QtMultimedia\quickmultimediaplugin.dll')
+)
+foreach ($required in $requiredRuntime) {
+    if (-not (Test-Path -LiteralPath $required)) {
+        throw "Required multimedia runtime is missing: $required"
+    }
+}
+
 Write-Host "Built: $artifact"
 
 $package = Join-Path $repo "dist\ATLAS-Beacon-$version-win64.zip"

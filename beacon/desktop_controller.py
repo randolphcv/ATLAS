@@ -119,6 +119,7 @@ class DesktopController(QObject):
                 "timeLabel",
                 "metaLine",
                 "locationCount",
+                "thumbnailUrl",
             )
         )
         self._events = DictListModel(
@@ -328,7 +329,19 @@ class DesktopController(QObject):
             "timeLabel": format_timestamp(asset.get("last_seen_at")),
             "metaLine": " · ".join(detail_bits) or "Ordinary file",
             "locationCount": int(asset.get("location_count") or 0),
+            "thumbnailUrl": DesktopController._local_file_url(
+                asset.get("thumbnail_path")
+            ),
         }
+
+    @staticmethod
+    def _local_file_url(value: object) -> str:
+        if not value:
+            return ""
+        path = Path(str(value))
+        if not path.is_file():
+            return ""
+        return QUrl.fromLocalFile(str(path)).toString()
 
     @Slot(str)
     def selectAsset(self, asset_id: str) -> None:
@@ -350,6 +363,17 @@ class DesktopController(QObject):
             )
             detail["codecLabel"] = detail.get("codec") or "Not reported"
             detail["dimensionsLabel"] = detail.get("dimensions") or "Not reported"
+            detail["thumbnailUrl"] = self._local_file_url(
+                detail.get("thumbnail_path")
+            )
+            preview_kind = str(detail.get("kind") or "file")
+            if preview_kind not in {"image", "video", "audio"}:
+                preview_kind = "file"
+            detail["previewKind"] = preview_kind
+            detail["previewUrl"] = self._local_file_url(
+                detail.get("primary_path")
+            )
+            detail["previewAvailable"] = bool(detail["previewUrl"])
             detail["locations"] = [
                 {
                     **location,

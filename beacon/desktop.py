@@ -8,8 +8,9 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtCore import QMetaObject, QTimer, QUrl
 from PySide6.QtGui import QIcon
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer  # noqa: F401
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -45,6 +46,20 @@ def _parser() -> argparse.ArgumentParser:
         "--view",
         choices=("overview", "library", "operations", "system"),
         default="overview",
+    )
+    parser.add_argument(
+        "--asset-id",
+        help="select an asset before showing the interface",
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="open the selected asset in the temporary preview",
+    )
+    parser.add_argument(
+        "--mute-preview",
+        action="store_true",
+        help="mute preview playback (useful for automated visual checks)",
     )
     parser.add_argument(
         "--screenshot",
@@ -113,9 +128,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     app.aboutToQuit.connect(controller.shutdown)
     controller.setCurrentView(args.view)
+    if args.asset_id:
+        controller.selectAsset(args.asset_id)
 
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", controller)
+    engine.rootContext().setContextProperty("previewMuted", args.mute_preview)
     qml_path = qml_dir / "Main.qml"
     engine.load(QUrl.fromLocalFile(str(qml_path)))
     if not engine.rootObjects():
@@ -125,6 +143,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     root = engine.rootObjects()[0]
+    if args.preview:
+        QTimer.singleShot(
+            300,
+            lambda: QMetaObject.invokeMethod(root, "openSelectedPreview"),
+        )
 
     if args.screenshot:
         destination = args.screenshot.resolve()
@@ -139,7 +162,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             logger.info("captured native window to %s", destination)
             app.exit(0)
 
-        QTimer.singleShot(1500, capture)
+        QTimer.singleShot(2200 if args.preview else 1500, capture)
     elif args.smoke_test:
         QTimer.singleShot(350, lambda: app.exit(0))
 

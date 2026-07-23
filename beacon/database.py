@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -83,6 +83,23 @@ def migrate(connection: sqlite3.Connection) -> None:
             ON system_events(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_system_events_asset_id
             ON system_events(asset_id);
+        CREATE TABLE IF NOT EXISTS derivatives (
+            id TEXT PRIMARY KEY,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL,
+            path TEXT NOT NULL UNIQUE,
+            source_sha256 TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            generator TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN ('complete')),
+            details_json TEXT,
+            created_at TEXT NOT NULL,
+            verified_at TEXT NOT NULL,
+            UNIQUE(asset_id, kind, source_sha256)
+        );
+        CREATE INDEX IF NOT EXISTS idx_derivatives_asset_kind
+            ON derivatives(asset_id, kind);
         """
     )
     for version in range(1, SCHEMA_VERSION + 1):

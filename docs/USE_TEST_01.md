@@ -24,9 +24,11 @@ was read.
 - JPEG image kind and dimensions extracted;
 - WAV codec and duration extracted;
 - MP4 codec, dimensions, and duration extracted;
+- four unique image/video/audio thumbnail derivatives created, verified, and
+  hashed with source-checksum lineage;
 - three catalog passes retained four asset rows and five location rows;
 - zero catalog failures;
-- schema-2 SQLite integrity and foreign-key checks passed;
+- schema-3 SQLite integrity and foreign-key checks passed;
 - a local online database backup passed integrity verification;
 - all five ATLAS source hashes still matched after the complete run.
 
@@ -37,13 +39,20 @@ images. Beacon 0.3.1 adds explicit JPEG, PNG, TIFF, GIF, BMP, and WebP probing,
 preserves the `image` kind, and suppresses FFprobe's meaningless single-frame
 duration. Two automated tests cover the correction.
 
-The complete suite now passes 19 tests with real FFprobe enabled.
+The complete suite now passes 20 tests with real FFprobe and FFmpeg enabled.
 
 ## Native application verification
 
-The source client and the frozen Beacon 0.3.1 executable were both rendered
+The source client and the frozen Beacon 0.4.0 executable were both rendered
 against the use-test database. The library correctly showed image, video, and
-audio technical metadata and exposed both locations for the renamed duplicate.
+audio technical metadata, displayed all four unique thumbnails, and exposed
+both locations for the renamed duplicate.
+
+The native temporary preview was exercised for a full image, audio with
+waveform/playback/scrubbing, and video with playback/scrubbing. Automated
+visual checks used muted playback; ordinary interactive playback remains
+enabled. The fallback path for other file types exposes metadata without
+opening the source in an editor.
 
 Private screenshots and detailed filenames remain only in the isolated runtime
 evidence folder; they are intentionally excluded from Git.
@@ -51,25 +60,25 @@ evidence folder; they are intentionally excluded from Git.
 Release executable:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.3.1\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.4.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 Release package:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.3.1-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.4.0-win64.zip
 ```
 
 Executable SHA-256:
 
 ```text
-B2B4F9865160A7E8475288796A7B4A93C22C6B3ABC8BD249CCF659EB0C54DD53
+426D7DC8DE87685F7436AB1D246833BC7E7C5C2B29AB58F08700880B97FD2570
 ```
 
 Package SHA-256:
 
 ```text
-291245159C6A9DCA238B3D3DFB933E2D75592925333C450719BA3D6B8118D209
+0F38CFA8CA75C5B17CC37DC21484DA3F1ABD7D6B935A28A44F000239D49BEB2F
 ```
 
 The private development build remains unsigned.

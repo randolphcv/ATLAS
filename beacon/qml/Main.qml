@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtMultimedia
 
 ApplicationWindow {
     id: root
@@ -26,6 +27,19 @@ ApplicationWindow {
     property color ember: "#C5665A"
 
     font.family: "Segoe UI"
+
+    function formatPlayback(milliseconds) {
+        var seconds = Math.max(0, Math.floor(milliseconds / 1000))
+        var minutes = Math.floor(seconds / 60)
+        var remainder = seconds % 60
+        return minutes + ":" + (remainder < 10 ? "0" : "") + remainder
+    }
+
+    function openSelectedPreview() {
+        if (backend.selectedAsset.id === undefined)
+            return
+        previewDialog.open()
+    }
 
     component NavButton: Button {
         id: navControl
@@ -203,6 +217,19 @@ ApplicationWindow {
         sequence: "Escape"
         onActivated: backend.clearStatus()
     }
+    Shortcut {
+        sequence: "Space"
+        enabled: previewDialog.visible
+                 || (backend.currentView === "library"
+                     && backend.selectedAsset.id !== undefined
+                     && !searchField.activeFocus)
+        onActivated: {
+            if (previewDialog.visible)
+                previewDialog.close()
+            else
+                root.openSelectedPreview()
+        }
+    }
 
     Dialog {
         id: backupDialog
@@ -275,6 +302,284 @@ ApplicationWindow {
                     onClicked: {
                         backupDialog.close()
                         backend.createBackup()
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: previewDialog
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 72, 1080)
+        height: Math.min(root.height - 64, 720)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+
+        property string previewKind: backend.selectedAsset.previewKind || "file"
+        property bool playable: previewKind === "audio" || previewKind === "video"
+
+        onOpened: {
+            if (playable && backend.selectedAsset.previewAvailable) {
+                previewPlayer.source = backend.selectedAsset.previewUrl
+                previewPlayer.play()
+            }
+        }
+        onClosed: {
+            previewPlayer.stop()
+            previewPlayer.source = ""
+            previewVideo.clearOutput()
+        }
+
+        background: Rectangle {
+            radius: 12
+            color: root.panel
+            border.color: root.line
+        }
+
+        MediaPlayer {
+            id: previewPlayer
+            audioOutput: AudioOutput {
+                volume: 0.82
+                muted: previewMuted
+            }
+            videoOutput: previewVideo
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 0
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 66
+                color: root.panelRaised
+                radius: 12
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20
+                    anchors.rightMargin: 14
+                    spacing: 12
+                    Rectangle {
+                        width: 8
+                        height: 8
+                        radius: 4
+                        color: root.atlasBright
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text {
+                            text: backend.selectedAsset.filename || "Preview"
+                            color: root.bone
+                            font.family: "Georgia"
+                            font.pixelSize: 20
+                            elide: Text.ElideMiddle
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            text: "TEMPORARY PREVIEW  ·  SOURCE REMAINS READ-ONLY"
+                            color: root.muted
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 1.2
+                        }
+                    }
+                    PrimaryButton {
+                        text: "Close  ·  Space"
+                        quiet: true
+                        onClicked: previewDialog.close()
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.margins: 16
+                radius: 9
+                color: root.ink
+                border.color: root.line
+                clip: true
+
+                Image {
+                    anchors.fill: parent
+                    anchors.margins: 18
+                    visible: previewDialog.previewKind === "image"
+                             && backend.selectedAsset.previewAvailable
+                    source: previewDialog.visible
+                            ? (backend.selectedAsset.previewUrl || "") : ""
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    cache: false
+                }
+
+                VideoOutput {
+                    id: previewVideo
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    visible: previewDialog.previewKind === "video"
+                    fillMode: VideoOutput.PreserveAspectFit
+                }
+
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    width: Math.min(parent.width - 80, 720)
+                    spacing: 18
+                    visible: previewDialog.previewKind === "audio"
+                    Image {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: Math.min(640, parent.width)
+                        Layout.preferredHeight: 260
+                        source: backend.selectedAsset.thumbnailUrl || ""
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        cache: false
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "AUDIO PREVIEW"
+                        color: root.brass
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: 1.7
+                    }
+                }
+
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    width: Math.min(parent.width - 80, 640)
+                    spacing: 15
+                    visible: previewDialog.previewKind === "file"
+                    Rectangle {
+                        Layout.alignment: Qt.AlignHCenter
+                        width: 68
+                        height: 68
+                        radius: 12
+                        color: Qt.rgba(0.29, 0.55, 0.57, 0.14)
+                        border.color: root.line
+                        Text {
+                            anchors.centerIn: parent
+                            text: (backend.selectedAsset.kindLabel || "File")
+                                  .substring(0, 2).toUpperCase()
+                            color: root.atlasBright
+                            font.family: "Cascadia Mono"
+                            font.pixelSize: 14
+                            font.weight: Font.DemiBold
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Safe metadata preview"
+                        color: root.bone
+                        font.family: "Georgia"
+                        font.pixelSize: 23
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Beacon does not render this format directly. The file has not been opened in an editor or changed."
+                        color: root.muted
+                        font.pixelSize: 12
+                        lineHeight: 1.4
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                    DetailLine {
+                        Layout.fillWidth: true
+                        label: "Type"
+                        value: backend.selectedAsset.kindLabel || "File"
+                    }
+                    DetailLine {
+                        Layout.fillWidth: true
+                        label: "Size"
+                        value: backend.selectedAsset.sizeLabel || "0 B"
+                    }
+                    DetailLine {
+                        Layout.fillWidth: true
+                        label: "Location"
+                        value: backend.selectedAsset.primary_path || "Unavailable"
+                        mono: true
+                    }
+                }
+
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    spacing: 8
+                    visible: !backend.selectedAsset.previewAvailable
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "Preview unavailable"
+                        color: root.bone
+                        font.family: "Georgia"
+                        font.pixelSize: 22
+                    }
+                    Text {
+                        text: "Beacon can no longer read the observed location."
+                        color: root.muted
+                        font.pixelSize: 12
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: previewDialog.playable ? 66 : 48
+                color: root.panelRaised
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 18
+                    anchors.rightMargin: 18
+                    spacing: 12
+                    PrimaryButton {
+                        visible: previewDialog.playable
+                        enabled: backend.selectedAsset.previewAvailable
+                        text: previewPlayer.playbackState === MediaPlayer.PlayingState
+                              ? "Pause" : "Play"
+                        onClicked: {
+                            if (previewPlayer.playbackState === MediaPlayer.PlayingState)
+                                previewPlayer.pause()
+                            else
+                                previewPlayer.play()
+                        }
+                    }
+                    Text {
+                        visible: previewDialog.playable
+                        text: root.formatPlayback(previewPlayer.position)
+                        color: root.muted
+                        font.family: "Cascadia Mono"
+                        font.pixelSize: 10
+                    }
+                    Slider {
+                        visible: previewDialog.playable
+                        enabled: previewPlayer.seekable
+                        Layout.fillWidth: true
+                        from: 0
+                        to: Math.max(1, previewPlayer.duration)
+                        value: previewPlayer.position
+                        onMoved: previewPlayer.setPosition(value)
+                    }
+                    Text {
+                        visible: previewDialog.playable
+                        text: root.formatPlayback(previewPlayer.duration)
+                        color: root.muted
+                        font.family: "Cascadia Mono"
+                        font.pixelSize: 10
+                    }
+                    Text {
+                        visible: !previewDialog.playable
+                        text: "Press Space or Escape to return to the library."
+                        color: root.muted
+                        font.pixelSize: 10
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        visible: previewPlayer.error !== MediaPlayer.NoError
+                        text: previewPlayer.errorString
+                        color: root.ember
+                        font.pixelSize: 9
+                        elide: Text.ElideRight
+                        Layout.preferredWidth: 220
                     }
                 }
             }
@@ -566,6 +871,7 @@ ApplicationWindow {
                                                     required property string kindLabel
                                                     required property string sizeLabel
                                                     required property string path
+                                                    required property string thumbnailUrl
                                                     width: ListView.view.width
                                                     height: 58
                                                     radius: 7
@@ -585,12 +891,21 @@ ApplicationWindow {
                                                         anchors.margins: 11
                                                         spacing: 12
                                                         Rectangle {
+                                                            clip: true
                                                             width: 34
                                                             height: 34
                                                             radius: 6
                                                             color: Qt.rgba(0.29, 0.55, 0.57, 0.15)
+                                                            Image {
+                                                                anchors.fill: parent
+                                                                source: thumbnailUrl
+                                                                visible: thumbnailUrl.length > 0
+                                                                fillMode: Image.PreserveAspectCrop
+                                                                asynchronous: true
+                                                            }
                                                             Text {
                                                                 anchors.centerIn: parent
+                                                                visible: thumbnailUrl.length === 0
                                                                 text: kindLabel.substring(0, 2).toUpperCase()
                                                                 color: root.atlasBright
                                                                 font.family: "Cascadia Mono"
@@ -756,6 +1071,7 @@ ApplicationWindow {
                                             required property string sizeLabel
                                             required property string metaLine
                                             required property string path
+                                            required property string thumbnailUrl
                                             width: ListView.view.width
                                             height: 78
                                             radius: 8
@@ -768,20 +1084,32 @@ ApplicationWindow {
                                                 id: assetHover
                                                 anchors.fill: parent
                                                 hoverEnabled: true
-                                                onClicked: backend.selectAsset(assetId)
+                                                onClicked: {
+                                                    backend.selectAsset(assetId)
+                                                    assetHover.forceActiveFocus()
+                                                }
                                             }
                                             RowLayout {
                                                 anchors.fill: parent
                                                 anchors.margins: 12
                                                 spacing: 12
                                                 Rectangle {
+                                                    clip: true
                                                     width: 42
                                                     height: 42
                                                     radius: 7
                                                     color: root.ink
                                                     border.color: root.line
+                                                    Image {
+                                                        anchors.fill: parent
+                                                        source: thumbnailUrl
+                                                        visible: thumbnailUrl.length > 0
+                                                        fillMode: Image.PreserveAspectCrop
+                                                        asynchronous: true
+                                                    }
                                                     Text {
                                                         anchors.centerIn: parent
+                                                        visible: thumbnailUrl.length === 0
                                                         text: kindLabel.substring(0, 2).toUpperCase()
                                                         color: root.atlasBright
                                                         font.family: "Cascadia Mono"
@@ -913,6 +1241,10 @@ ApplicationWindow {
                                                         text: "Show location"
                                                         quiet: true
                                                         onClicked: backend.openFolder(backend.selectedAsset.primary_path || "")
+                                                    }
+                                                    PrimaryButton {
+                                                        text: "Preview  ·  Space"
+                                                        onClicked: root.openSelectedPreview()
                                                     }
                                                 }
                                             }

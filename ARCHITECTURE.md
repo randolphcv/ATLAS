@@ -4,7 +4,8 @@
 
 - **Originals:** ordinary user files; Beacon opens them read-only.
 - **Catalog:** SQLite facts about content and observed locations.
-- **Derivatives:** future thumbnails, proxies, and transcripts; never originals.
+- **Derivatives:** verified thumbnails today; future proxies and transcripts;
+  never originals.
 - **Runtime:** local NVMe state under `C:\ProgramData\ATLAS\Beacon`.
 - **Archive:** protected managed storage exposed through `J:\`.
 - **Desktop:** native Qt Quick observation and recovery interface.
@@ -19,6 +20,8 @@
 5. Collect filesystem facts and optional `ffprobe` JSON.
 6. upsert content and location records in one SQLite transaction.
 7. Emit structured logs and expose list/inspect CLI commands.
+8. For supported media, create a separate thumbnail atomically, verify and hash
+   it, then record its source checksum and generator in schema 3.
 
 Content identity and location identity are separate. The UUIDv5 rule makes
 reprocessing deterministic, but remains provisional until edit/move/version
@@ -26,11 +29,18 @@ semantics are deliberately decided.
 
 ## Desktop and API
 
-Beacon 0.3.0 is a foreground native Windows application built with Qt Quick/QML.
+Beacon 0.4.0 is a foreground native Windows application built with Qt Quick/QML
+and Qt Multimedia.
 Python repository modules feed explicit Qt list models and properties; the
 desktop client reads catalog facts directly and never becomes a second metadata
 authority. Backup work runs outside the UI thread and only reports success
 after SQLite integrity verification and SHA-256 calculation.
+
+The Library reads thumbnail paths from the derivative ledger. A selected asset
+can be opened in a modal temporary preview with Space. Images are fit to the
+window; audio and video are decoded locally with native Qt playback; unsupported
+formats receive a metadata-only safety view. Closing the preview stops playback.
+No preview action opens an editor or writes to the observed path.
 
 The desktop application starts no web server, opens no browser, and listens on
 no port. A separate FastAPI adapter remains available for local integrations
@@ -39,16 +49,22 @@ asset search/detail, events, and verified backup creation. It does not expose
 arbitrary scan paths, file mutations, restore, or production-storage controls.
 
 The Windows artifact is a windowed PyInstaller one-folder bundle using the
-PySide6 Essentials runtime. This is easier to diagnose than a one-file
+PySide6 Essentials and the selected Qt Multimedia runtime. This is easier to
+diagnose than a one-file
 executable, avoids temporary extraction on every launch, and excludes FastAPI,
-Uvicorn, Pydantic, and Qt WebEngine from the desktop distribution. The entire
-distribution folder is the application.
+Uvicorn, Pydantic, Qt WebEngine, and unrelated Qt Addons capabilities from the
+desktop distribution. The entire distribution folder is the application.
 
 ## Safety
 
 The scanner skips symlinks and non-files. It performs no move, rename, write, or
 delete operation against observed paths. SQLite foreign keys and unique
 constraints make retries idempotent.
+
+Thumbnail output is written to a temporary file under the runtime derivative
+tree, verified with FFprobe, hashed, and atomically placed before its database
+record is committed. A derivative failure is visible in the operation ledger
+and does not make catalog identity contingent on derivative success.
 
 The native client has no network listener. The optional web server binds to
 loopback only, validates the Host header, sends a strict Content Security

@@ -53,6 +53,7 @@ def _asset_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "primary_path": path,
         "filename": Path(path).name if path else "Unknown asset",
         "location_count": row["location_count"],
+        "thumbnail_path": row["thumbnail_path"],
         **media,
     }
 
@@ -125,7 +126,14 @@ def search_assets(
             SELECT
                 a.*,
                 MIN(l.path) AS primary_path,
-                COUNT(l.id) AS location_count
+                COUNT(l.id) AS location_count,
+                (
+                    SELECT d.path FROM derivatives d
+                    WHERE d.asset_id = a.id
+                      AND d.kind = 'thumbnail'
+                      AND d.state = 'complete'
+                    ORDER BY d.verified_at DESC LIMIT 1
+                ) AS thumbnail_path
             FROM assets a
             LEFT JOIN locations l ON l.asset_id = a.id
             {where}
@@ -151,7 +159,14 @@ def asset_detail(db_path: Path, asset_id: str) -> dict[str, Any] | None:
             SELECT
                 a.*,
                 MIN(l.path) AS primary_path,
-                COUNT(l.id) AS location_count
+                COUNT(l.id) AS location_count,
+                (
+                    SELECT d.path FROM derivatives d
+                    WHERE d.asset_id = a.id
+                      AND d.kind = 'thumbnail'
+                      AND d.state = 'complete'
+                    ORDER BY d.verified_at DESC LIMIT 1
+                ) AS thumbnail_path
             FROM assets a
             LEFT JOIN locations l ON l.asset_id = a.id
             WHERE a.id = ?
