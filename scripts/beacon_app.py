@@ -1,6 +1,6 @@
 from multiprocessing import freeze_support
 
-from beacon.app import main
+from beacon.desktop import main
 
 
 if __name__ == "__main__":

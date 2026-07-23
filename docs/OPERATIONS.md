@@ -2,7 +2,7 @@
 
 ## Safety mode
 
-The catalog remains synthetic and read-only. Do not point the CLI or dashboard
+The catalog remains synthetic and read-only. Do not point the CLI or desktop app
 at `J:\Inbox` or another real-media directory without an explicitly approved
 pilot scope.
 
@@ -26,12 +26,12 @@ explicit FFprobe executable when it is not visible on the process `PATH`.
 Run `beacon watch` as a foreground development process. `--once` performs one
 polling cycle for diagnostics. No scheduled task or Windows service is created.
 
-## Dashboard
+## Desktop application
 
 Run from source:
 
 ```powershell
-.\.venv\Scripts\python.exe -m beacon.app
+.\.venv\Scripts\python.exe -m beacon.desktop
 ```
 
 Or double-click:
@@ -40,12 +40,23 @@ Or double-click:
 C:\Development\ATLAS\dist\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
-The app binds only to `127.0.0.1:8765`. Keep its console window open; closing it
-stops the local server. If the port is already occupied, Beacon exits with an
-actionable message instead of silently selecting a different network endpoint.
+The desktop app has its own Windows window. It does not open a browser, start a
+server, or listen on a port. Closing the window stops it.
 
-The dashboard can create a verified database backup after explicit
+The System view can create a verified database backup after explicit
 confirmation. Restore and backup deletion are intentionally absent.
+
+## Optional API
+
+Run the development API separately when a local integration needs it:
+
+```powershell
+.\.venv\Scripts\python.exe -m beacon.app
+```
+
+It binds only to `127.0.0.1:8765`. If the port is occupied, the adapter exits
+with an actionable message instead of selecting a different network endpoint.
+It does not open a browser unless `--browser` is explicitly supplied.
 
 ## Failure behavior
 

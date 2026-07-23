@@ -1,17 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_submodules
-
-hidden_imports = collect_submodules("uvicorn")
 
 a = Analysis(
     ["beacon_app.py"],
     pathex=[".."],
     binaries=[],
     datas=[
-        ("../beacon/web", "beacon/web"),
+        ("../beacon/qml", "beacon/qml"),
         ("README_APP.txt", "."),
     ],
-    hiddenimports=hidden_imports,
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -27,11 +24,12 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name="ATLAS Beacon",
+    icon="beacon.ico",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -49,4 +47,3 @@ coll = COLLECT(
     upx_exclude=[],
     name="ATLAS Beacon",
 )
-

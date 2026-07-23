@@ -1,5 +1,9 @@
 # Phase 2 Foundation Verification
 
+> Historical evidence for Beacon 0.2.0. The browser client described here was
+> superseded as the primary interface by the native Beacon 0.3.0 desktop app.
+> See [`DESKTOP_VERIFICATION.md`](DESKTOP_VERIFICATION.md).
+
 Verified on the Windows ATLAS host on 2026-07-22.
 
 ## Outcome

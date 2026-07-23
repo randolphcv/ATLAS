@@ -5,36 +5,36 @@ observes and catalogs files without owning or changing originals.
 
 ## Current application
 
-Beacon 0.2.0 includes:
+Beacon 0.3.0 is a native Windows desktop application. It includes:
 
 - the verified Phase 1 read-only catalog;
-- a localhost FastAPI service;
-- a branded archive dashboard;
+- a branded Qt Quick desktop shell with no embedded browser;
 - catalog search and master-detail asset inspection;
 - a visible audit-event ledger;
 - SQLite integrity and foreign-key health reporting;
-- verified local database backups with SHA-256;
-- a self-contained Windows application bundle.
+- non-blocking verified local database backups with SHA-256;
+- a windowed, icon-branded Windows application bundle;
+- an optional localhost FastAPI adapter for integrations and development.
 
 No cloud service, watcher against `J:\`, or Windows service is enabled. The API
-binds only to `127.0.0.1`.
+is not started by the desktop application.
 
-![ATLAS Beacon overview](docs/images/dashboard-overview.png)
+![ATLAS Beacon native asset library](docs/images/desktop-packaged.png)
 
 ## Run the Windows app
 
 1. Open `C:\Development\ATLAS\dist\ATLAS Beacon\`.
 2. Double-click `ATLAS Beacon.exe`.
-3. Keep the console window open while using Beacon.
-4. Close the console window or press `Ctrl+C` to stop Beacon.
+3. Use the native Overview, Library, Operations, and System views.
+4. Close the window to stop Beacon.
 
-The app opens `http://127.0.0.1:8765` in the default browser. Keep the entire
+The app does not open a browser or listen on a network port. Keep the entire
 `ATLAS Beacon` folder together; the executable uses its `_internal` directory.
 
 A ready-to-extract package is generated at:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.2.0-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.3.0-win64.zip
 ```
 
 This private development build is not code-signed, so Windows may identify the
@@ -45,8 +45,12 @@ publisher as unknown.
 ```powershell
 cd C:\Development\ATLAS
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe -m beacon.app
+.\.venv\Scripts\python.exe -m beacon.desktop
 ```
+
+Run the optional loopback API separately with
+`.\.venv\Scripts\python.exe -m beacon.app`. Add `--browser` only when the
+legacy development dashboard is specifically useful.
 
 Build the Windows bundle with:
 
@@ -60,3 +64,4 @@ Verification evidence:
 
 - [`docs/PHASE1_VERIFICATION.md`](docs/PHASE1_VERIFICATION.md)
 - [`docs/PHASE2_VERIFICATION.md`](docs/PHASE2_VERIFICATION.md)
+- [`docs/DESKTOP_VERIFICATION.md`](docs/DESKTOP_VERIFICATION.md)

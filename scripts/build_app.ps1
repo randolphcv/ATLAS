@@ -8,6 +8,10 @@ if (-not (Test-Path -LiteralPath $python)) {
 
 Push-Location $PSScriptRoot
 try {
+    & $python .\generate_icon.py
+    if ($LASTEXITCODE -ne 0) {
+        throw "Icon generation failed with exit code $LASTEXITCODE."
+    }
     & $python -m PyInstaller `
         --noconfirm `
         --clean `
@@ -34,3 +38,10 @@ Copy-Item `
     -Force
 
 Write-Host "Built: $artifact"
+
+$package = Join-Path $repo 'dist\ATLAS-Beacon-0.3.0-win64.zip'
+if (Test-Path -LiteralPath $package) {
+    Remove-Item -LiteralPath $package -Force
+}
+Compress-Archive -LiteralPath $distribution -DestinationPath $package
+Write-Host "Packaged: $package"

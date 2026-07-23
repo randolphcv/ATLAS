@@ -17,7 +17,7 @@ DEFAULT_RUNTIME = Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "ATLA
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="beacon-dashboard")
+    parser = argparse.ArgumentParser(prog="beacon-api")
     parser.add_argument(
         "--db",
         type=Path,
@@ -31,7 +31,14 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--no-browser", action="store_true")
+    browser = parser.add_mutually_exclusive_group()
+    browser.add_argument(
+        "--browser",
+        action="store_true",
+        help="open the legacy development dashboard after the API starts",
+    )
+    browser.add_argument("--no-browser", action="store_false", dest="browser")
+    parser.set_defaults(browser=False)
     return parser
 
 
@@ -60,11 +67,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     app = create_app(settings)
     url = f"http://127.0.0.1:{args.port}"
-    print("ATLAS Beacon is running locally.")
-    print(f"Dashboard: {url}")
+    print("ATLAS Beacon API is running locally.")
+    print(f"API:       {url}/api/docs")
     print(f"Database:  {settings.db_path}")
     print("Close this window or press Ctrl+C to stop Beacon.")
-    if not args.no_browser:
+    if args.browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     uvicorn.run(
         app,
@@ -80,4 +87,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -12,12 +12,20 @@
 ## Completed — local observatory foundation
 
 - loopback-only FastAPI adapter
-- branded responsive dashboard
 - catalog search and asset detail
 - visible audit-event ledger
 - integrity/foreign-key health
 - verified online database backup
 - reproducible Windows application bundle
+
+## Completed — native desktop client
+
+- Qt Quick/QML Windows interface with native application lifecycle
+- persistent archive navigation and master-detail library
+- non-blocking backup controller with explicit confirmation
+- no browser launch, embedded web view, or network listener
+- icon and Windows version metadata
+- rendered source and packaged-executable verification
 
 ## Next — recovery and pilot hardening
 

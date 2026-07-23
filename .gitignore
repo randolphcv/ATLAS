@@ -11,9 +11,9 @@ htmlcov/
 .mypy_cache/
 build/
 dist/
+scripts/beacon.ico
 *.egg-info/
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-

@@ -13,3 +13,8 @@
 - Added verified online SQLite backups with atomic placement and SHA-256.
 - Added the branded ATLAS Beacon archive dashboard.
 - Added a reproducible PyInstaller Windows application bundle.
+- Replaced the primary browser dashboard with a native Qt Quick desktop client.
+- Added native archive navigation, master-detail inspection, and system views.
+- Moved verified backup execution off the UI thread.
+- Removed browser launch, network listeners, and web dependencies from the
+  packaged desktop runtime while retaining the API as an optional adapter.
