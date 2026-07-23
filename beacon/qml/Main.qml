@@ -603,7 +603,9 @@ ApplicationWindow {
                     objectName: "startLocalAnalysisButton"
                     text: "Start local analysis"
                     enabled: !backend.busy
-                             && backend.analysisReadiness.canStart === true
+                             && (includeAnalyzedAssets.checked
+                                 ? backend.analysisReadiness.canReanalyze === true
+                                 : backend.analysisReadiness.canStart === true)
                              && localAnalysisModel.currentText.length > 0
                     onClicked: {
                         backend.startLocalCatalogAnalysis(

@@ -895,6 +895,8 @@ class DesktopController(QObject):
             "models": models,
             "defaultModel": models[0] if models else "",
             "canStart": runtime.available and bool(models)
+            and scope["assets"] > 0,
+            "canReanalyze": runtime.available and bool(models)
             and full_scope["assets"] > 0,
         }
         self.analysisReadinessChanged.emit()
