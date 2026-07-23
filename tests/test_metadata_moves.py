@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from beacon.catalog import catalog_file, sha256_file
-from beacon.database import connect, database_integrity
+from beacon.database import SCHEMA_VERSION, connect, database_integrity
 from beacon.managed_moves import move_cataloged_file
 from beacon.metadata import (
     get_asset_metadata,
@@ -89,7 +89,9 @@ class EditableMetadataTests(unittest.TestCase):
                 (self.asset.asset_id,),
             ).fetchone()[0]
         self.assertEqual(revisions, 2)
-        self.assertEqual(database_integrity(self.db)["schema_version"], 6)
+        self.assertEqual(
+            database_integrity(self.db)["schema_version"], SCHEMA_VERSION
+        )
 
     def test_policy_values_retain_structured_provenance(self) -> None:
         set_policy(

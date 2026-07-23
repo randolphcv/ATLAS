@@ -4,7 +4,7 @@ Verified on the Windows ATLAS host on 2026-07-23.
 
 ## Outcome
 
-Beacon 0.8.0 is a native Qt Quick/QML desktop application. It uses the existing
+Beacon 0.9.0 is a native Qt Quick/QML desktop application. It uses the existing
 read-only catalog, repository, audit, health, and verified-backup modules
 directly. The desktop process does not open a browser, embed a web view, start
 FastAPI, or listen on a network port.
@@ -31,10 +31,16 @@ policy-gated managed-move interface. Human context stays editable while
 checksums and technical facts stay locked. A completed managed destination is
 preferred as the current path without discarding any other observed location.
 
+Overview also exposes durable Archive Intake operations. A user creates a
+recursive snapshot first, reviews its bounded or complete scope, and starts it
+explicitly. Progress is item-level and durable. Cancel stops between files,
+Resume preserves completed work, Retry resets only failures, and interrupted
+running items recover to a visible paused state on the next launch.
+
 ## Automated verification
 
 - Python compilation: passed
-- Unit and integration tests with real FFprobe and FFmpeg: 44 passed
+- Unit and integration tests with real FFprobe and FFmpeg: 52 passed
 - Native catalog model, search, detail, and health tests: passed
 - Non-blocking verified-backup controller test: passed
 - QML window offscreen load test: passed
@@ -48,6 +54,10 @@ preferred as the current path without discarding any other observed location.
 - Managed-move policy gate, exact catalog-location match, SHA-256 verification,
   approved-root boundary, non-overwrite behavior, destination preference, audit
   history, and duplicate-location preservation: passed
+- Schema-7 recursive snapshot determinism, approved-root enforcement,
+  item-level progress, changed-source rejection, cancel, pause, resume,
+  failure-only retry, and interrupted-session recovery: passed
+- Native intake controller creation and completion flow: passed
 - Dependency check: passed
 
 ## Rendered verification
@@ -73,6 +83,8 @@ The following states were visually reviewed:
 - synthetic editable-metadata dialog with all supported contextual fields;
 - exact packaged 0.8.0 live Library with human display titles and the verified
   managed location selected as the current path.
+- source ready-state and exact packaged 0.9.0 complete-state Archive Intake
+  Overview against three synthetic nested files.
 
 Screenshots:
 
@@ -88,32 +100,32 @@ Screenshots:
 Artifact:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.8.0\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.9.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 Package:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.8.0-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.9.0-win64.zip
 ```
 
-The frozen executable passed smoke-test and screenshot modes against the
-schema-6 live database without a `--db` override. Windows file and product
-versions are both `0.8.0`.
+The frozen executable passed screenshot mode against a healthy schema-7
+synthetic catalog with a complete three-file recursive intake. Windows file and
+product versions are both `0.9.0`.
 
 Executable SHA-256:
 
 ```text
-15375B4C2E5B0E90702914B196E77B12C4A3D9274C7E52BA5A413162BE9646E2
+1BC9B4E5376537FC46B0DBC714ED6DC3A50D3E059F74F3800EFFE5C81BE262FB
 ```
 
 Package SHA-256:
 
 ```text
-61E12DB4F8CD61540D7BBB1C2357C475CFB7DA7ECC60CAB8608278E6DC0F607D
+A2905C2AFAC3D129E63927E8E61DFD178D8179C1C306F870D751AB2F77D4F790
 ```
 
-The one-folder bundle contains 1,748 files and 178,146,202 bytes. Its packaging
+The one-folder bundle contains 1,748 files and 178,196,704 bytes. Its packaging
 filter excludes FastAPI, Uvicorn, Pydantic, Qt WebEngine, Qt Quick 3D, charting,
 PDF, and virtual-keyboard capabilities.
 
@@ -124,9 +136,13 @@ identify the publisher as unknown.
 
 - The large Inbox received read-only structural inventory only; one explicitly
   authorized known-checksum file was cataloged and moved as the bounded proof
+- Beacon 0.9.0 verification used only synthetic folders; it did not create or
+  start an intake job against `J:\Inbox`
 - The only content inference was the explicitly requested five-asset Codex
   subagent pilot; it is recorded as external inference
 - No production watcher, scheduled task, or cloud connector was added
+- Archive Intake is user-started and catalog-only; its default dialog scope is
+  25 files, and a blank limit is required to snapshot every discovered file
 - One exact `J:\Inbox` location was moved to an approved `J:\Library`
   destination; its filename and SHA-256 were preserved and all other duplicate
   locations remain

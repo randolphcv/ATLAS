@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from beacon.database import connect, database_integrity, migrate
+from beacon.database import SCHEMA_VERSION, connect, database_integrity, migrate
 from beacon.desk import (
     add_beacon_message,
     create_human_thread,
@@ -55,7 +55,9 @@ class BeaconDeskTests(unittest.TestCase):
 
         self.assertEqual(len(first), 2)
         self.assertEqual(second, [])
-        self.assertEqual(database_integrity(self.db)["schema_version"], 6)
+        self.assertEqual(
+            database_integrity(self.db)["schema_version"], SCHEMA_VERSION
+        )
         self.assertEqual(desk_summary(self.db)["awaiting_human"], 2)
         self.assertEqual(len(list_threads(self.db)), 2)
 

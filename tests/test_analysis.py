@@ -8,7 +8,7 @@ from pathlib import Path
 
 from beacon.analysis import import_analysis_manifest
 from beacon.catalog import catalog_file
-from beacon.database import database_integrity
+from beacon.database import SCHEMA_VERSION, database_integrity
 from beacon.repository import asset_detail, search_assets
 
 
@@ -96,7 +96,9 @@ class AnalysisResultTests(unittest.TestCase):
             hashlib.sha256(self.source.read_bytes()).hexdigest(),
             self.before,
         )
-        self.assertEqual(database_integrity(self.db)["schema_version"], 6)
+        self.assertEqual(
+            database_integrity(self.db)["schema_version"], SCHEMA_VERSION
+        )
 
         detail = asset_detail(self.db, self.asset.asset_id)
         self.assertIsNotNone(detail)

@@ -164,7 +164,8 @@ ApplicationWindow {
         hoverEnabled: true
         contentItem: Text {
             text: primary.text
-            color: primary.quiet ? root.bone : root.ink
+            color: !primary.enabled ? root.muted
+                 : primary.quiet ? root.bone : root.ink
             font.pixelSize: 12
             font.weight: Font.DemiBold
             horizontalAlignment: Text.AlignHCenter
@@ -172,10 +173,31 @@ ApplicationWindow {
         }
         background: Rectangle {
             radius: 6
-            color: primary.quiet
+            color: !primary.enabled
+                   ? Qt.rgba(1, 1, 1, 0.025)
+                   : primary.quiet
                    ? (primary.hovered ? root.panelRaised : "transparent")
                    : (primary.hovered ? "#76BFC1" : root.atlasBright)
             border.color: primary.quiet ? root.line : "transparent"
+        }
+    }
+
+    component IntakeProgress: Rectangle {
+        id: intakeProgress
+        property real value: 0
+        implicitHeight: 7
+        radius: 4
+        color: root.ink
+        border.color: root.line
+        clip: true
+        Rectangle {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: Math.max(0, Math.min(parent.width, parent.width * intakeProgress.value))
+            radius: 4
+            color: root.atlasBright
+            visible: intakeProgress.value > 0
         }
     }
 
@@ -306,7 +328,10 @@ ApplicationWindow {
                      && !beaconReplyField.activeFocus
                      && !newRequestSubject.activeFocus
                      && !newRequestBody.activeFocus
+                     && !newIntakeRoot.activeFocus
+                     && !newIntakeLimit.activeFocus
                      && !newRequestDialog.visible
+                     && !newIntakeDialog.visible
                      && !metadataDialog.visible
                      && !moveDialog.visible)
         onActivated: {
@@ -388,6 +413,190 @@ ApplicationWindow {
                     onClicked: {
                         backupDialog.close()
                         backend.createBackup()
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: newIntakeDialog
+        objectName: "newIntakeDialog"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 80, 650)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        onOpened: {
+            newIntakeRoot.text = backend.defaultIntakeRoot
+            newIntakeLimit.text = "25"
+            newIntakeRoot.forceActiveFocus()
+        }
+        background: Rectangle {
+            radius: 12
+            color: root.panelRaised
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.margins: 26
+                spacing: 13
+                PanelTitle {
+                    eyebrow: "Archive intake"
+                    title: "Prepare a recursive catalog job"
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Beacon will make a durable snapshot of regular files below this approved folder. Creating the job does not start it, move a file, or change an original."
+                    color: root.muted
+                    font.pixelSize: 12
+                    lineHeight: 1.4
+                    wrapMode: Text.WordWrap
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 5
+                    Text {
+                        text: "APPROVED SOURCE FOLDER"
+                        color: root.muted
+                        font.pixelSize: 8
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: 1.0
+                    }
+                    TextField {
+                        id: newIntakeRoot
+                        objectName: "newIntakeRoot"
+                        Layout.fillWidth: true
+                        implicitHeight: 42
+                        color: root.bone
+                        placeholderTextColor: root.muted
+                        selectionColor: root.atlas
+                        selectByMouse: true
+                        font.family: "Cascadia Mono"
+                        font.pixelSize: 11
+                        leftPadding: 13
+                        rightPadding: 13
+                        background: Rectangle {
+                            radius: 7
+                            color: root.ink
+                            border.color: newIntakeRoot.activeFocus
+                                          ? root.atlasBright : root.line
+                        }
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 14
+                    ColumnLayout {
+                        Layout.preferredWidth: 190
+                        spacing: 5
+                        Text {
+                            text: "MAXIMUM FILES"
+                            color: root.muted
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 1.0
+                        }
+                        TextField {
+                            id: newIntakeLimit
+                            objectName: "newIntakeLimit"
+                            Layout.fillWidth: true
+                            implicitHeight: 42
+                            text: "25"
+                            placeholderText: "Blank = all files"
+                            color: root.bone
+                            placeholderTextColor: root.muted
+                            selectionColor: root.atlas
+                            selectByMouse: true
+                            inputMethodHints: Qt.ImhDigitsOnly
+                            validator: IntValidator { bottom: 1; top: 100000 }
+                            leftPadding: 13
+                            rightPadding: 13
+                            background: Rectangle {
+                                radius: 7
+                                color: root.ink
+                                border.color: newIntakeLimit.activeFocus
+                                              ? root.atlasBright : root.line
+                            }
+                        }
+                    }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 64
+                        Layout.alignment: Qt.AlignBottom
+                        radius: 7
+                        color: root.ink
+                        border.color: root.line
+                        Text {
+                            anchors.fill: parent
+                            anchors.margins: 11
+                            text: "Start with 25 for a representative proof. Leave the limit blank only when you intend to snapshot every discovered file."
+                            color: root.muted
+                            font.pixelSize: 10
+                            lineHeight: 1.3
+                            wrapMode: Text.WordWrap
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 48
+                    radius: 7
+                    color: Qt.rgba(0.29, 0.55, 0.57, 0.10)
+                    border.color: Qt.rgba(0.39, 0.68, 0.69, 0.24)
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 11
+                        Rectangle {
+                            width: 7
+                            height: 7
+                            radius: 4
+                            color: root.atlasBright
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "CATALOG ONLY  ·  Resume, cancel, retry, and crash recovery are recorded in the local database."
+                            color: root.bone
+                            font.pixelSize: 9
+                            font.weight: Font.DemiBold
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 18
+                spacing: 10
+                Text {
+                    text: "APPROVED ROOT ONLY"
+                    color: root.brass
+                    font.pixelSize: 9
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.0
+                }
+                Item { Layout.fillWidth: true }
+                PrimaryButton {
+                    text: "Cancel"
+                    quiet: true
+                    onClicked: newIntakeDialog.close()
+                }
+                PrimaryButton {
+                    text: "Create snapshot"
+                    enabled: !backend.busy
+                             && newIntakeRoot.text.trim().length > 0
+                             && (newIntakeLimit.text.length === 0
+                                 || newIntakeLimit.acceptableInput)
+                    onClicked: {
+                        backend.createIntakeJob(
+                            newIntakeRoot.text,
+                            newIntakeLimit.text
+                        )
+                        newIntakeDialog.close()
                     }
                 }
             }
@@ -1358,6 +1567,317 @@ ApplicationWindow {
                                         value: backend.summary.failuresLabel || "0"
                                         note: backend.summary.failures > 0 ? "Review the operation ledger" : "No recorded failures"
                                         accentColor: backend.summary.failures > 0 ? root.ember : root.jade
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: intakeCard
+                                    objectName: "intakeCard"
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 402
+                                    radius: 10
+                                    color: root.panel
+                                    border.color: root.line
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 18
+                                        spacing: 12
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            PanelTitle {
+                                                eyebrow: "Archive intake"
+                                                title: "Catalog operations"
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            Text {
+                                                text: (backend.intakeSummary.activeLabel || "0")
+                                                      + " ACTIVE  ·  "
+                                                      + (backend.intakeSummary.failedLabel || "0")
+                                                      + " FAILED FILES"
+                                                color: backend.intakeSummary.failed > 0
+                                                       ? root.ember : root.muted
+                                                font.pixelSize: 9
+                                                font.weight: Font.DemiBold
+                                                font.letterSpacing: 0.9
+                                            }
+                                            PrimaryButton {
+                                                objectName: "newIntakeButton"
+                                                text: "New intake"
+                                                enabled: !backend.busy
+                                                onClicked: newIntakeDialog.open()
+                                            }
+                                        }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            implicitHeight: 42
+                                            radius: 7
+                                            color: root.shell
+                                            border.color: root.line
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 13
+                                                anchors.rightMargin: 13
+                                                spacing: 10
+                                                Rectangle {
+                                                    width: 7
+                                                    height: 7
+                                                    radius: 4
+                                                    color: backend.selectedIntakeJob.state === "running"
+                                                           ? root.jade : root.atlasBright
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Durable, recursive, file-by-file cataloging. Originals remain in place; a job can resume without repeating completed files."
+                                                    color: root.muted
+                                                    font.pixelSize: 10
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            spacing: 12
+                                            Rectangle {
+                                                Layout.preferredWidth: 390
+                                                Layout.fillHeight: true
+                                                radius: 8
+                                                color: root.shell
+                                                border.color: root.line
+                                                ListView {
+                                                    id: intakeJobList
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+                                                    clip: true
+                                                    spacing: 7
+                                                    model: backend.intakeJobs
+                                                    delegate: Rectangle {
+                                                        required property string jobId
+                                                        required property string sourceRoot
+                                                        required property string state
+                                                        required property string stateLabel
+                                                        required property real progress
+                                                        required property string progressLabel
+                                                        required property string countLabel
+                                                        required property string updatedLabel
+                                                        width: ListView.view.width
+                                                        height: 92
+                                                        radius: 7
+                                                        color: backend.selectedIntakeJob.id === jobId
+                                                               ? Qt.rgba(0.29, 0.55, 0.57, 0.18)
+                                                               : intakeHover.containsMouse
+                                                                 ? root.panelRaised : root.panel
+                                                        border.color: backend.selectedIntakeJob.id === jobId
+                                                                      ? root.atlas : root.line
+                                                        MouseArea {
+                                                            id: intakeHover
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            onClicked: backend.selectIntakeJob(jobId)
+                                                        }
+                                                        ColumnLayout {
+                                                            anchors.fill: parent
+                                                            anchors.margins: 10
+                                                            spacing: 3
+                                                            RowLayout {
+                                                                Layout.fillWidth: true
+                                                                Text {
+                                                                    Layout.fillWidth: true
+                                                                    text: sourceRoot
+                                                                    color: root.bone
+                                                                    font.family: "Cascadia Mono"
+                                                                    font.pixelSize: 10
+                                                                    elide: Text.ElideMiddle
+                                                                }
+                                                                Text {
+                                                                    text: stateLabel.toUpperCase()
+                                                                    color: state === "complete" ? root.jade
+                                                                         : state === "failed" || state === "partial"
+                                                                           ? root.ember
+                                                                           : state === "running" ? root.atlasBright
+                                                                           : root.brass
+                                                                    font.pixelSize: 8
+                                                                    font.weight: Font.DemiBold
+                                                                    font.letterSpacing: 0.8
+                                                                }
+                                                            }
+                                                            IntakeProgress {
+                                                                Layout.fillWidth: true
+                                                                value: progress
+                                                            }
+                                                            RowLayout {
+                                                                Layout.fillWidth: true
+                                                                Text {
+                                                                    Layout.fillWidth: true
+                                                                    text: countLabel
+                                                                    color: root.muted
+                                                                    font.pixelSize: 9
+                                                                    elide: Text.ElideRight
+                                                                }
+                                                                Text {
+                                                                    text: progressLabel
+                                                                    color: root.bone
+                                                                    font.family: "Cascadia Mono"
+                                                                    font.pixelSize: 9
+                                                                }
+                                                            }
+                                                            Text {
+                                                                text: updatedLabel
+                                                                color: root.muted
+                                                                font.pixelSize: 8
+                                                            }
+                                                        }
+                                                    }
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        width: Math.min(270, parent.width - 30)
+                                                        visible: parent.count === 0
+                                                        text: "No intake jobs yet. Create a bounded snapshot when you are ready to test a folder."
+                                                        color: root.muted
+                                                        font.pixelSize: 11
+                                                        lineHeight: 1.35
+                                                        wrapMode: Text.WordWrap
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                    }
+                                                }
+                                            }
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                Layout.fillHeight: true
+                                                radius: 8
+                                                color: root.shell
+                                                border.color: root.line
+                                                ColumnLayout {
+                                                    anchors.fill: parent
+                                                    anchors.margins: 14
+                                                    spacing: 9
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        ColumnLayout {
+                                                            Layout.fillWidth: true
+                                                            spacing: 2
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: backend.selectedIntakeJob.id
+                                                                      ? backend.selectedIntakeJob.stateLabel
+                                                                        + " intake"
+                                                                      : "Select an intake job"
+                                                                color: root.bone
+                                                                font.family: "Georgia"
+                                                                font.pixelSize: 19
+                                                                elide: Text.ElideRight
+                                                            }
+                                                            Text {
+                                                                text: backend.selectedIntakeJob.id
+                                                                      ? (backend.selectedIntakeJob.modeLabel || "CATALOG ONLY")
+                                                                        + "  ·  "
+                                                                        + (backend.selectedIntakeJob.itemLimitLabel || "")
+                                                                      : "RESTARTABLE LOCAL OPERATION"
+                                                                color: root.brass
+                                                                font.pixelSize: 8
+                                                                font.weight: Font.DemiBold
+                                                                font.letterSpacing: 1.0
+                                                            }
+                                                        }
+                                                        Text {
+                                                            text: backend.selectedIntakeJob.progressLabel || "0%"
+                                                            color: root.atlasBright
+                                                            font.family: "Cascadia Mono"
+                                                            font.pixelSize: 22
+                                                            font.weight: Font.DemiBold
+                                                        }
+                                                    }
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: backend.selectedIntakeJob.sourceRoot
+                                                              || "Create a job to snapshot an approved intake folder."
+                                                        color: root.bone
+                                                        font.family: "Cascadia Mono"
+                                                        font.pixelSize: 10
+                                                        elide: Text.ElideMiddle
+                                                    }
+                                                    IntakeProgress {
+                                                        Layout.fillWidth: true
+                                                        value: backend.selectedIntakeJob.progress || 0
+                                                    }
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: backend.selectedIntakeJob.countLabel
+                                                                  || "No snapshot selected"
+                                                            color: root.muted
+                                                            font.pixelSize: 10
+                                                        }
+                                                        Text {
+                                                            text: backend.selectedIntakeJob.sizeLabel || ""
+                                                            color: root.muted
+                                                            font.family: "Cascadia Mono"
+                                                            font.pixelSize: 9
+                                                        }
+                                                    }
+                                                    Rectangle {
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: 48
+                                                        radius: 7
+                                                        color: root.ink
+                                                        border.color: root.line
+                                                        Text {
+                                                            anchors.fill: parent
+                                                            anchors.margins: 10
+                                                            text: backend.selectedIntakeJob.currentPath
+                                                                  ? "CURRENT  ·  "
+                                                                    + backend.selectedIntakeJob.currentPath
+                                                                  : backend.selectedIntakeJob.failureSummary
+                                                                    ? backend.selectedIntakeJob.failureSummary
+                                                                    : "Waiting for an action. Completed files will not be repeated."
+                                                            color: backend.selectedIntakeJob.failureSummary
+                                                                   ? root.ember : root.muted
+                                                            font.family: "Cascadia Mono"
+                                                            font.pixelSize: 9
+                                                            elide: Text.ElideMiddle
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                    }
+                                                    Item { Layout.fillHeight: true }
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+                                                        PrimaryButton {
+                                                            text: backend.selectedIntakeJob.state === "paused"
+                                                                  || backend.selectedIntakeJob.state === "cancelled"
+                                                                  ? "Resume" : "Start"
+                                                            enabled: !backend.busy
+                                                                     && backend.selectedIntakeJob.canStart === true
+                                                            onClicked: backend.startSelectedIntakeJob()
+                                                        }
+                                                        PrimaryButton {
+                                                            text: "Cancel"
+                                                            quiet: true
+                                                            enabled: backend.selectedIntakeJob.canCancel === true
+                                                            onClicked: backend.cancelSelectedIntakeJob()
+                                                        }
+                                                        PrimaryButton {
+                                                            text: "Retry failures"
+                                                            quiet: true
+                                                            enabled: !backend.busy
+                                                                     && backend.selectedIntakeJob.canRetry === true
+                                                            onClicked: backend.retrySelectedIntakeJob()
+                                                        }
+                                                        Item { Layout.fillWidth: true }
+                                                        Text {
+                                                            text: backend.selectedIntakeJob.snapshotSha256
+                                                                  ? "SNAPSHOT  "
+                                                                    + backend.selectedIntakeJob.snapshotSha256.substring(0, 12)
+                                                                  : ""
+                                                            color: root.muted
+                                                            font.family: "Cascadia Mono"
+                                                            font.pixelSize: 8
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +38,17 @@ from .desk import (
 from .desktop_models import DictListModel
 from .managed_moves import MoveResult, move_cataloged_file
 from .metadata import empty_metadata, save_asset_metadata
+from .intake import (
+    IntakeRunResult,
+    create_intake_job,
+    intake_job_detail,
+    list_intake_jobs,
+    pause_intake_job,
+    recover_intake_jobs,
+    request_intake_cancel,
+    retry_intake_failures,
+    run_intake_job,
+)
 from .repository import asset_detail, catalog_summary, recent_events, search_assets
 from .text_preview import read_text_preview
 
@@ -48,6 +60,7 @@ class DesktopSettings:
     db_path: Path
     backup_dir: Path
     catalog_label: str = "Custom catalog"
+    allowed_intake_roots: tuple[Path, ...] = (Path(r"J:\Inbox"),)
 
 
 def format_bytes(value: int | None) -> str:
@@ -134,6 +147,76 @@ class _MoveWorker(QRunnable):
             self.signals.failed.emit(str(error))
 
 
+class _IntakeCreateSignals(QObject):
+    succeeded = Signal(str)
+    failed = Signal(str)
+
+
+class _IntakeCreateWorker(QRunnable):
+    def __init__(
+        self,
+        db_path: Path,
+        source_root: Path,
+        allowed_roots: tuple[Path, ...],
+        item_limit: int | None,
+    ) -> None:
+        super().__init__()
+        self.db_path = db_path
+        self.source_root = source_root
+        self.allowed_roots = allowed_roots
+        self.item_limit = item_limit
+        self.signals = _IntakeCreateSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            job_id = create_intake_job(
+                self.db_path,
+                source_root=self.source_root,
+                allowed_roots=self.allowed_roots,
+                item_limit=self.item_limit,
+                requested_by="human",
+            )
+            self.signals.succeeded.emit(job_id)
+        except Exception as error:
+            LOGGER.exception("could not create intake job")
+            self.signals.failed.emit(str(error))
+
+
+class _IntakeRunSignals(QObject):
+    progressed = Signal()
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+
+class _IntakeRunWorker(QRunnable):
+    def __init__(self, db_path: Path, job_id: str) -> None:
+        super().__init__()
+        self.db_path = db_path
+        self.job_id = job_id
+        self.signals = _IntakeRunSignals()
+        self._last_progress_at = 0.0
+
+    def _progress(self) -> None:
+        now = time.monotonic()
+        if now - self._last_progress_at >= 0.25:
+            self._last_progress_at = now
+            self.signals.progressed.emit()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = run_intake_job(
+                self.db_path,
+                self.job_id,
+                progress_callback=self._progress,
+            )
+            self.signals.succeeded.emit(result)
+        except Exception as error:
+            LOGGER.exception("intake job failed")
+            self.signals.failed.emit(str(error))
+
+
 class DesktopController(QObject):
     summaryChanged = Signal()
     databaseHealthChanged = Signal()
@@ -145,6 +228,8 @@ class DesktopController(QObject):
     lastRefreshChanged = Signal()
     beaconDeskChanged = Signal()
     selectedBeaconThreadChanged = Signal()
+    intakeChanged = Signal()
+    selectedIntakeJobChanged = Signal()
 
     def __init__(self, settings: DesktopSettings) -> None:
         super().__init__()
@@ -160,6 +245,8 @@ class DesktopController(QObject):
         self._last_refresh = ""
         self._beacon_desk_summary: dict[str, Any] = {}
         self._selected_beacon_thread: dict[str, Any] = {}
+        self._intake_summary: dict[str, Any] = {}
+        self._selected_intake_job: dict[str, Any] = {}
         self._last_catalog_signature: tuple[int, int, int, int] | None = None
         self._workers: list[QRunnable] = []
         self._thread_pool = QThreadPool(self)
@@ -219,12 +306,36 @@ class DesktopController(QObject):
                 "timeLabel",
             )
         )
+        self._intake_jobs = DictListModel(
+            (
+                "jobId",
+                "sourceRoot",
+                "state",
+                "stateLabel",
+                "progress",
+                "progressLabel",
+                "countLabel",
+                "sizeLabel",
+                "updatedLabel",
+                "currentPath",
+                "failedCount",
+                "pendingCount",
+            )
+        )
 
         self.settings.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.settings.backup_dir.mkdir(parents=True, exist_ok=True)
         with connect(self.settings.db_path) as connection:
             migrate(connection)
+        recovered = recover_intake_jobs(self.settings.db_path)
         self.refresh()
+        if recovered:
+            self._set_status(
+                f"Recovered {recovered} interrupted intake job"
+                + ("s" if recovered != 1 else "")
+                + "; ready to resume.",
+                "working",
+            )
 
     @Property(QObject, constant=True)
     def assets(self) -> QObject:
@@ -246,6 +357,10 @@ class DesktopController(QObject):
     def beaconMessages(self) -> QObject:
         return self._beacon_messages
 
+    @Property(QObject, constant=True)
+    def intakeJobs(self) -> QObject:
+        return self._intake_jobs
+
     @Property("QVariantMap", notify=summaryChanged)
     def summary(self) -> dict[str, Any]:
         return self._summary
@@ -265,6 +380,14 @@ class DesktopController(QObject):
     @Property("QVariantMap", notify=selectedBeaconThreadChanged)
     def selectedBeaconThread(self) -> dict[str, Any]:
         return self._selected_beacon_thread
+
+    @Property("QVariantMap", notify=intakeChanged)
+    def intakeSummary(self) -> dict[str, Any]:
+        return self._intake_summary
+
+    @Property("QVariantMap", notify=selectedIntakeJobChanged)
+    def selectedIntakeJob(self) -> dict[str, Any]:
+        return self._selected_intake_job
 
     @Property(str, notify=currentViewChanged)
     def currentView(self) -> str:
@@ -305,6 +428,12 @@ class DesktopController(QObject):
     @Property(str, constant=True)
     def applicationVersion(self) -> str:
         return __version__
+
+    @Property(str, constant=True)
+    def defaultIntakeRoot(self) -> str:
+        if not self.settings.allowed_intake_roots:
+            return ""
+        return str(self.settings.allowed_intake_roots[0])
 
     @Slot(str)
     def setCurrentView(self, view: str) -> None:
@@ -354,6 +483,7 @@ class DesktopController(QObject):
             self._load_assets(preserve_selection=True)
             self._load_events()
             self._load_backups()
+            self._load_intake_jobs(preserve_selection=True)
             self._load_beacon_threads(preserve_selection=True)
             self._last_refresh = datetime.now().astimezone().strftime("%I:%M:%S %p")
             self._last_catalog_signature = self._catalog_signature()
@@ -423,6 +553,254 @@ class DesktopController(QObject):
             }
             for backup in list_backups(self.settings.backup_dir)
         )
+
+    def _load_intake_jobs(self, *, preserve_selection: bool) -> None:
+        current_id = (
+            self._selected_intake_job.get("id") if preserve_selection else None
+        )
+        jobs = list_intake_jobs(self.settings.db_path)
+        rows = [self._intake_job_row(job) for job in jobs]
+        self._intake_jobs.replace(rows)
+        active = sum(
+            1
+            for job in jobs
+            if job["state"] in {"queued", "running", "paused"}
+            and (
+                int(job.get("pending_count") or 0)
+                + int(job.get("running_count") or 0)
+            )
+        )
+        failed = sum(int(job.get("failed_count") or 0) for job in jobs)
+        self._intake_summary = {
+            "jobs": len(jobs),
+            "active": active,
+            "failed": failed,
+            "jobsLabel": f"{len(jobs):,}",
+            "activeLabel": f"{active:,}",
+            "failedLabel": f"{failed:,}",
+        }
+        available_ids = {row["jobId"] for row in rows}
+        if current_id in available_ids:
+            self._select_intake_job(str(current_id))
+        elif rows:
+            self._select_intake_job(rows[0]["jobId"])
+        else:
+            self._selected_intake_job = {}
+            self.selectedIntakeJobChanged.emit()
+        self.intakeChanged.emit()
+
+    @staticmethod
+    def _intake_job_row(job: dict[str, Any]) -> dict[str, Any]:
+        state = str(job.get("state") or "queued")
+        state_labels = {
+            "queued": "Ready",
+            "running": "Running",
+            "paused": "Paused",
+            "complete": "Complete",
+            "partial": "Needs retry",
+            "failed": "Failed",
+            "cancelled": "Cancelled",
+        }
+        total = int(job.get("total_items") or 0)
+        complete = int(job.get("completed_count") or 0)
+        failed = int(job.get("failed_count") or 0)
+        pending = int(job.get("pending_count") or 0)
+        processed = complete + failed
+        progress = 1.0 if total == 0 else min(1.0, processed / total)
+        return {
+            "jobId": job["id"],
+            "sourceRoot": job["source_root"],
+            "state": state,
+            "stateLabel": state_labels.get(state, state.title()),
+            "progress": progress,
+            "progressLabel": f"{progress:.0%}",
+            "countLabel": f"{complete:,} complete / {total:,} files",
+            "sizeLabel": (
+                f"{format_bytes(int(job.get('completed_bytes') or 0))} / "
+                f"{format_bytes(int(job.get('total_bytes') or 0))}"
+            ),
+            "updatedLabel": format_timestamp(job.get("updated_at")),
+            "currentPath": str(job.get("current_path") or ""),
+            "failedCount": failed,
+            "pendingCount": pending,
+        }
+
+    @Slot(str)
+    def selectIntakeJob(self, job_id: str) -> None:
+        self._select_intake_job(job_id)
+
+    def _select_intake_job(self, job_id: str) -> None:
+        detail = intake_job_detail(self.settings.db_path, job_id)
+        if detail is None:
+            self._selected_intake_job = {}
+        else:
+            row = self._intake_job_row(detail)
+            failures = detail.get("failures") or []
+            state = str(detail.get("state") or "")
+            row.update(
+                {
+                    "id": detail["id"],
+                    "snapshotSha256": detail["snapshot_sha256"],
+                    "modeLabel": "CATALOG ONLY",
+                    "createdLabel": format_timestamp(detail.get("created_at")),
+                    "itemLimitLabel": (
+                        f"First {int(detail['item_limit']):,} files"
+                        if detail.get("item_limit")
+                        else "All discovered files"
+                    ),
+                    "failureSummary": "\n".join(
+                        f"{failure['relative_path']}: {failure['error']}"
+                        for failure in failures
+                    ),
+                    "canStart": (
+                        state in {"queued", "paused", "cancelled", "partial"}
+                        and int(detail.get("pending_count") or 0) > 0
+                    ),
+                    "canCancel": state in {"queued", "running", "paused"},
+                    "canRetry": (
+                        state != "running"
+                        and int(detail.get("failed_count") or 0) > 0
+                    ),
+                }
+            )
+            self._selected_intake_job = row
+        self.selectedIntakeJobChanged.emit()
+
+    @Slot(str, str)
+    def createIntakeJob(self, source_root: str, limit_text: str) -> None:
+        if self._busy:
+            return
+        try:
+            stripped = limit_text.strip()
+            item_limit = int(stripped) if stripped else None
+            if item_limit is not None and not 1 <= item_limit <= 100_000:
+                raise ValueError("file limit must be between 1 and 100,000")
+            if not source_root.strip():
+                raise ValueError("choose an approved intake folder")
+        except ValueError as error:
+            self._set_status(str(error), "error")
+            return
+        self._busy = True
+        self.busyChanged.emit()
+        self._set_status("Building a recursive intake snapshot…", "working")
+        worker = _IntakeCreateWorker(
+            self.settings.db_path,
+            Path(source_root.strip()),
+            self.settings.allowed_intake_roots,
+            item_limit,
+        )
+        self._workers.append(worker)
+        worker.signals.succeeded.connect(
+            lambda job_id, current=worker: self._intake_created(current, job_id)
+        )
+        worker.signals.failed.connect(
+            lambda message, current=worker: self._intake_failed(current, message)
+        )
+        self._thread_pool.start(worker)
+
+    def _intake_created(
+        self, worker: _IntakeCreateWorker, job_id: str
+    ) -> None:
+        self._finish_worker(worker)
+        self._selected_intake_job = {"id": job_id}
+        self._load_events()
+        self._load_intake_jobs(preserve_selection=True)
+        self._set_status(
+            "Intake snapshot created. Review it, then choose Start.", "success"
+        )
+
+    @Slot()
+    def startSelectedIntakeJob(self) -> None:
+        if self._busy:
+            return
+        job_id = str(self._selected_intake_job.get("id") or "")
+        if not job_id:
+            self._set_status("Select an intake job first.", "error")
+            return
+        self._busy = True
+        self.busyChanged.emit()
+        self._set_status("Beacon is cataloging the intake snapshot…", "working")
+        worker = _IntakeRunWorker(self.settings.db_path, job_id)
+        self._workers.append(worker)
+        worker.signals.progressed.connect(self._intake_progressed)
+        worker.signals.succeeded.connect(
+            lambda result, current=worker: self._intake_succeeded(current, result)
+        )
+        worker.signals.failed.connect(
+            lambda message, current=worker: self._intake_failed(current, message)
+        )
+        self._thread_pool.start(worker)
+
+    @Slot()
+    def cancelSelectedIntakeJob(self) -> None:
+        job_id = str(self._selected_intake_job.get("id") or "")
+        if not job_id:
+            return
+        try:
+            request_intake_cancel(self.settings.db_path, job_id)
+            self._load_intake_jobs(preserve_selection=True)
+            self._set_status(
+                "Cancellation requested; Beacon will stop between files.",
+                "working",
+            )
+        except (LookupError, ValueError) as error:
+            self._set_status(str(error), "error")
+
+    @Slot()
+    def retrySelectedIntakeJob(self) -> None:
+        if self._busy:
+            return
+        job_id = str(self._selected_intake_job.get("id") or "")
+        if not job_id:
+            return
+        try:
+            count = retry_intake_failures(self.settings.db_path, job_id)
+            self._load_intake_jobs(preserve_selection=True)
+            self._set_status(
+                f"Queued {count:,} failed file"
+                + ("s" if count != 1 else "")
+                + " for retry.",
+                "working",
+            )
+            self.startSelectedIntakeJob()
+        except (LookupError, ValueError) as error:
+            self._set_status(str(error), "error")
+
+    def _intake_progressed(self) -> None:
+        self._load_intake_jobs(preserve_selection=True)
+
+    def _intake_succeeded(
+        self,
+        worker: _IntakeRunWorker,
+        result: IntakeRunResult,
+    ) -> None:
+        self._finish_worker(worker)
+        self.refresh()
+        messages = {
+            "complete": (
+                f"Intake complete: {result.completed:,} files cataloged."
+            ),
+            "cancelled": (
+                f"Intake cancelled after {result.completed:,} completed files."
+            ),
+            "paused": "Intake paused and ready to resume.",
+            "partial": (
+                f"Intake finished with {result.failed:,} retryable failures."
+            ),
+            "failed": (
+                f"Intake failed for {result.failed:,} files; review and retry."
+            ),
+        }
+        self._set_status(
+            messages.get(result.state, f"Intake state: {result.state}"),
+            "success" if result.state == "complete" else "working",
+        )
+
+    def _intake_failed(self, worker: QRunnable, message: str) -> None:
+        self._finish_worker(worker)
+        recover_intake_jobs(self.settings.db_path)
+        self._load_intake_jobs(preserve_selection=True)
+        self._set_status(f"Intake operation failed: {message}", "error")
 
     def _load_beacon_threads(self, *, preserve_selection: bool) -> None:
         current_id = (
@@ -900,7 +1278,13 @@ class DesktopController(QObject):
 
     @Slot()
     def shutdown(self) -> None:
-        """Let an in-flight verified backup finish before the process exits."""
+        """Pause intake work and let the current verified file operation finish."""
+        for worker in tuple(self._workers):
+            if isinstance(worker, _IntakeRunWorker):
+                try:
+                    pause_intake_job(self.settings.db_path, worker.job_id)
+                except Exception:
+                    LOGGER.exception("could not pause intake during shutdown")
         if self._thread_pool.activeThreadCount():
             LOGGER.info("waiting for in-flight desktop work before shutdown")
             self._thread_pool.waitForDone()

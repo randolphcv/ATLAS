@@ -39,7 +39,7 @@ Run from source:
 Or double-click:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.8.0\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.9.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 The desktop app has its own Windows window. It does not open a browser, start a
@@ -71,6 +71,22 @@ Beacon Desk is currently a durable handoff surface, not a continuously running
 AI worker. The UI says `SAVED LOCALLY`; queued messages are reviewed when a
 Beacon analysis session is deliberately run. The active `J:\Inbox` transfer is
 not inspected by opening the Desk.
+
+## Archive intake
+
+The Overview includes **Archive Intake** for explicit recursive catalog jobs.
+**New intake** defaults to `J:\Inbox` and a 25-file representative scope.
+Creating a snapshot does not start it. Review the displayed root, file count,
+byte count, and snapshot prefix, then choose **Start**.
+
+During a run, progress and the current path are written to SQLite. **Cancel**
+stops between files. **Resume** continues pending items without repeating
+completed ones. **Retry failures** resets only failed items. Closing the app
+pauses at the same safe boundary; a hard interruption is recovered as Paused at
+the next launch.
+
+Leave the maximum-files field blank only when a full recursive snapshot is
+intended. Intake is catalog-only and does not invoke managed moves.
 
 ## Editable metadata and managed moves
 

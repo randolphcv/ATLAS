@@ -76,3 +76,11 @@
   reparse rejection, non-overwrite behavior, audit events, and rollback.
 - Reconciled all six pilot Desk replies, verified a stable 7,093-file Inbox
   snapshot, and completed one real catalog-to-managed-location proof.
+- Added schema version 7 with durable recursive intake jobs and item-level
+  progress, attempts, errors, snapshot signatures, and source stat evidence.
+- Added native Overview controls to prepare a bounded or complete Inbox
+  snapshot, start or resume it, cancel between files, and retry only failures.
+- Added startup recovery that returns interrupted work to a visible paused
+  state without repeating completed files.
+- Kept intake catalog-only: no automatic watcher, move, delete, or source-file
+  edit is introduced.

@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -225,6 +225,50 @@ def migrate(connection: sqlite3.Connection) -> None:
             ON managed_moves(asset_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_managed_moves_state
             ON managed_moves(state);
+        CREATE TABLE IF NOT EXISTS intake_jobs (
+            id TEXT PRIMARY KEY,
+            source_root TEXT NOT NULL,
+            mode TEXT NOT NULL CHECK(mode IN ('catalog_only')),
+            state TEXT NOT NULL CHECK(state IN (
+                'queued', 'running', 'paused', 'complete',
+                'partial', 'failed', 'cancelled'
+            )),
+            snapshot_sha256 TEXT NOT NULL,
+            total_items INTEGER NOT NULL CHECK(total_items >= 0),
+            total_bytes INTEGER NOT NULL CHECK(total_bytes >= 0),
+            item_limit INTEGER CHECK(item_limit IS NULL OR item_limit > 0),
+            current_path TEXT,
+            cancel_requested INTEGER NOT NULL DEFAULT 0
+                CHECK(cancel_requested IN (0, 1)),
+            requested_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT,
+            error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_intake_jobs_state_updated
+            ON intake_jobs(state, updated_at DESC);
+        CREATE TABLE IF NOT EXISTS intake_items (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL
+                REFERENCES intake_jobs(id) ON DELETE CASCADE,
+            source_path TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+            modified_ns INTEGER NOT NULL,
+            state TEXT NOT NULL CHECK(state IN (
+                'pending', 'running', 'complete', 'failed'
+            )),
+            attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+            asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+            error TEXT,
+            started_at TEXT,
+            completed_at TEXT,
+            UNIQUE(job_id, source_path)
+        );
+        CREATE INDEX IF NOT EXISTS idx_intake_items_job_state_path
+            ON intake_items(job_id, state, relative_path);
         """
     )
     for version in range(1, SCHEMA_VERSION + 1):

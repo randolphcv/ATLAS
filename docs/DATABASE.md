@@ -1,6 +1,6 @@
 # Database
 
-Schema version 6 separates content, locations, derivatives, audit events,
+Schema version 7 separates content, locations, derivatives, audit events,
 AI-generated candidates, durable Beacon conversations, editable context, and
 managed file operations:
 
@@ -22,6 +22,10 @@ managed file operations:
 - `asset_metadata_revisions`: immutable history of every contextual edit.
 - `managed_moves`: exact source/destination, checksum, authorization, state,
   completion, and failure evidence for each managed move.
+- `intake_jobs`: approved root, mode, durable state, snapshot SHA-256, scoped
+  totals, current path, cancellation flag, and lifecycle timestamps.
+- `intake_items`: per-job source stat evidence, attempt count, progress state,
+  cataloged asset identity, error, and completion timestamps.
 - `schema_version`: applied schema versions.
 
 SHA-256 is unique in `assets`; paths are unique in `locations`. This recognizes
@@ -42,6 +46,11 @@ action.
 Editable metadata is asset-level and follows the permanent asset UUID across
 locations. Verified `assets`, probe metadata, checksums, and derivative lineage
 remain separate and are not edited through the contextual form.
+
+Intake snapshots are immutable scopes. A job retries by changing only item
+state and attempts; it does not rewrite the recorded source path, size, modified
+time, or snapshot signature. Completed items stay complete across cancellation,
+pause, retry, app shutdown, and crash recovery.
 
 Connections use WAL mode, normal synchronous durability, foreign keys, and a
 30-second busy timeout. Health checks run SQLite integrity and foreign-key

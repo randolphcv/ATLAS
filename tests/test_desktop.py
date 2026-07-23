@@ -88,7 +88,11 @@ class DesktopControllerTests(unittest.TestCase):
             include_media_probe=False,
         )
         self.controller = DesktopController(
-            DesktopSettings(self.db, self.backups)
+            DesktopSettings(
+                self.db,
+                self.backups,
+                allowed_intake_roots=(self.source.parent,),
+            )
         )
 
     def tearDown(self) -> None:
@@ -256,6 +260,43 @@ class DesktopControllerTests(unittest.TestCase):
         self.assertFalse(self.controller.busy)
         self.assertEqual(self.controller.statusKind, "success")
         self.assertEqual(self.controller.backups.rowCount(), 1)
+
+    def test_intake_snapshot_and_run_are_exposed_on_overview(self) -> None:
+        nested = self.source.parent / "nested"
+        nested.mkdir()
+        (nested / "second.txt").write_text(
+            "second intake file", encoding="utf-8"
+        )
+        loop = QEventLoop()
+        timed_out = False
+
+        def stop_when_finished() -> None:
+            if not self.controller.busy:
+                loop.quit()
+
+        def timeout() -> None:
+            nonlocal timed_out
+            timed_out = True
+            loop.quit()
+
+        self.controller.busyChanged.connect(stop_when_finished)
+        QTimer.singleShot(10000, timeout)
+        self.controller.createIntakeJob(str(self.source.parent), "2")
+        loop.exec()
+
+        self.assertFalse(timed_out)
+        self.assertEqual(self.controller.intakeJobs.rowCount(), 1)
+        self.assertEqual(self.controller.selectedIntakeJob["state"], "queued")
+        self.assertEqual(self.controller.selectedIntakeJob["pendingCount"], 2)
+
+        QTimer.singleShot(10000, timeout)
+        self.controller.startSelectedIntakeJob()
+        loop.exec()
+
+        self.assertFalse(timed_out)
+        self.assertEqual(self.controller.selectedIntakeJob["state"], "complete")
+        self.assertEqual(self.controller.selectedIntakeJob["progressLabel"], "100%")
+        self.assertEqual(self.controller.intakeSummary["active"], 0)
 
 
 class NativeQmlSmokeTests(unittest.TestCase):
