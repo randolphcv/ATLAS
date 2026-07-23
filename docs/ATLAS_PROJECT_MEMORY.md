@@ -115,8 +115,9 @@ These are stable unless Connor explicitly changes them:
 
 ## Current Phase
 
-Phase 0 foundations and the Phase 1 synthetic read-only catalog milestone are
-verified complete. Production-path indexing remains deliberately unapproved.
+Phase 0, the Phase 1 synthetic read-only catalog, and the Phase 2 local
+observatory foundation are verified complete. Production-path indexing remains
+deliberately unapproved.
 
 The first implementation target is a read-only vertical slice against synthetic fixtures:
 
@@ -145,23 +146,27 @@ The first implementation target is a read-only vertical slice against synthetic 
 | Phase 1 runs as an ordinary foreground CLI | Decided for Phase 1 | Easy to stop, inspect, and recover; no service lifecycle yet |
 | Phase 1 metadata lives in SQLite | Decided for Phase 1 | One inspectable transactional authority; sidecars remain an open later policy |
 | Phase 1 UUID is deterministic from SHA-256 | Provisional | Stable retries and duplicate recognition; edit/version semantics remain open |
+| Phase 2 app is a foreground localhost service plus browser dashboard | Decided for Phase 2 | Transparent stop/start behavior and a replaceable client |
+| Phase 2 binds only to `127.0.0.1` | Decided | No LAN or remote exposure without a separate security design |
+| Windows build is a PyInstaller one-folder bundle | Decided for current builds | Easier diagnosis and no per-launch temporary extraction |
+| Database backups remain on local NVMe for now | Decided for Phase 2 | Verified recovery artifacts without treating same-pool copies as disaster recovery |
 
 ## Decisions Still Open
 
 Do not silently resolve these:
 
-- development run mode: ordinary app, scheduled task, Windows service, or container;
+- production background run mode: scheduled task, Windows service, or container;
 - exact copy-stability algorithm and time thresholds;
 - metadata split between SQLite and sidecar files;
 - asset identity rules across moves, renames, edits, and true duplicates;
 - independent backup/parity strategy for original media;
-- database backup schedule, retention, restore test, and integrity checks;
+- database backup schedule, retention, and tested restore workflow;
 - privacy zones and default indexing exclusions;
 - which AI models are local versus optional external adapters;
 - which root conventions are fixed versus configurable;
 - whether derivatives live only under `J:\Beacon\` or may be colocated by policy;
 - terminology and state-machine names for intake jobs;
-- initial UI reference model and final ATLAS visual tokens.
+- long-term ATLAS visual-token and brand refinements.
 
 ## Required Acceptance Evidence
 
@@ -228,12 +233,12 @@ Next smallest step:
 ## Current Handoff
 
 Last verified: 2026-07-22 on the Windows ATLAS host  
-Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `802e788`  
-Current milestone: Phase 1 synthetic read-only catalog complete  
-Verified complete: canonical NVMe Git repository; foreground watcher; stability observation; SHA-256; deterministic provisional asset UUID; SQLite schema; content/location duplicate handling; restart idempotency; CLI init/add/scan/watch/list/inspect; structured logs; FFprobe WAV/MP4 metadata; corrupt-media and FFprobe-timeout handling; safe unavailable-path behavior  
+Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `916cd77`  
+Current milestone: Phase 2 local observatory foundation complete  
+Verified complete: Beacon 0.2.0; schema version 2; audit-event ledger; SQLite integrity/foreign-key health; verified online backups with atomic placement and SHA-256; loopback-only FastAPI; catalog search/detail/events/backup APIs; branded responsive dashboard; PyInstaller one-folder Windows bundle and ZIP package  
 In progress: none  
-Blocked: production pilot requires an exact approved sandbox/path and stability policy  
-Files changed: repository under `C:\Development\ATLAS`; synthetic acceptance runtime under `C:\ProgramData\ATLAS\Beacon\acceptance-20260722-231828`; this portable handoff  
-Tests/live checks: Python compilation passed; 10/10 tests passed; two independent watcher processes passed; database integrity `ok`; four content assets and five locations; H.264 and PCM metadata verified; unavailable path exited 1 safely; all fixture hashes matched before and after; log matched no common secret patterns  
-Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent backup strategy, real-world copy pause behavior, production stability thresholds, and database backup/restore policy  
-Next smallest step: design the Phase 2 hardening slice—database backup/restore plus a local job/status API—while keeping any real-media pilot separately scoped and explicitly approved
+Blocked: production pilot still requires an exact approved sandbox/path, privacy scope, and stability policy  
+Files changed: repository under `C:\Development\ATLAS`; Windows bundle under `C:\Development\ATLAS\dist\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; synthetic acceptance runtime under `C:\ProgramData\ATLAS\Beacon\acceptance-20260722-231828`; this portable handoff  
+Tests/live checks: Python compilation passed; 14/14 tests passed; dependency check passed; rendered overview/library/system and asset-detail flows reviewed; backup confirmation produced a verified artifact and audit event; page console clean; final executable served healthy schema-2 API, HTML, and CSS; executable SHA-256 `1B5767757D24FCDEA296E196F39D05473FC5997B2DCB0DD90A7EC862CFD2A952`; package SHA-256 `8D8DE0F2BD00F20D4DEDA17E06FE897C35EDA3E812C2C949811CF38664D06510`  
+Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, real-world copy pause behavior, production stability thresholds, database restore/retention policy, and code-signing strategy  
+Next smallest step: add a tested database restore workflow and explicit long-running job records, then separately define a tiny non-production pilot scope before any real-media observation
