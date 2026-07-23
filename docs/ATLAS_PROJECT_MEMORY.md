@@ -1,7 +1,7 @@
 # ATLAS — Project Memory and Decision Ledger
 
-Updated: 2026-07-22  
-Status: initial portable context; verify on the Windows host before treating hardware or runtime details as current
+Updated: 2026-07-23  
+Status: portable cross-machine handoff; verify live Windows state before treating recorded runtime details as current
 
 Use this file for durable, low-noise context. Do not store raw logs, secrets, personal media content, full transcripts, or speculative brainstorming here.
 
@@ -13,6 +13,14 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
 - AI librarian: **Beacon**
 - Mission: preserve, organize, and make searchable Connor's creative archive.
 - Core boundary: AI observes and catalogs; it does not own or destructively alter originals.
+
+### Cross-Machine Naming Convention
+
+- **Jarvis** — Codex on Connor's MacBook.
+- **Ultron** — Codex on the Windows ATLAS PC.
+- **Beacon** — the AI librarian/software subsystem inside ATLAS.
+
+Jarvis and Ultron are conversational handles for distinct Codex environments. Beacon remains the technical product/module name. Do not rename code, services, packages, paths, databases, schemas, or APIs from Beacon to Ultron unless Connor explicitly requests that separate technical change.
 
 ### Windows and Storage
 
@@ -115,9 +123,9 @@ These are stable unless Connor explicitly changes them:
 
 ## Current Phase
 
-Phase 0, the Phase 1 synthetic read-only catalog, and the Phase 2 local
-observatory foundation are verified complete. Production-path indexing remains
-deliberately unapproved.
+Phase 0, the Phase 1 synthetic read-only catalog, the Phase 2 local observatory
+foundation, and the Beacon 0.3.0 native desktop client are verified complete.
+Production-path indexing remains deliberately unapproved.
 
 The first implementation target is a read-only vertical slice against synthetic fixtures:
 
@@ -146,8 +154,10 @@ The first implementation target is a read-only vertical slice against synthetic 
 | Phase 1 runs as an ordinary foreground CLI | Decided for Phase 1 | Easy to stop, inspect, and recover; no service lifecycle yet |
 | Phase 1 metadata lives in SQLite | Decided for Phase 1 | One inspectable transactional authority; sidecars remain an open later policy |
 | Phase 1 UUID is deterministic from SHA-256 | Provisional | Stable retries and duplicate recognition; edit/version semantics remain open |
-| Phase 2 app is a foreground localhost service plus browser dashboard | Decided for Phase 2 | Transparent stop/start behavior and a replaceable client |
+| Phase 2 browser dashboard | Superseded by Beacon 0.3.0 | Preserved as an optional development surface, not the product UI |
 | Phase 2 binds only to `127.0.0.1` | Decided | No LAN or remote exposure without a separate security design |
+| Primary interface is a native Qt Quick/QML desktop app | Decided for current builds | Develop and verify the UI in the same Windows application context that ships |
+| Desktop app starts no API, browser, or network listener | Decided | Keep the user application local and self-contained; API remains an explicit optional adapter |
 | Windows build is a PyInstaller one-folder bundle | Decided for current builds | Easier diagnosis and no per-launch temporary extraction |
 | Database backups remain on local NVMe for now | Decided for Phase 2 | Verified recovery artifacts without treating same-pool copies as disaster recovery |
 
@@ -232,13 +242,13 @@ Next smallest step:
 
 ## Current Handoff
 
-Last verified: 2026-07-22 on the Windows ATLAS host  
-Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `916cd77`  
-Current milestone: Phase 2 local observatory foundation complete  
-Verified complete: Beacon 0.2.0; schema version 2; audit-event ledger; SQLite integrity/foreign-key health; verified online backups with atomic placement and SHA-256; loopback-only FastAPI; catalog search/detail/events/backup APIs; branded responsive dashboard; PyInstaller one-folder Windows bundle and ZIP package  
+Last verified: 2026-07-23 on the Windows ATLAS host  
+Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `7a21da2`  
+Current milestone: Beacon 0.3.0 native desktop client complete  
+Verified complete: schema version 2 read-only catalog; audit-event ledger; SQLite integrity/foreign-key health; verified online backups with atomic placement and SHA-256; native Qt Quick/QML Overview, Library, Operations, and System views; non-blocking desktop backup flow; optional loopback FastAPI adapter; windowed PyInstaller one-folder bundle and ZIP package  
 In progress: none  
 Blocked: production pilot still requires an exact approved sandbox/path, privacy scope, and stability policy  
 Files changed: repository under `C:\Development\ATLAS`; Windows bundle under `C:\Development\ATLAS\dist\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; synthetic acceptance runtime under `C:\ProgramData\ATLAS\Beacon\acceptance-20260722-231828`; this portable handoff  
-Tests/live checks: Python compilation passed; 14/14 tests passed; dependency check passed; rendered overview/library/system and asset-detail flows reviewed; backup confirmation produced a verified artifact and audit event; page console clean; final executable served healthy schema-2 API, HTML, and CSS; executable SHA-256 `1B5767757D24FCDEA296E196F39D05473FC5997B2DCB0DD90A7EC862CFD2A952`; package SHA-256 `8D8DE0F2BD00F20D4DEDA17E06FE897C35EDA3E812C2C949811CF38664D06510`  
+Tests/live checks: Python compilation passed; 17/17 tests passed with real FFprobe; dependency check passed; source-rendered Overview/Library/System views reviewed; packaged executable smoke and screenshot modes passed; no listener on ports 8765/8766; desktop bundle contains no FastAPI/Uvicorn/Pydantic or Qt WebEngine files; executable SHA-256 `E061A2EDE6B69BF36CD0163A23BFDDC0C3F3EBFE978124E306F690064607706D`; package SHA-256 `3B37799CD081073A6980C6CCEA8B211981C5B46241D74E62EA1013598E63A430`  
 Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, real-world copy pause behavior, production stability thresholds, database restore/retention policy, and code-signing strategy  
 Next smallest step: add a tested database restore workflow and explicit long-running job records, then separately define a tiny non-production pilot scope before any real-media observation
