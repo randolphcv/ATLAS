@@ -6,5 +6,6 @@
 - Keep source, runtime data, derivatives, backups, and originals in separate locations.
 - Make jobs restartable and idempotent. Verify source bytes before declaring work complete.
 - Store secrets outside Git. Core catalog behavior must work without cloud access.
-- Update documentation and `J:\ATLAS_PROJECT_MEMORY.md` only after live verification.
-
+- Update documentation and
+  `J:\System\Documentation\ATLAS\ATLAS_PROJECT_MEMORY.md` only after live
+  verification.

@@ -57,6 +57,9 @@ C:\ProgramData\ATLAS\Beacon\
 Protected managed storage:
 J:\
 
+Portable ATLAS documentation:
+J:\System\Documentation\ATLAS\
+
 Beacon backup destination:
 J:\System\Backups\Beacon\
 ```
@@ -160,6 +163,7 @@ The first implementation target is a read-only vertical slice against synthetic 
 | Desktop app starts no API, browser, or network listener | Decided | Keep the user application local and self-contained; API remains an explicit optional adapter |
 | Windows build is a PyInstaller one-folder bundle | Decided for current builds | Easier diagnosis and no per-launch temporary extraction |
 | Database backups remain on local NVMe for now | Decided for Phase 2 | Verified recovery artifacts without treating same-pool copies as disaster recovery |
+| Portable Markdown documentation lives under `J:\System\Documentation\ATLAS\` | Decided | Keep the storage root limited to operational folders while retaining one discoverable context bundle |
 
 ## Decisions Still Open
 
@@ -248,7 +252,7 @@ Current milestone: Beacon 0.3.0 native desktop client complete
 Verified complete: schema version 2 read-only catalog; audit-event ledger; SQLite integrity/foreign-key health; verified online backups with atomic placement and SHA-256; native Qt Quick/QML Overview, Library, Operations, and System views; non-blocking desktop backup flow; optional loopback FastAPI adapter; windowed PyInstaller one-folder bundle and ZIP package  
 In progress: none  
 Blocked: production pilot still requires an exact approved sandbox/path, privacy scope, and stability policy  
-Files changed: repository under `C:\Development\ATLAS`; Windows bundle under `C:\Development\ATLAS\dist\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; synthetic acceptance runtime under `C:\ProgramData\ATLAS\Beacon\acceptance-20260722-231828`; this portable handoff  
+Files changed: repository under `C:\Development\ATLAS`; Windows bundle under `C:\Development\ATLAS\dist\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; synthetic acceptance runtime under `C:\ProgramData\ATLAS\Beacon\acceptance-20260722-231828`; portable documentation under `J:\System\Documentation\ATLAS\`  
 Tests/live checks: Python compilation passed; 17/17 tests passed with real FFprobe; dependency check passed; source-rendered Overview/Library/System views reviewed; packaged executable smoke and screenshot modes passed; no listener on ports 8765/8766; desktop bundle contains no FastAPI/Uvicorn/Pydantic or Qt WebEngine files; executable SHA-256 `E061A2EDE6B69BF36CD0163A23BFDDC0C3F3EBFE978124E306F690064607706D`; package SHA-256 `3B37799CD081073A6980C6CCEA8B211981C5B46241D74E62EA1013598E63A430`  
 Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, real-world copy pause behavior, production stability thresholds, database restore/retention policy, and code-signing strategy  
 Next smallest step: add a tested database restore workflow and explicit long-running job records, then separately define a tiny non-production pilot scope before any real-media observation
