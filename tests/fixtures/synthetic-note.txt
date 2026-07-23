@@ -1,0 +1,2 @@
+ATLAS synthetic acceptance fixture.
+This file contains no personal or production media.
