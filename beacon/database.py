@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -100,6 +100,175 @@ def migrate(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_derivatives_asset_kind
             ON derivatives(asset_id, kind);
+        CREATE TABLE IF NOT EXISTS analysis_runs (
+            id TEXT PRIMARY KEY,
+            manifest_sha256 TEXT NOT NULL UNIQUE,
+            analyzer TEXT NOT NULL,
+            analyzer_version TEXT NOT NULL,
+            policy_version TEXT NOT NULL,
+            execution_location TEXT NOT NULL,
+            external_inference INTEGER NOT NULL
+                CHECK(external_inference IN (0, 1)),
+            authorization TEXT,
+            state TEXT NOT NULL
+                CHECK(state IN ('running', 'complete', 'partial', 'failed')),
+            scope_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_analysis_runs_created_at
+            ON analysis_runs(created_at DESC);
+        CREATE TABLE IF NOT EXISTS analysis_results (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES analysis_runs(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            source_sha256 TEXT NOT NULL,
+            analysis_kind TEXT NOT NULL,
+            fingerprint TEXT NOT NULL UNIQUE,
+            payload_json TEXT NOT NULL,
+            provenance_json TEXT NOT NULL,
+            confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+            review_state TEXT NOT NULL
+                CHECK(review_state IN (
+                    'candidate', 'approved', 'rejected', 'superseded'
+                )),
+            created_at TEXT NOT NULL,
+            reviewed_at TEXT,
+            UNIQUE(run_id, asset_id, analysis_kind)
+        );
+        CREATE INDEX IF NOT EXISTS idx_analysis_results_asset_created
+            ON analysis_results(asset_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_analysis_results_review_state
+            ON analysis_results(review_state);
+        CREATE TABLE IF NOT EXISTS beacon_threads (
+            id TEXT PRIMARY KEY,
+            subject TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN (
+                'blocker', 'question', 'clarification', 'approval', 'request'
+            )),
+            priority TEXT NOT NULL CHECK(priority IN (
+                'normal', 'important', 'urgent'
+            )),
+            state TEXT NOT NULL CHECK(state IN (
+                'awaiting_human', 'queued_for_beacon', 'resolved', 'closed'
+            )),
+            origin TEXT NOT NULL CHECK(origin IN (
+                'beacon', 'human', 'system'
+            )),
+            requires_approval INTEGER NOT NULL DEFAULT 0
+                CHECK(requires_approval IN (0, 1)),
+            asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+            seed_key TEXT UNIQUE,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            resolved_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_beacon_threads_state_updated
+            ON beacon_threads(state, updated_at DESC);
+        CREATE TABLE IF NOT EXISTS beacon_messages (
+            id TEXT PRIMARY KEY,
+            thread_id TEXT NOT NULL
+                REFERENCES beacon_threads(id) ON DELETE CASCADE,
+            author TEXT NOT NULL CHECK(author IN (
+                'beacon', 'human', 'system'
+            )),
+            body TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_beacon_messages_thread_created
+            ON beacon_messages(thread_id, created_at);
+        CREATE TABLE IF NOT EXISTS beacon_policies (
+            key TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_reference TEXT,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS asset_metadata (
+            asset_id TEXT PRIMARY KEY
+                REFERENCES assets(id) ON DELETE CASCADE,
+            metadata_json TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK(revision >= 1),
+            updated_by TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS asset_metadata_revisions (
+            id TEXT PRIMARY KEY,
+            asset_id TEXT NOT NULL
+                REFERENCES assets(id) ON DELETE CASCADE,
+            revision INTEGER NOT NULL CHECK(revision >= 1),
+            metadata_json TEXT NOT NULL,
+            updated_by TEXT NOT NULL,
+            source TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(asset_id, revision)
+        );
+        CREATE INDEX IF NOT EXISTS idx_asset_metadata_revisions_asset
+            ON asset_metadata_revisions(asset_id, revision DESC);
+        CREATE TABLE IF NOT EXISTS managed_moves (
+            id TEXT PRIMARY KEY,
+            asset_id TEXT NOT NULL REFERENCES assets(id),
+            source_path TEXT NOT NULL,
+            destination_path TEXT NOT NULL,
+            source_sha256 TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN (
+                'planned', 'running', 'complete', 'failed', 'rolled_back'
+            )),
+            requested_by TEXT NOT NULL,
+            authorization TEXT NOT NULL,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_managed_moves_asset_created
+            ON managed_moves(asset_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_managed_moves_state
+            ON managed_moves(state);
+        CREATE TABLE IF NOT EXISTS intake_jobs (
+            id TEXT PRIMARY KEY,
+            source_root TEXT NOT NULL,
+            mode TEXT NOT NULL CHECK(mode IN ('catalog_only')),
+            state TEXT NOT NULL CHECK(state IN (
+                'queued', 'running', 'paused', 'complete',
+                'partial', 'failed', 'cancelled'
+            )),
+            snapshot_sha256 TEXT NOT NULL,
+            total_items INTEGER NOT NULL CHECK(total_items >= 0),
+            total_bytes INTEGER NOT NULL CHECK(total_bytes >= 0),
+            item_limit INTEGER CHECK(item_limit IS NULL OR item_limit > 0),
+            current_path TEXT,
+            cancel_requested INTEGER NOT NULL DEFAULT 0
+                CHECK(cancel_requested IN (0, 1)),
+            requested_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT,
+            error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_intake_jobs_state_updated
+            ON intake_jobs(state, updated_at DESC);
+        CREATE TABLE IF NOT EXISTS intake_items (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL
+                REFERENCES intake_jobs(id) ON DELETE CASCADE,
+            source_path TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+            modified_ns INTEGER NOT NULL,
+            state TEXT NOT NULL CHECK(state IN (
+                'pending', 'running', 'complete', 'failed'
+            )),
+            attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+            asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+            error TEXT,
+            started_at TEXT,
+            completed_at TEXT,
+            UNIQUE(job_id, source_path)
+        );
+        CREATE INDEX IF NOT EXISTS idx_intake_items_job_state_path
+            ON intake_items(job_id, state, relative_path);
         """
     )
     for version in range(1, SCHEMA_VERSION + 1):

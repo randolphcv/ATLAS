@@ -164,7 +164,8 @@ ApplicationWindow {
         hoverEnabled: true
         contentItem: Text {
             text: primary.text
-            color: primary.quiet ? root.bone : root.ink
+            color: !primary.enabled ? root.muted
+                 : primary.quiet ? root.bone : root.ink
             font.pixelSize: 12
             font.weight: Font.DemiBold
             horizontalAlignment: Text.AlignHCenter
@@ -172,10 +173,31 @@ ApplicationWindow {
         }
         background: Rectangle {
             radius: 6
-            color: primary.quiet
+            color: !primary.enabled
+                   ? Qt.rgba(1, 1, 1, 0.025)
+                   : primary.quiet
                    ? (primary.hovered ? root.panelRaised : "transparent")
                    : (primary.hovered ? "#76BFC1" : root.atlasBright)
             border.color: primary.quiet ? root.line : "transparent"
+        }
+    }
+
+    component IntakeProgress: Rectangle {
+        id: intakeProgress
+        property real value: 0
+        implicitHeight: 7
+        radius: 4
+        color: root.ink
+        border.color: root.line
+        clip: true
+        Rectangle {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: Math.max(0, Math.min(parent.width, parent.width * intakeProgress.value))
+            radius: 4
+            color: root.atlasBright
+            visible: intakeProgress.value > 0
         }
     }
 
@@ -200,6 +222,77 @@ ApplicationWindow {
             font.pixelSize: detailLine.mono ? 10 : 12
             wrapMode: Text.WrapAnywhere
             Layout.fillWidth: true
+        }
+    }
+
+    component EditorField: ColumnLayout {
+        id: editorField
+        property string label
+        property string placeholder
+        property alias text: editorInput.text
+        spacing: 5
+        Text {
+            text: editorField.label.toUpperCase()
+            color: root.muted
+            font.pixelSize: 8
+            font.weight: Font.DemiBold
+            font.letterSpacing: 1.0
+        }
+        TextField {
+            id: editorInput
+            Layout.fillWidth: true
+            implicitHeight: 40
+            placeholderText: editorField.placeholder
+            color: root.bone
+            placeholderTextColor: root.muted
+            selectionColor: root.atlas
+            selectByMouse: true
+            leftPadding: 12
+            rightPadding: 12
+            background: Rectangle {
+                radius: 7
+                color: root.ink
+                border.color: editorInput.activeFocus ? root.atlasBright : root.line
+            }
+        }
+    }
+
+    component EditorArea: ColumnLayout {
+        id: editorArea
+        property string label
+        property string placeholder
+        property int preferredHeight: 92
+        property alias text: editorText.text
+        spacing: 5
+        Text {
+            text: editorArea.label.toUpperCase()
+            color: root.muted
+            font.pixelSize: 8
+            font.weight: Font.DemiBold
+            font.letterSpacing: 1.0
+        }
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.preferredHeight: editorArea.preferredHeight
+            clip: true
+            TextArea {
+                id: editorText
+                placeholderText: editorArea.placeholder
+                color: root.bone
+                placeholderTextColor: root.muted
+                selectionColor: root.atlas
+                selectByMouse: true
+                wrapMode: TextEdit.Wrap
+                leftPadding: 12
+                rightPadding: 12
+                topPadding: 10
+                bottomPadding: 10
+                background: Rectangle {
+                    radius: 7
+                    color: root.ink
+                    border.color: editorText.activeFocus ? root.atlasBright : root.line
+                }
+            }
         }
     }
 
@@ -231,7 +324,16 @@ ApplicationWindow {
         autoRepeat: false
         enabled: previewDialog.visible
                  || (backend.selectedAsset.id !== undefined
-                     && !searchField.activeFocus)
+                     && !searchField.activeFocus
+                     && !beaconReplyField.activeFocus
+                     && !newRequestSubject.activeFocus
+                     && !newRequestBody.activeFocus
+                     && !newIntakeRoot.activeFocus
+                     && !newIntakeLimit.activeFocus
+                     && !newRequestDialog.visible
+                     && !newIntakeDialog.visible
+                     && !metadataDialog.visible
+                     && !moveDialog.visible)
         onActivated: {
             if (previewDialog.visible)
                 previewDialog.close()
@@ -311,6 +413,596 @@ ApplicationWindow {
                     onClicked: {
                         backupDialog.close()
                         backend.createBackup()
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: newIntakeDialog
+        objectName: "newIntakeDialog"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 80, 650)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        onOpened: {
+            newIntakeRoot.text = backend.defaultIntakeRoot
+            newIntakeLimit.text = "25"
+            newIntakeRoot.forceActiveFocus()
+        }
+        background: Rectangle {
+            radius: 12
+            color: root.panelRaised
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.margins: 26
+                spacing: 13
+                PanelTitle {
+                    eyebrow: "Archive intake"
+                    title: "Prepare a recursive catalog job"
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Beacon will make a durable snapshot of regular files below this approved folder. Creating the job does not start it, move a file, or change an original."
+                    color: root.muted
+                    font.pixelSize: 12
+                    lineHeight: 1.4
+                    wrapMode: Text.WordWrap
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 5
+                    Text {
+                        text: "APPROVED SOURCE FOLDER"
+                        color: root.muted
+                        font.pixelSize: 8
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: 1.0
+                    }
+                    TextField {
+                        id: newIntakeRoot
+                        objectName: "newIntakeRoot"
+                        Layout.fillWidth: true
+                        implicitHeight: 42
+                        color: root.bone
+                        placeholderTextColor: root.muted
+                        selectionColor: root.atlas
+                        selectByMouse: true
+                        font.family: "Cascadia Mono"
+                        font.pixelSize: 11
+                        leftPadding: 13
+                        rightPadding: 13
+                        background: Rectangle {
+                            radius: 7
+                            color: root.ink
+                            border.color: newIntakeRoot.activeFocus
+                                          ? root.atlasBright : root.line
+                        }
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 14
+                    ColumnLayout {
+                        Layout.preferredWidth: 190
+                        spacing: 5
+                        Text {
+                            text: "MAXIMUM FILES"
+                            color: root.muted
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 1.0
+                        }
+                        TextField {
+                            id: newIntakeLimit
+                            objectName: "newIntakeLimit"
+                            Layout.fillWidth: true
+                            implicitHeight: 42
+                            text: "25"
+                            placeholderText: "Blank = all files"
+                            color: root.bone
+                            placeholderTextColor: root.muted
+                            selectionColor: root.atlas
+                            selectByMouse: true
+                            inputMethodHints: Qt.ImhDigitsOnly
+                            validator: IntValidator { bottom: 1; top: 100000 }
+                            leftPadding: 13
+                            rightPadding: 13
+                            background: Rectangle {
+                                radius: 7
+                                color: root.ink
+                                border.color: newIntakeLimit.activeFocus
+                                              ? root.atlasBright : root.line
+                            }
+                        }
+                    }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 64
+                        Layout.alignment: Qt.AlignBottom
+                        radius: 7
+                        color: root.ink
+                        border.color: root.line
+                        Text {
+                            anchors.fill: parent
+                            anchors.margins: 11
+                            text: "Start with 25 for a representative proof. Leave the limit blank only when you intend to snapshot every discovered file."
+                            color: root.muted
+                            font.pixelSize: 10
+                            lineHeight: 1.3
+                            wrapMode: Text.WordWrap
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 48
+                    radius: 7
+                    color: Qt.rgba(0.29, 0.55, 0.57, 0.10)
+                    border.color: Qt.rgba(0.39, 0.68, 0.69, 0.24)
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 11
+                        Rectangle {
+                            width: 7
+                            height: 7
+                            radius: 4
+                            color: root.atlasBright
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "CATALOG ONLY  ·  Resume, cancel, retry, and crash recovery are recorded in the local database."
+                            color: root.bone
+                            font.pixelSize: 9
+                            font.weight: Font.DemiBold
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 18
+                spacing: 10
+                Text {
+                    text: "APPROVED ROOT ONLY"
+                    color: root.brass
+                    font.pixelSize: 9
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.0
+                }
+                Item { Layout.fillWidth: true }
+                PrimaryButton {
+                    text: "Cancel"
+                    quiet: true
+                    onClicked: newIntakeDialog.close()
+                }
+                PrimaryButton {
+                    text: "Create snapshot"
+                    enabled: !backend.busy
+                             && newIntakeRoot.text.trim().length > 0
+                             && (newIntakeLimit.text.length === 0
+                                 || newIntakeLimit.acceptableInput)
+                    onClicked: {
+                        backend.createIntakeJob(
+                            newIntakeRoot.text,
+                            newIntakeLimit.text
+                        )
+                        newIntakeDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: newRequestDialog
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 80, 640)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        onOpened: {
+            newRequestSubject.text = ""
+            newRequestBody.text = ""
+            newRequestSubject.forceActiveFocus()
+        }
+        background: Rectangle {
+            radius: 12
+            color: root.panelRaised
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.margins: 26
+                spacing: 12
+                PanelTitle {
+                    eyebrow: "Beacon desk"
+                    title: "Start a new conversation"
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Ask for analysis, request context, or clarify protocol. The message is saved locally for Beacon; it does not authorize a file operation."
+                    color: root.muted
+                    font.pixelSize: 12
+                    lineHeight: 1.35
+                    wrapMode: Text.WordWrap
+                }
+                TextField {
+                    id: newRequestSubject
+                    Layout.fillWidth: true
+                    implicitHeight: 42
+                    placeholderText: "Subject"
+                    color: root.bone
+                    placeholderTextColor: root.muted
+                    selectionColor: root.atlas
+                    selectByMouse: true
+                    leftPadding: 13
+                    rightPadding: 13
+                    maximumLength: 160
+                    background: Rectangle {
+                        radius: 7
+                        color: root.ink
+                        border.color: newRequestSubject.activeFocus
+                                      ? root.atlasBright : root.line
+                    }
+                }
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 180
+                    clip: true
+                    TextArea {
+                        id: newRequestBody
+                        placeholderText: "What would you like Beacon to help with?"
+                        color: root.bone
+                        placeholderTextColor: root.muted
+                        selectionColor: root.atlas
+                        selectByMouse: true
+                        wrapMode: TextEdit.Wrap
+                        leftPadding: 13
+                        rightPadding: 13
+                        topPadding: 12
+                        bottomPadding: 12
+                        background: Rectangle {
+                            radius: 7
+                            color: root.ink
+                            border.color: newRequestBody.activeFocus
+                                          ? root.atlasBright : root.line
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: root.line
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 18
+                spacing: 10
+                Text {
+                    text: "SAVED LOCALLY"
+                    color: root.jade
+                    font.pixelSize: 9
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.1
+                }
+                Item { Layout.fillWidth: true }
+                PrimaryButton {
+                    text: "Cancel"
+                    quiet: true
+                    onClicked: newRequestDialog.close()
+                }
+                PrimaryButton {
+                    text: "Save for Beacon"
+                    enabled: newRequestSubject.text.trim().length > 0
+                             && newRequestBody.text.trim().length > 0
+                             && newRequestBody.text.length <= 8000
+                    onClicked: {
+                        backend.createBeaconThread(
+                            newRequestSubject.text,
+                            newRequestBody.text
+                        )
+                        newRequestDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: metadataDialog
+        objectName: "metadataDialog"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 64, 820)
+        height: Math.min(root.height - 48, 760)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        onOpened: {
+            var metadata = backend.selectedAsset.catalogMetadata || {}
+            metadataTitle.text = metadata.display_title || ""
+            metadataCategory.text = metadata.media_category || ""
+            metadataDescription.text = metadata.description || ""
+            metadataTags.text = metadata.tagsText || ""
+            metadataPeople.text = metadata.peopleText || ""
+            metadataDate.text = metadata.event_date || ""
+            metadataPlace.text = metadata.place || ""
+            metadataClient.text = metadata.client || ""
+            metadataProject.text = metadata.project || ""
+            metadataRights.text = metadata.rights || ""
+            metadataNotes.text = metadata.notes || ""
+            metadataOrganization.text = metadata.organization_path || ""
+            metadataTitle.forceActiveFocus()
+        }
+        background: Rectangle {
+            radius: 12
+            color: root.panelRaised
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 22
+                PanelTitle {
+                    eyebrow: "Editable catalog record"
+                    title: "Asset metadata"
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: "REVISION "
+                          + String((backend.selectedAsset.catalogMetadata || {}).revision || 0)
+                    color: root.jade
+                    font.pixelSize: 9
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.0
+                }
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                contentWidth: availableWidth
+                clip: true
+                ColumnLayout {
+                    width: parent.width
+                    spacing: 12
+                    anchors.margins: 22
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 650 ? 2 : 1
+                        columnSpacing: 12
+                        rowSpacing: 12
+                        EditorField {
+                            id: metadataTitle
+                            Layout.fillWidth: true
+                            label: "Display title"
+                            placeholder: "A human-readable title"
+                        }
+                        EditorField {
+                            id: metadataCategory
+                            Layout.fillWidth: true
+                            label: "Media category"
+                            placeholder: "Portrait, campaign video, music asset…"
+                        }
+                        EditorField {
+                            id: metadataProject
+                            Layout.fillWidth: true
+                            label: "Project"
+                            placeholder: "Project or collection"
+                        }
+                        EditorField {
+                            id: metadataClient
+                            Layout.fillWidth: true
+                            label: "Client"
+                            placeholder: "Direct or end client"
+                        }
+                        EditorField {
+                            id: metadataDate
+                            Layout.fillWidth: true
+                            label: "Date or time context"
+                            placeholder: "Exact or approximate"
+                        }
+                        EditorField {
+                            id: metadataPlace
+                            Layout.fillWidth: true
+                            label: "Place"
+                            placeholder: "City, venue, or setting"
+                        }
+                    }
+                    EditorArea {
+                        id: metadataDescription
+                        Layout.fillWidth: true
+                        label: "Description"
+                        placeholder: "What this asset contains and why it matters"
+                        preferredHeight: 108
+                    }
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 650 ? 2 : 1
+                        columnSpacing: 12
+                        rowSpacing: 12
+                        EditorArea {
+                            id: metadataTags
+                            Layout.fillWidth: true
+                            label: "Tags · one per line"
+                            placeholder: "campaign\nportrait\nreference"
+                        }
+                        EditorArea {
+                            id: metadataPeople
+                            Layout.fillWidth: true
+                            label: "People · one per line"
+                            placeholder: "Preferred name"
+                        }
+                    }
+                    EditorArea {
+                        id: metadataRights
+                        Layout.fillWidth: true
+                        label: "Rights and restrictions"
+                        placeholder: "Ownership, retention, sharing, or publication limits"
+                    }
+                    EditorArea {
+                        id: metadataNotes
+                        Layout.fillWidth: true
+                        label: "Notes"
+                        placeholder: "Additional human context"
+                    }
+                    EditorField {
+                        id: metadataOrganization
+                        Layout.fillWidth: true
+                        label: "Approved organization directory"
+                        placeholder: "J:\\Library\\…, J:\\Assets\\…, or J:\\Projects\\…"
+                    }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 48
+                        radius: 7
+                        color: root.shell
+                        border.color: root.line
+                        Text {
+                            anchors.fill: parent
+                            anchors.margins: 11
+                            text: "Verified technical facts remain locked. Saving here creates a new editable metadata revision and never writes into the source media."
+                            color: root.muted
+                            font.pixelSize: 10
+                            lineHeight: 1.3
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 16
+                Item { Layout.fillWidth: true }
+                PrimaryButton {
+                    text: "Cancel"
+                    quiet: true
+                    onClicked: metadataDialog.close()
+                }
+                PrimaryButton {
+                    text: "Save revision"
+                    onClicked: {
+                        backend.saveSelectedAssetMetadata({
+                            "display_title": metadataTitle.text,
+                            "description": metadataDescription.text,
+                            "media_category": metadataCategory.text,
+                            "tagsText": metadataTags.text,
+                            "peopleText": metadataPeople.text,
+                            "event_date": metadataDate.text,
+                            "place": metadataPlace.text,
+                            "client": metadataClient.text,
+                            "project": metadataProject.text,
+                            "rights": metadataRights.text,
+                            "notes": metadataNotes.text,
+                            "organization_path": metadataOrganization.text
+                        })
+                        metadataDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: moveDialog
+        objectName: "moveDialog"
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 80, 680)
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        onOpened: {
+            moveSource.text = backend.selectedAsset.primary_path || ""
+            moveDestination.text =
+                (backend.selectedAsset.catalogMetadata || {}).organization_path || ""
+        }
+        background: Rectangle {
+            radius: 12
+            color: root.panelRaised
+            border.color: root.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 0
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.margins: 24
+                spacing: 12
+                PanelTitle {
+                    eyebrow: "Checksum-verified operation"
+                    title: "Move cataloged file"
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Beacon will re-hash the selected observed location, move it without overwriting another file, verify the destination hash, and then update the catalog. A failure is recorded and rolled back when possible."
+                    color: root.muted
+                    font.pixelSize: 11
+                    lineHeight: 1.35
+                    wrapMode: Text.WordWrap
+                }
+                EditorField {
+                    id: moveSource
+                    Layout.fillWidth: true
+                    label: "Exact observed source"
+                    placeholder: "Select one observed location"
+                }
+                EditorField {
+                    id: moveDestination
+                    Layout.fillWidth: true
+                    label: "Approved destination directory"
+                    placeholder: "J:\\Library\\…, J:\\Assets\\…, or J:\\Projects\\…"
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 52
+                    radius: 7
+                    color: Qt.rgba(0.76, 0.60, 0.35, 0.10)
+                    border.color: Qt.rgba(0.76, 0.60, 0.35, 0.28)
+                    Text {
+                        anchors.fill: parent
+                        anchors.margins: 11
+                        text: "The source filename is preserved. Identical destinations and duplicate locations are never silently merged or deleted."
+                        color: root.brass
+                        font.pixelSize: 10
+                        lineHeight: 1.3
+                        wrapMode: Text.WordWrap
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 16
+                Item { Layout.fillWidth: true }
+                PrimaryButton {
+                    text: "Cancel"
+                    quiet: true
+                    onClicked: moveDialog.close()
+                }
+                PrimaryButton {
+                    text: "Verify & move"
+                    enabled: !backend.busy
+                             && moveSource.text.trim().length > 0
+                             && moveDestination.text.trim().length > 0
+                    onClicked: {
+                        backend.moveSelectedAsset(
+                            moveSource.text,
+                            moveDestination.text
+                        )
+                        moveDialog.close()
                     }
                 }
             }
@@ -878,6 +1570,663 @@ ApplicationWindow {
                                     }
                                 }
 
+                                Rectangle {
+                                    id: intakeCard
+                                    objectName: "intakeCard"
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 402
+                                    radius: 10
+                                    color: root.panel
+                                    border.color: root.line
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 18
+                                        spacing: 12
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            PanelTitle {
+                                                eyebrow: "Archive intake"
+                                                title: "Catalog operations"
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            Text {
+                                                text: (backend.intakeSummary.activeLabel || "0")
+                                                      + " ACTIVE  ·  "
+                                                      + (backend.intakeSummary.failedLabel || "0")
+                                                      + " FAILED FILES"
+                                                color: backend.intakeSummary.failed > 0
+                                                       ? root.ember : root.muted
+                                                font.pixelSize: 9
+                                                font.weight: Font.DemiBold
+                                                font.letterSpacing: 0.9
+                                            }
+                                            PrimaryButton {
+                                                objectName: "newIntakeButton"
+                                                text: "New intake"
+                                                enabled: !backend.busy
+                                                onClicked: newIntakeDialog.open()
+                                            }
+                                        }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            implicitHeight: 42
+                                            radius: 7
+                                            color: root.shell
+                                            border.color: root.line
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 13
+                                                anchors.rightMargin: 13
+                                                spacing: 10
+                                                Rectangle {
+                                                    width: 7
+                                                    height: 7
+                                                    radius: 4
+                                                    color: backend.selectedIntakeJob.state === "running"
+                                                           ? root.jade : root.atlasBright
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Durable, recursive, file-by-file cataloging. Originals remain in place; a job can resume without repeating completed files."
+                                                    color: root.muted
+                                                    font.pixelSize: 10
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            spacing: 12
+                                            Rectangle {
+                                                Layout.preferredWidth: 390
+                                                Layout.fillHeight: true
+                                                radius: 8
+                                                color: root.shell
+                                                border.color: root.line
+                                                ListView {
+                                                    id: intakeJobList
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+                                                    clip: true
+                                                    spacing: 7
+                                                    model: backend.intakeJobs
+                                                    delegate: Rectangle {
+                                                        required property string jobId
+                                                        required property string sourceRoot
+                                                        required property string state
+                                                        required property string stateLabel
+                                                        required property real progress
+                                                        required property string progressLabel
+                                                        required property string countLabel
+                                                        required property string updatedLabel
+                                                        width: ListView.view.width
+                                                        height: 92
+                                                        radius: 7
+                                                        color: backend.selectedIntakeJob.id === jobId
+                                                               ? Qt.rgba(0.29, 0.55, 0.57, 0.18)
+                                                               : intakeHover.containsMouse
+                                                                 ? root.panelRaised : root.panel
+                                                        border.color: backend.selectedIntakeJob.id === jobId
+                                                                      ? root.atlas : root.line
+                                                        MouseArea {
+                                                            id: intakeHover
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            onClicked: backend.selectIntakeJob(jobId)
+                                                        }
+                                                        ColumnLayout {
+                                                            anchors.fill: parent
+                                                            anchors.margins: 10
+                                                            spacing: 3
+                                                            RowLayout {
+                                                                Layout.fillWidth: true
+                                                                Text {
+                                                                    Layout.fillWidth: true
+                                                                    text: sourceRoot
+                                                                    color: root.bone
+                                                                    font.family: "Cascadia Mono"
+                                                                    font.pixelSize: 10
+                                                                    elide: Text.ElideMiddle
+                                                                }
+                                                                Text {
+                                                                    text: stateLabel.toUpperCase()
+                                                                    color: state === "complete" ? root.jade
+                                                                         : state === "failed" || state === "partial"
+                                                                           ? root.ember
+                                                                           : state === "running" ? root.atlasBright
+                                                                           : root.brass
+                                                                    font.pixelSize: 8
+                                                                    font.weight: Font.DemiBold
+                                                                    font.letterSpacing: 0.8
+                                                                }
+                                                            }
+                                                            IntakeProgress {
+                                                                Layout.fillWidth: true
+                                                                value: progress
+                                                            }
+                                                            RowLayout {
+                                                                Layout.fillWidth: true
+                                                                Text {
+                                                                    Layout.fillWidth: true
+                                                                    text: countLabel
+                                                                    color: root.muted
+                                                                    font.pixelSize: 9
+                                                                    elide: Text.ElideRight
+                                                                }
+                                                                Text {
+                                                                    text: progressLabel
+                                                                    color: root.bone
+                                                                    font.family: "Cascadia Mono"
+                                                                    font.pixelSize: 9
+                                                                }
+                                                            }
+                                                            Text {
+                                                                text: updatedLabel
+                                                                color: root.muted
+                                                                font.pixelSize: 8
+                                                            }
+                                                        }
+                                                    }
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        width: Math.min(270, parent.width - 30)
+                                                        visible: parent.count === 0
+                                                        text: "No intake jobs yet. Create a bounded snapshot when you are ready to test a folder."
+                                                        color: root.muted
+                                                        font.pixelSize: 11
+                                                        lineHeight: 1.35
+                                                        wrapMode: Text.WordWrap
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                    }
+                                                }
+                                            }
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                Layout.fillHeight: true
+                                                radius: 8
+                                                color: root.shell
+                                                border.color: root.line
+                                                ColumnLayout {
+                                                    anchors.fill: parent
+                                                    anchors.margins: 14
+                                                    spacing: 9
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        ColumnLayout {
+                                                            Layout.fillWidth: true
+                                                            spacing: 2
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: backend.selectedIntakeJob.id
+                                                                      ? backend.selectedIntakeJob.stateLabel
+                                                                        + " intake"
+                                                                      : "Select an intake job"
+                                                                color: root.bone
+                                                                font.family: "Georgia"
+                                                                font.pixelSize: 19
+                                                                elide: Text.ElideRight
+                                                            }
+                                                            Text {
+                                                                text: backend.selectedIntakeJob.id
+                                                                      ? (backend.selectedIntakeJob.modeLabel || "CATALOG ONLY")
+                                                                        + "  ·  "
+                                                                        + (backend.selectedIntakeJob.itemLimitLabel || "")
+                                                                      : "RESTARTABLE LOCAL OPERATION"
+                                                                color: root.brass
+                                                                font.pixelSize: 8
+                                                                font.weight: Font.DemiBold
+                                                                font.letterSpacing: 1.0
+                                                            }
+                                                        }
+                                                        Text {
+                                                            text: backend.selectedIntakeJob.progressLabel || "0%"
+                                                            color: root.atlasBright
+                                                            font.family: "Cascadia Mono"
+                                                            font.pixelSize: 22
+                                                            font.weight: Font.DemiBold
+                                                        }
+                                                    }
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: backend.selectedIntakeJob.sourceRoot
+                                                              || "Create a job to snapshot an approved intake folder."
+                                                        color: root.bone
+                                                        font.family: "Cascadia Mono"
+                                                        font.pixelSize: 10
+                                                        elide: Text.ElideMiddle
+                                                    }
+                                                    IntakeProgress {
+                                                        Layout.fillWidth: true
+                                                        value: backend.selectedIntakeJob.progress || 0
+                                                    }
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: backend.selectedIntakeJob.countLabel
+                                                                  || "No snapshot selected"
+                                                            color: root.muted
+                                                            font.pixelSize: 10
+                                                        }
+                                                        Text {
+                                                            text: backend.selectedIntakeJob.sizeLabel || ""
+                                                            color: root.muted
+                                                            font.family: "Cascadia Mono"
+                                                            font.pixelSize: 9
+                                                        }
+                                                    }
+                                                    Rectangle {
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: 48
+                                                        radius: 7
+                                                        color: root.ink
+                                                        border.color: root.line
+                                                        Text {
+                                                            anchors.fill: parent
+                                                            anchors.margins: 10
+                                                            text: backend.selectedIntakeJob.currentPath
+                                                                  ? "CURRENT  ·  "
+                                                                    + backend.selectedIntakeJob.currentPath
+                                                                  : backend.selectedIntakeJob.failureSummary
+                                                                    ? backend.selectedIntakeJob.failureSummary
+                                                                    : "Waiting for an action. Completed files will not be repeated."
+                                                            color: backend.selectedIntakeJob.failureSummary
+                                                                   ? root.ember : root.muted
+                                                            font.family: "Cascadia Mono"
+                                                            font.pixelSize: 9
+                                                            elide: Text.ElideMiddle
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                    }
+                                                    Item { Layout.fillHeight: true }
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+                                                        PrimaryButton {
+                                                            text: backend.selectedIntakeJob.state === "paused"
+                                                                  || backend.selectedIntakeJob.state === "cancelled"
+                                                                  ? "Resume" : "Start"
+                                                            enabled: !backend.busy
+                                                                     && backend.selectedIntakeJob.canStart === true
+                                                            onClicked: backend.startSelectedIntakeJob()
+                                                        }
+                                                        PrimaryButton {
+                                                            text: "Cancel"
+                                                            quiet: true
+                                                            enabled: backend.selectedIntakeJob.canCancel === true
+                                                            onClicked: backend.cancelSelectedIntakeJob()
+                                                        }
+                                                        PrimaryButton {
+                                                            text: "Retry failures"
+                                                            quiet: true
+                                                            enabled: !backend.busy
+                                                                     && backend.selectedIntakeJob.canRetry === true
+                                                            onClicked: backend.retrySelectedIntakeJob()
+                                                        }
+                                                        Item { Layout.fillWidth: true }
+                                                        Text {
+                                                            text: backend.selectedIntakeJob.snapshotSha256
+                                                                  ? "SNAPSHOT  "
+                                                                    + backend.selectedIntakeJob.snapshotSha256.substring(0, 12)
+                                                                  : ""
+                                                            color: root.muted
+                                                            font.family: "Cascadia Mono"
+                                                            font.pixelSize: 8
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 548
+                                    radius: 10
+                                    color: root.panel
+                                    border.color: root.line
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 18
+                                        spacing: 12
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            PanelTitle {
+                                                eyebrow: "Beacon desk"
+                                                title: "Open conversations"
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            ColumnLayout {
+                                                spacing: 2
+                                                Text {
+                                                    Layout.alignment: Qt.AlignRight
+                                                    text: (backend.beaconDeskSummary.awaitingLabel || "0")
+                                                          + " WAITING FOR YOU  ·  "
+                                                          + (backend.beaconDeskSummary.queuedLabel || "0")
+                                                          + " QUEUED"
+                                                    color: root.muted
+                                                    font.pixelSize: 9
+                                                    font.weight: Font.DemiBold
+                                                    font.letterSpacing: 0.8
+                                                }
+                                                Text {
+                                                    Layout.alignment: Qt.AlignRight
+                                                    text: backend.beaconDeskSummary.connectionLabel
+                                                          || "SAVED LOCALLY"
+                                                    color: root.jade
+                                                    font.pixelSize: 9
+                                                    font.weight: Font.DemiBold
+                                                    font.letterSpacing: 1.1
+                                                }
+                                            }
+                                            PrimaryButton {
+                                                text: "New request"
+                                                onClicked: newRequestDialog.open()
+                                            }
+                                        }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            implicitHeight: 42
+                                            radius: 7
+                                            color: root.shell
+                                            border.color: root.line
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 13
+                                                anchors.rightMargin: 13
+                                                spacing: 10
+                                                Rectangle {
+                                                    width: 7
+                                                    height: 7
+                                                    radius: 4
+                                                    color: root.brass
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Messages persist in this catalog. Beacon reviews queued replies during an analysis session; the app does not pretend a worker is continuously online."
+                                                    color: root.muted
+                                                    font.pixelSize: 10
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            spacing: 12
+                                            Rectangle {
+                                                Layout.preferredWidth: 392
+                                                Layout.fillHeight: true
+                                                radius: 8
+                                                color: root.shell
+                                                border.color: root.line
+                                                ListView {
+                                                    id: beaconThreadList
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+                                                    clip: true
+                                                    spacing: 7
+                                                    model: backend.beaconThreads
+                                                    delegate: Rectangle {
+                                                        required property string threadId
+                                                        required property string subject
+                                                        required property string kindLabel
+                                                        required property string priority
+                                                        required property string state
+                                                        required property string stateLabel
+                                                        required property string preview
+                                                        required property string updatedLabel
+                                                        required property bool requiresApproval
+                                                        width: ListView.view.width
+                                                        height: 96
+                                                        radius: 7
+                                                        color: backend.selectedBeaconThread.id === threadId
+                                                               ? Qt.rgba(0.29, 0.55, 0.57, 0.18)
+                                                               : beaconThreadHover.containsMouse
+                                                                 ? root.panelRaised : root.panel
+                                                        border.color: backend.selectedBeaconThread.id === threadId
+                                                                      ? root.atlas : root.line
+                                                        MouseArea {
+                                                            id: beaconThreadHover
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            onClicked: backend.selectBeaconThread(threadId)
+                                                        }
+                                                        ColumnLayout {
+                                                            anchors.fill: parent
+                                                            anchors.margins: 10
+                                                            spacing: 3
+                                                            RowLayout {
+                                                                Layout.fillWidth: true
+                                                                Text {
+                                                                    text: kindLabel.toUpperCase()
+                                                                    color: requiresApproval
+                                                                           ? root.brass : root.atlasBright
+                                                                    font.pixelSize: 8
+                                                                    font.weight: Font.DemiBold
+                                                                    font.letterSpacing: 1.0
+                                                                }
+                                                                Item { Layout.fillWidth: true }
+                                                                Rectangle {
+                                                                    width: 6
+                                                                    height: 6
+                                                                    radius: 3
+                                                                    color: state === "awaiting_human"
+                                                                           ? root.brass : root.atlasBright
+                                                                }
+                                                                Text {
+                                                                    text: stateLabel.toUpperCase()
+                                                                    color: root.muted
+                                                                    font.pixelSize: 8
+                                                                    font.weight: Font.DemiBold
+                                                                }
+                                                            }
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: subject
+                                                                color: root.bone
+                                                                font.pixelSize: 12
+                                                                font.weight: Font.DemiBold
+                                                                elide: Text.ElideRight
+                                                            }
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: preview
+                                                                color: root.muted
+                                                                font.pixelSize: 9
+                                                                elide: Text.ElideRight
+                                                            }
+                                                            Text {
+                                                                text: updatedLabel
+                                                                color: root.muted
+                                                                font.pixelSize: 8
+                                                            }
+                                                        }
+                                                    }
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        width: Math.min(260, parent.width - 30)
+                                                        visible: parent.count === 0
+                                                        text: "No open conversations. Start a new request whenever you need Beacon."
+                                                        color: root.muted
+                                                        font.pixelSize: 11
+                                                        lineHeight: 1.35
+                                                        wrapMode: Text.WordWrap
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                    }
+                                                }
+                                            }
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                Layout.fillHeight: true
+                                                radius: 8
+                                                color: root.shell
+                                                border.color: root.line
+                                                ColumnLayout {
+                                                    anchors.fill: parent
+                                                    anchors.margins: 14
+                                                    spacing: 10
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        ColumnLayout {
+                                                            Layout.fillWidth: true
+                                                            spacing: 2
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: backend.selectedBeaconThread.subject
+                                                                      || "Select a conversation"
+                                                                color: root.bone
+                                                                font.family: "Georgia"
+                                                                font.pixelSize: 18
+                                                                elide: Text.ElideRight
+                                                            }
+                                                            Text {
+                                                                text: backend.selectedBeaconThread.id
+                                                                      ? (backend.selectedBeaconThread.kindLabel || "Conversation").toUpperCase()
+                                                                        + "  ·  "
+                                                                        + (backend.selectedBeaconThread.stateLabel || "")
+                                                                      : "BEACON DESK"
+                                                                color: backend.selectedBeaconThread.state === "awaiting_human"
+                                                                       ? root.brass : root.muted
+                                                                font.pixelSize: 8
+                                                                font.weight: Font.DemiBold
+                                                                font.letterSpacing: 1.0
+                                                            }
+                                                        }
+                                                        PrimaryButton {
+                                                            visible: backend.selectedBeaconThread.id !== undefined
+                                                            text: "Resolve"
+                                                            quiet: true
+                                                            onClicked: backend.resolveBeaconThread()
+                                                        }
+                                                    }
+                                                    Rectangle {
+                                                        visible: backend.selectedBeaconThread.requiresApproval === true
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: visible ? 38 : 0
+                                                        radius: 6
+                                                        color: Qt.rgba(0.76, 0.60, 0.35, 0.10)
+                                                        border.color: Qt.rgba(0.76, 0.60, 0.35, 0.28)
+                                                        Text {
+                                                            anchors.fill: parent
+                                                            anchors.margins: 10
+                                                            text: "APPROVAL REQUEST  ·  Your reply records guidance only; it cannot move or change files."
+                                                            color: root.brass
+                                                            font.pixelSize: 9
+                                                            font.weight: Font.DemiBold
+                                                            elide: Text.ElideRight
+                                                        }
+                                                    }
+                                                    ListView {
+                                                        id: beaconMessageList
+                                                        Layout.fillWidth: true
+                                                        Layout.fillHeight: true
+                                                        clip: true
+                                                        spacing: 8
+                                                        model: backend.beaconMessages
+                                                        onCountChanged: positionViewAtEnd()
+                                                        delegate: Rectangle {
+                                                            required property string author
+                                                            required property string authorLabel
+                                                            required property string body
+                                                            required property string timeLabel
+                                                            width: ListView.view.width
+                                                            height: messageBody.implicitHeight + 48
+                                                            radius: 7
+                                                            color: author === "human"
+                                                                   ? Qt.rgba(0.29, 0.55, 0.57, 0.14)
+                                                                   : root.panel
+                                                            border.color: root.line
+                                                            ColumnLayout {
+                                                                anchors.fill: parent
+                                                                anchors.margins: 10
+                                                                spacing: 4
+                                                                RowLayout {
+                                                                    Layout.fillWidth: true
+                                                                    Text {
+                                                                        text: authorLabel
+                                                                        color: author === "human"
+                                                                               ? root.atlasBright : root.brass
+                                                                        font.pixelSize: 8
+                                                                        font.weight: Font.DemiBold
+                                                                        font.letterSpacing: 1.0
+                                                                    }
+                                                                    Item { Layout.fillWidth: true }
+                                                                    Text {
+                                                                        text: timeLabel
+                                                                        color: root.muted
+                                                                        font.pixelSize: 8
+                                                                    }
+                                                                }
+                                                                Text {
+                                                                    id: messageBody
+                                                                    Layout.fillWidth: true
+                                                                    text: body
+                                                                    color: root.bone
+                                                                    font.pixelSize: 11
+                                                                    lineHeight: 1.35
+                                                                    wrapMode: Text.WordWrap
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        Layout.preferredHeight: 72
+                                                        Layout.minimumHeight: 72
+                                                        Layout.maximumHeight: 72
+                                                        Layout.fillHeight: false
+                                                        spacing: 8
+                                                        ScrollView {
+                                                            Layout.fillWidth: true
+                                                            Layout.preferredHeight: 72
+                                                            Layout.minimumHeight: 72
+                                                            Layout.maximumHeight: 72
+                                                            clip: true
+                                                            TextArea {
+                                                                id: beaconReplyField
+                                                                objectName: "beaconReplyField"
+                                                                enabled: backend.selectedBeaconThread.id !== undefined
+                                                                placeholderText: backend.selectedBeaconThread.id !== undefined
+                                                                                 ? "Reply in plain English…"
+                                                                                 : "Select a conversation to reply"
+                                                                color: root.bone
+                                                                placeholderTextColor: root.muted
+                                                                selectionColor: root.atlas
+                                                                selectByMouse: true
+                                                                wrapMode: TextEdit.Wrap
+                                                                leftPadding: 11
+                                                                rightPadding: 11
+                                                                topPadding: 9
+                                                                bottomPadding: 9
+                                                                background: Rectangle {
+                                                                    radius: 7
+                                                                    color: root.ink
+                                                                    border.color: beaconReplyField.activeFocus
+                                                                                  ? root.atlasBright : root.line
+                                                                }
+                                                            }
+                                                        }
+                                                        PrimaryButton {
+                                                            Layout.alignment: Qt.AlignBottom
+                                                            text: "Send reply"
+                                                            enabled: backend.selectedBeaconThread.id !== undefined
+                                                                     && beaconReplyField.text.trim().length > 0
+                                                                     && beaconReplyField.text.length <= 8000
+                                                            onClicked: {
+                                                                backend.replyToBeaconThread(beaconReplyField.text)
+                                                                beaconReplyField.text = ""
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 430
@@ -911,6 +2260,7 @@ ApplicationWindow {
                                                 delegate: Rectangle {
                                                     required property string assetId
                                                     required property string filename
+                                                    required property string displayTitle
                                                     required property string kindLabel
                                                     required property string sizeLabel
                                                     required property string path
@@ -960,7 +2310,7 @@ ApplicationWindow {
                                                             Layout.fillWidth: true
                                                             spacing: 1
                                                             Text {
-                                                                text: filename
+                                                                text: displayTitle
                                                                 color: root.bone
                                                                 font.pixelSize: 12
                                                                 font.weight: Font.DemiBold
@@ -1114,6 +2464,7 @@ ApplicationWindow {
                                         delegate: Rectangle {
                                             required property string assetId
                                             required property string filename
+                                            required property string displayTitle
                                             required property string kindLabel
                                             required property string sizeLabel
                                             required property string metaLine
@@ -1170,7 +2521,7 @@ ApplicationWindow {
                                                     RowLayout {
                                                         Layout.fillWidth: true
                                                         Text {
-                                                            text: filename
+                                                            text: displayTitle
                                                             color: root.bone
                                                             font.pixelSize: 12
                                                             font.weight: Font.DemiBold
@@ -1184,7 +2535,9 @@ ApplicationWindow {
                                                         }
                                                     }
                                                     Text {
-                                                        text: metaLine
+                                                        text: filename
+                                                              + (metaLine.length > 0
+                                                                 ? "  ·  " + metaLine : "")
                                                         color: root.brass
                                                         font.pixelSize: 9
                                                         elide: Text.ElideRight
@@ -1248,7 +2601,7 @@ ApplicationWindow {
                                                         font.letterSpacing: 1.4
                                                     }
                                                     Text {
-                                                        text: backend.selectedAsset.filename || ""
+                                                        text: backend.selectedAsset.displayTitle || ""
                                                         color: root.bone
                                                         font.family: "Georgia"
                                                         font.pixelSize: 25
@@ -1375,6 +2728,274 @@ ApplicationWindow {
                                                 DetailLine { Layout.fillWidth: true; label: "Created"; value: backend.selectedAsset.createdLabel || "" }
                                             }
                                             Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 10
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: "EDITABLE CATALOG METADATA"
+                                                        color: root.brass
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                        font.letterSpacing: 1.4
+                                                    }
+                                                    Text {
+                                                        text: "REV "
+                                                              + String((backend.selectedAsset.catalogMetadata || {}).revision || 0)
+                                                        color: root.muted
+                                                        font.pixelSize: 8
+                                                        font.weight: Font.DemiBold
+                                                    }
+                                                    PrimaryButton {
+                                                        text: "Edit metadata"
+                                                        quiet: true
+                                                        onClicked: metadataDialog.open()
+                                                    }
+                                                    PrimaryButton {
+                                                        text: "Move file"
+                                                        enabled: ((backend.selectedAsset.catalogMetadata || {}).organization_path || "").length > 0
+                                                        onClicked: moveDialog.open()
+                                                    }
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: (backend.selectedAsset.catalogMetadata || {}).description
+                                                          || "No editable description yet."
+                                                    color: root.bone
+                                                    font.pixelSize: 12
+                                                    lineHeight: 1.35
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                                GridLayout {
+                                                    Layout.fillWidth: true
+                                                    columns: width >= 560 ? 2 : 1
+                                                    columnSpacing: 24
+                                                    rowSpacing: 9
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Title"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).display_title || "Not set"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Category"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).media_category || "Not set"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Project"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).project || "Not set"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Client"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).client || "Not set"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Date"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).event_date || "Not set"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Place"
+                                                        value: (backend.selectedAsset.catalogMetadata || {}).place || "Not set"
+                                                    }
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "People"
+                                                    value: ((backend.selectedAsset.catalogMetadata || {}).people || []).join(" · ") || "Not set"
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "Tags"
+                                                    value: ((backend.selectedAsset.catalogMetadata || {}).tags || []).join(" · ") || "Not set"
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "Rights"
+                                                    value: (backend.selectedAsset.catalogMetadata || {}).rights || "Not set"
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "Destination"
+                                                    value: (backend.selectedAsset.catalogMetadata || {}).organization_path || "Not approved yet"
+                                                    mono: true
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    visible: (backend.selectedAsset.moves || []).length > 0
+                                                    label: "Last move"
+                                                    value: (backend.selectedAsset.moves || []).length > 0
+                                                           ? backend.selectedAsset.moves[0].state.toUpperCase()
+                                                             + " · "
+                                                             + backend.selectedAsset.moves[0].destination_path
+                                                           : ""
+                                                    mono: true
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Updated "
+                                                          + ((backend.selectedAsset.catalogMetadata || {}).updatedLabel || "Not edited yet")
+                                                          + "  ·  Context stays editable; verified technical facts stay locked."
+                                                    color: root.muted
+                                                    font.pixelSize: 9
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                            }
+                                            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 10
+                                                visible: backend.selectedAsset.analysisCandidate
+                                                         && backend.selectedAsset.analysisCandidate.id
+                                                         && backend.selectedAsset.analysisCandidate.id.length > 0
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    Text {
+                                                        text: "BEACON ANALYSIS"
+                                                        color: root.brass
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                        font.letterSpacing: 1.4
+                                                        Layout.fillWidth: true
+                                                    }
+                                                    Rectangle {
+                                                        implicitWidth: analysisStateLabel.implicitWidth + 18
+                                                        implicitHeight: 24
+                                                        radius: 12
+                                                        color: Qt.rgba(0.76, 0.60, 0.35, 0.12)
+                                                        border.color: Qt.rgba(0.76, 0.60, 0.35, 0.28)
+                                                        Text {
+                                                            id: analysisStateLabel
+                                                            anchors.centerIn: parent
+                                                            text: backend.selectedAsset.analysisCandidate.reviewStateLabel || "CANDIDATE"
+                                                            color: root.brass
+                                                            font.pixelSize: 8
+                                                            font.weight: Font.DemiBold
+                                                            font.letterSpacing: 1.0
+                                                        }
+                                                    }
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: backend.selectedAsset.analysisCandidate.executionLabel || ""
+                                                    color: (backend.selectedAsset.analysisCandidate.executionLabel || "").indexOf("EXTERNAL") >= 0
+                                                           ? root.ember : root.jade
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.DemiBold
+                                                    font.letterSpacing: 1.0
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: backend.selectedAsset.analysisCandidate.title || ""
+                                                    color: root.bone
+                                                    font.family: "Georgia"
+                                                    font.pixelSize: 20
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: backend.selectedAsset.analysisCandidate.description || ""
+                                                    color: root.bone
+                                                    font.pixelSize: 12
+                                                    lineHeight: 1.35
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                                GridLayout {
+                                                    Layout.fillWidth: true
+                                                    columns: width >= 560 ? 2 : 1
+                                                    columnSpacing: 24
+                                                    rowSpacing: 8
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Category"
+                                                        value: backend.selectedAsset.analysisCandidate.mediaCategory || "Unclassified"
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Confidence"
+                                                        value: backend.selectedAsset.analysisCandidate.confidenceLabel || "Not reported"
+                                                    }
+                                                }
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 4
+                                                    Text {
+                                                        text: "CANDIDATE TAGS"
+                                                        color: root.muted
+                                                        font.pixelSize: 8
+                                                        font.weight: Font.DemiBold
+                                                        font.letterSpacing: 1.1
+                                                    }
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: backend.selectedAsset.analysisCandidate.tagsLabel || "No tags proposed"
+                                                        color: root.atlasBright
+                                                        font.pixelSize: 11
+                                                        wrapMode: Text.WordWrap
+                                                    }
+                                                }
+                                                Rectangle {
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: analysisSuggestionColumn.implicitHeight + 20
+                                                    radius: 7
+                                                    color: root.shell
+                                                    border.color: root.line
+                                                    ColumnLayout {
+                                                        id: analysisSuggestionColumn
+                                                        anchors.left: parent.left
+                                                        anchors.right: parent.right
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        anchors.leftMargin: 12
+                                                        anchors.rightMargin: 12
+                                                        spacing: 4
+                                                        Text {
+                                                            text: "ORGANIZATION SUGGESTION · APPROVAL REQUIRED"
+                                                            color: root.brass
+                                                            font.pixelSize: 8
+                                                            font.weight: Font.DemiBold
+                                                            font.letterSpacing: 1.0
+                                                        }
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: backend.selectedAsset.analysisCandidate.organizationSuggestion || "No organization change proposed."
+                                                            color: root.bone
+                                                            font.pixelSize: 11
+                                                            wrapMode: Text.WordWrap
+                                                        }
+                                                    }
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "Privacy"
+                                                    value: backend.selectedAsset.analysisCandidate.privacyLabel || "Not reported"
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: (backend.selectedAsset.analysisCandidate.analyzerLabel || "Beacon")
+                                                          + "  ·  "
+                                                          + (backend.selectedAsset.analysisCandidate.executionLabel || "")
+                                                          + "  ·  "
+                                                          + (backend.selectedAsset.analysisCandidate.createdLabel || "")
+                                                    color: root.muted
+                                                    font.family: "Cascadia Mono"
+                                                    font.pixelSize: 8
+                                                    wrapMode: Text.WrapAnywhere
+                                                }
+                                            }
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                height: 1
+                                                color: root.line
+                                                visible: backend.selectedAsset.analysisCandidate
+                                                         && backend.selectedAsset.analysisCandidate.id
+                                                         && backend.selectedAsset.analysisCandidate.id.length > 0
+                                            }
                                             ColumnLayout {
                                                 Layout.fillWidth: true
                                                 spacing: 10

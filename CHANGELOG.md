@@ -48,3 +48,39 @@
   extension tile for files without media derivatives.
 - Verified Beacon 0.5.0 source and packaged behavior against the five-asset
   live catalog, bringing the complete suite to 27 tests.
+- Added schema version 4 with immutable, checksum-bound analysis runs and
+  candidate results stored separately from verified catalog facts.
+- Added idempotent analysis-manifest import with explicit analyzer, policy,
+  execution-location, external-inference authorization, confidence, evidence,
+  privacy, and review-state fields.
+- Added native Beacon Analysis detail cards and search across candidate titles,
+  descriptions, and tags while keeping every organization path advisory.
+- Completed a five-asset Beacon librarian pilot without scanning the active
+  ATLAS inbox or modifying an original.
+- Added schema version 5 with durable Beacon Desk threads and ordered messages.
+- Added a native Overview-page conversation queue for Beacon questions,
+  approval requests, blockers, clarifications, and human-started requests.
+- Added plain-English replies, explicit resolution, and honest local queue
+  states without interpreting conversation text as permission for file actions.
+- Seeded the pilot's three verified scale-up gates separately from three
+  optional enrichment conversations.
+- Added schema version 6 with structured Beacon policies, revisioned editable
+  asset metadata, immutable metadata history, and managed-move records.
+- Added a native Library metadata editor covering human titles, descriptions,
+  categories, tags, people, dates, places, clients, projects, rights, notes,
+  and approved organization directories.
+- Added search and display-title support for editable metadata without changing
+  verified technical facts or embedded source-media metadata.
+- Added policy-gated, same-volume managed moves with exact observed-location
+  checks, source/destination SHA-256 verification, approved-root enforcement,
+  reparse rejection, non-overwrite behavior, audit events, and rollback.
+- Reconciled all six pilot Desk replies, verified a stable 7,093-file Inbox
+  snapshot, and completed one real catalog-to-managed-location proof.
+- Added schema version 7 with durable recursive intake jobs and item-level
+  progress, attempts, errors, snapshot signatures, and source stat evidence.
+- Added native Overview controls to prepare a bounded or complete Inbox
+  snapshot, start or resume it, cancel between files, and retry only failures.
+- Added startup recovery that returns interrupted work to a visible paused
+  state without repeating completed files.
+- Kept intake catalog-only: no automatic watcher, move, delete, or source-file
+  edit is introduced.

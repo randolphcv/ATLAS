@@ -25,6 +25,9 @@ Jarvis and Ultron are conversational handles for distinct Codex environments. Be
 ### Windows and Storage
 
 - Host is a Windows desktop with an Intel Core i9, 64 GB RAM, and an MSI Tomahawk motherboard.
+- An NVIDIA GeForce RTX 3060 with 12,288 MiB VRAM and driver 610.74 was
+  observed through `nvidia-smi` on 2026-07-23; re-check before selecting or
+  benchmarking local models.
 - ATLAS uses StableBit DrivePool.
 - Reported pooled drive: `J:\`
 - Reported raw usable capacity: approximately 15.5 TB.
@@ -128,10 +131,17 @@ These are stable unless Connor explicitly changes them:
 
 Phase 0, the Phase 1 synthetic read-only catalog, the Phase 2 local observatory
 foundation, the native desktop client, and the first controlled media use test
-are verified complete through Beacon 0.5.0, including verified thumbnail
+are verified complete through Beacon 0.8.0, including verified thumbnail
 derivatives, native temporary media and text previews, an application-level
-Space shortcut, and an exact default-launch check against the labeled live
-catalog. Production-path indexing remains deliberately unapproved.
+Space shortcut, a checksum-bound candidate-analysis schema, and a five-asset
+Beacon librarian pilot. Schema 5 adds the durable native Beacon Desk with
+explicit waiting-for-human, queued-for-Beacon, and resolved conversation states.
+Schema 6 adds revisioned editable context and policy-gated checksum-verified
+managed moves. The exact packaged launch was checked against the schema-6 live
+catalog. A completed 7,093-file Inbox transfer received a stable read-only
+inventory; one known-checksum Inbox location completed the bounded
+catalog-to-managed-location proof. Large-scale recursive intake remains a
+separate resumable-job milestone.
 
 The first implementation target is a read-only vertical slice against synthetic fixtures:
 
@@ -173,6 +183,19 @@ The first implementation target is a read-only vertical slice against synthetic 
 | A normal standalone launch opens and labels the live catalog | Decided in Beacon 0.4.1 | Prevent isolated test databases from being mistaken for the user's working library |
 | Plain text renders inside the native temporary preview | Decided in Beacon 0.5.0 | Make scripts, notes, logs, and metadata inspectable without launching an editor; cap displayed content at 512 KB and reject binary control-heavy input |
 | Space is an application-level preview shortcut | Decided in Beacon 0.5.0 | Keep the selected asset action stable even when a button previously held keyboard focus |
+| AI output lives separately from verified asset facts | Decided in Beacon 0.6.0 | Preserve provenance and prevent probabilistic output from silently becoming canonical technical metadata |
+| Analysis imports are checksum-bound, atomic, and idempotent | Decided in Beacon 0.6.0 | Reject stale or partial result sets and attach intelligence to asset identity rather than filename/location |
+| Every AI result begins as a reviewable candidate | Decided in Beacon 0.6.0 | Keep human judgment over titles, tags, privacy, rights, and archive meaning |
+| Organization suggestions never execute file operations | Decided in Beacon 0.6.0 | Separate librarian advice from approval-based managed intake |
+| External inference requires explicit recorded authorization and execution labeling | Decided in Beacon 0.6.0 | Keep local/cloud boundaries visible and auditable |
+| Beacon questions and human replies persist as ordered SQLite conversations | Decided in Beacon 0.7.0 | Make blockers and context durable across app restarts and analysis sessions |
+| Human replies queue a conversation but do not resolve it automatically | Decided in Beacon 0.7.0 | Preserve an explicit handshake between supplied context and Beacon review |
+| Conversation never directly authorizes a file operation | Decided in Beacon 0.7.0 | Keep plain-English guidance separate from consequential audited execution |
+| The UI labels the Desk as saved locally rather than implying an always-online worker | Decided in Beacon 0.7.0 | Make actual execution state honest and legible |
+| Human/contextual asset metadata is revisioned, searchable, and editable in Library | Decided in Beacon 0.8.0 | Keep titles, descriptions, people, dates, places, project/client, rights, tags, notes, and destinations correctable without rewriting source media |
+| Verified technical facts remain locked outside the editable context record | Decided in Beacon 0.8.0 | Preserve checksum and probe evidence while allowing librarian judgment to evolve |
+| Managed moves require recorded policy, exact catalog location, approved root, and source/destination checksum verification | Decided in Beacon 0.8.0 | Make organization consequential but recoverable, bounded, non-overwriting, and auditable |
+| A completed managed location is preferred as the current path while every duplicate location remains visible | Decided in Beacon 0.8.0 | Present the durable archive location without erasing provenance or silently deduplicating |
 
 ## Decisions Still Open
 
@@ -292,12 +315,12 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-23 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, branch `main`, verified implementation commit `41dce2a`
-- Current milestone: Beacon 0.4.1 live-catalog correction and standalone verification complete
-- Verified complete: verified live-database backup before promotion; five approved NVMe locations cataloged into the live database; explicit Live/Isolated/Custom catalog labeling; change-triggered automatic refresh; responsive asset detail layout; exact no-argument native library and preview review; hardened side-by-side windowed PyInstaller release and ZIP package
-- In progress: none
-- Blocked: production pilot still requires an exact approved sandbox/path, privacy scope, and stability policy
-- Files changed: repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.4.1\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; live runtime under `C:\ProgramData\ATLAS\Beacon`; private use-test runtime/evidence under `C:\ProgramData\ATLAS\Beacon\use-tests\UseTest-01-20260723-004437`; portable documentation under `J:\System\Documentation\ATLAS\`
-- Tests/live checks: Python compilation passed; 22/22 tests passed with real FFprobe and FFmpeg; five approved ATLAS sources and five local copies remained byte-identical; live catalog has five assets, six locations, four verified derivatives, and zero failures; live and isolated schema-3 databases and backups passed integrity; exact no-argument packaged library and video preview states reviewed; packaged capability audit passed; bundle contains 1,748 files and 178,030,027 bytes with zero blocked capabilities; executable SHA-256 `914F42EF383B4F1B738986BB0F06FB29AC4241B9D043B8D7A6B5D7CFF352DAA5`; package SHA-256 `B0E0F961BD4D3D5CEE22FD7D668D2F1D2E715691BE9F8800010895ED995A0018`
-- Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, real-world copy pause behavior, production stability thresholds, database restore/retention policy, code-signing strategy, and broad format support beyond the exercised image/audio/video set
-- Next smallest step: add and verify a database restore workflow plus backup retention policy before approving a larger pilot
+- Working branch/commit: `C:\Development\ATLAS`, branch `feature/ai-analysis`, verified Beacon 0.8.0 implementation commit `da80391`
+- Current milestone: answered Desk reconciliation, editable catalog context, and first real managed move complete
+- Verified complete: all six pilot conversations processed and resolved; local-only/external-gate/candidate-storage/move policies recorded; schema-6 policy, editable-metadata, revision-history, and managed-move records; searchable native metadata editor; approved-root same-volume managed move with checksum verification, non-overwrite behavior, audit, rollback, and duplicate-location preservation; packaged Beacon 0.8.0 release
+- In progress: the stable Inbox now contains 7,092 remaining files and 744,696,445,768 bytes after the bounded managed-move proof
+- Blocked: large-scale processing needs a resumable recursive intake-job ledger and visible progress/cancel/retry UI; asset-specific destinations still depend on verified or editable context rather than filename guessing
+- Files changed: repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.8.0\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; live schema-6 runtime, private reconciliation/import and validation evidence, and schema-5 recovery backup under `C:\ProgramData\ATLAS\Beacon`; one verified managed asset location under `J:\Library`; portable documentation under `J:\System\Documentation\ATLAS\`
+- Tests/live checks: Python compilation and 44/44 tests passed with real FFprobe and FFmpeg; schema-5 pre-migration backup `beacon-20260723T184129.157089Z.db` is healthy with SHA-256 `cd9eec8b37a5afbacecffda8803d76cbdbb12ac596bdbfc2f88e166eca01b234`; live schema-6 database is healthy with five assets, seven locations, five policies, three editable metadata records/revisions, one complete managed move, zero open Desk threads, and zero failed events; the pre-move Inbox had two matching 7,093-file metadata snapshots; the post-move Inbox has 7,092 files and 744,696,445,768 bytes; the destination SHA-256 exactly matches the catalog and the source Inbox path is absent; exact packaged release rendered the managed J: path and exited 0; bundle contains 1,748 files and 178,146,202 bytes with zero blocked capabilities; executable SHA-256 `15375B4C2E5B0E90702914B196E77B12C4A3D9274C7E52BA5A413162BE9646E2`; package SHA-256 `61E12DB4F8CD61540D7BBB1C2357C475CFB7DA7ECC60CAB8608278E6DC0F607D`
+- Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, full `J:\Inbox` size/format/privacy distribution, production stability thresholds, database restore/retention policy, code-signing strategy, local model choices and measured throughput on the RTX 3060, external-model cost/authorization, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
+- Next smallest step: add resumable recursive intake jobs with Overview progress/cancel/retry, then catalog and analyze a representative cohort from each stable top-level Inbox collection before expanding to the remaining corpus

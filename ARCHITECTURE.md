@@ -9,6 +9,10 @@
 - **Runtime:** local NVMe state under `C:\ProgramData\ATLAS\Beacon`.
 - **Archive:** protected managed storage exposed through `J:\`.
 - **Desktop:** native Qt Quick observation and recovery interface.
+- **Beacon Desk:** durable local human/Beacon conversations and queue state;
+  never a file-operation interpreter.
+- **Archive Intake:** explicit, durable recursive catalog jobs; never an
+  automatic production watcher or managed-move trigger.
 - **API:** optional localhost-only integration adapter.
 
 ## Phase 1 flow
@@ -29,7 +33,7 @@ semantics are deliberately decided.
 
 ## Desktop and API
 
-Beacon 0.4.1 is a foreground native Windows application built with Qt Quick/QML
+Beacon 0.9.0 is a foreground native Windows application built with Qt Quick/QML
 and Qt Multimedia.
 Python repository modules feed explicit Qt list models and properties; the
 desktop client reads catalog facts directly and never becomes a second metadata
@@ -41,6 +45,31 @@ can be opened in a modal temporary preview with Space. Images are fit to the
 window; audio and video are decoded locally with native Qt playback; unsupported
 formats receive a metadata-only safety view. Closing the preview stops playback.
 No preview action opens an editor or writes to the observed path.
+
+The Overview uses a master-detail Beacon Desk for persistent questions,
+approval requests, blockers, clarifications, and human-started requests. A
+plain-English reply is stored as a message and changes the thread to
+`queued_for_beacon`; it cannot directly authorize or execute a file operation.
+Beacon worker execution remains a separate, deliberate process.
+
+Archive Intake snapshots an approved recursive source into schema-7 job and
+item rows before work starts. A single background worker verifies the recorded
+size and modified time, catalogs one regular non-link file, then commits that
+item's result. Progress therefore survives UI refreshes and process restarts.
+Cancel and app-close pauses are honored between files; retry resets only failed
+items.
+
+Human and Beacon-supplied context lives in revisioned `asset_metadata` records.
+Those records are fully editable in Library and searchable, while source
+checksums and probed technical facts remain immutable evidence. Metadata edits
+do not write into source-media headers.
+
+Managed moves are a separate policy-gated operation. Beacon requires an exact
+catalog asset/location pair, re-hashes the source, restricts destinations to
+approved ATLAS roots, refuses silent overwrite or duplicate merging, performs
+an atomic same-volume rename, verifies the destination hash, and only then
+updates the catalog location and audit ledger. A post-move failure triggers a
+best-effort rollback.
 
 The default double-click launch always opens the live catalog at
 `C:\ProgramData\ATLAS\Beacon\beacon.db`. Custom and isolated use-test databases
@@ -64,9 +93,10 @@ desktop distribution. The entire distribution folder is the application.
 
 ## Safety
 
-The scanner skips symlinks and non-files. It performs no move, rename, write, or
-delete operation against observed paths. SQLite foreign keys and unique
-constraints make retries idempotent.
+The scanner skips symlinks, reparse points, and non-files. Intake accepts only
+an approved root, rejects changed snapshot items, and performs no move, rename,
+write, or delete operation against observed paths. SQLite foreign keys, unique
+constraints, and durable per-item states make retries idempotent.
 
 Thumbnail output is written to a temporary file under the runtime derivative
 tree, verified with FFprobe, hashed, and atomically placed before its database

@@ -39,7 +39,7 @@ Run from source:
 Or double-click:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.5.0\ATLAS Beacon\ATLAS Beacon.exe
+C:\Development\ATLAS\dist\releases\0.9.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 The desktop app has its own Windows window. It does not open a browser, start a
@@ -55,6 +55,73 @@ and video previews stay inside Beacon. Press Space or Escape to close; playback
 stops immediately. Text files are shown as bounded, read-only plain text inside
 Beacon. Binary and unsupported formats display metadata instead of being opened
 in an editor.
+
+Beacon analysis appears separately from technical facts and is visibly labeled
+`CANDIDATE`. The card records confidence and whether inference ran locally or
+externally. Candidate organization paths remain suggestions until an editable
+organization directory and managed-move policy authorize a separate operation.
+
+The Overview includes **Beacon Desk**. Questions, approval requests, blockers,
+clarifications, and human-started requests persist in the live SQLite catalog.
+Replying changes an open thread to `queued_for_beacon`; it does not execute a
+scan, upload, rename, move, delete, or metadata promotion. **Resolve** is a
+separate explicit action.
+
+Beacon Desk is currently a durable handoff surface, not a continuously running
+AI worker. The UI says `SAVED LOCALLY`; queued messages are reviewed when a
+Beacon analysis session is deliberately run. The active `J:\Inbox` transfer is
+not inspected by opening the Desk.
+
+## Archive intake
+
+The Overview includes **Archive Intake** for explicit recursive catalog jobs.
+**New intake** defaults to `J:\Inbox` and a 25-file representative scope.
+Creating a snapshot does not start it. Review the displayed root, file count,
+byte count, and snapshot prefix, then choose **Start**.
+
+During a run, progress and the current path are written to SQLite. **Cancel**
+stops between files. **Resume** continues pending items without repeating
+completed ones. **Retry failures** resets only failed items. Closing the app
+pauses at the same safe boundary; a hard interruption is recovered as Paused at
+the next launch.
+
+Leave the maximum-files field blank only when a full recursive snapshot is
+intended. Intake is catalog-only and does not invoke managed moves.
+
+## Editable metadata and managed moves
+
+Library exposes revisioned contextual fields for title, description, category,
+tags, people, date, place, client, project, rights, notes, and approved
+organization directory. These fields are searchable and editable; saving never
+writes into the media file. SHA-256, byte size, codec, duration, dimensions, and
+other verified facts remain locked evidence.
+
+**Move file** is enabled after an approved organization directory is recorded.
+The operation:
+
+1. requires the exact selected asset and observed source path;
+2. checks the recorded managed-moves policy;
+3. re-hashes the source against the catalog;
+4. permits only `J:\Library`, `J:\Assets`, or `J:\Projects`;
+5. rejects reparse-point traversal and silent overwrite/duplicate merging;
+6. performs a same-volume move and verifies the destination hash;
+7. updates the location and audit records only after verification;
+8. attempts rollback if a post-move check fails.
+
+The original filename is preserved. Other duplicate locations are never
+silently removed.
+
+An explicitly approved analysis manifest can be imported with:
+
+```powershell
+.\.venv\Scripts\python.exe -m beacon.cli analysis-import `
+  C:\ProgramData\ATLAS\Beacon\analysis-runs\<manifest>.json `
+  --db C:\ProgramData\ATLAS\Beacon\beacon.db
+```
+
+The complete manifest is rejected if an asset is missing, a source SHA-256 has
+changed, required provenance is absent, or external inference lacks a recorded
+authorization note. Re-importing the same manifest returns the existing run.
 
 The System view can create a verified database backup after explicit
 confirmation. Restore and backup deletion are intentionally absent.
