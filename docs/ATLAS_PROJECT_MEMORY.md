@@ -25,6 +25,9 @@ Jarvis and Ultron are conversational handles for distinct Codex environments. Be
 ### Windows and Storage
 
 - Host is a Windows desktop with an Intel Core i9, 64 GB RAM, and an MSI Tomahawk motherboard.
+- An NVIDIA GeForce RTX 3060 with 12,288 MiB VRAM and driver 610.74 was
+  observed through `nvidia-smi` on 2026-07-23; re-check before selecting or
+  benchmarking local models.
 - ATLAS uses StableBit DrivePool.
 - Reported pooled drive: `J:\`
 - Reported raw usable capacity: approximately 15.5 TB.
@@ -306,5 +309,5 @@ Next smallest step:
 - Blocked: large-inbox analysis must wait for copy completion plus an approved stable snapshot, exclusions/privacy zones, analyzer selection, and a measured representative batch
 - Files changed: repository under `C:\Development\ATLAS`; release bundle under `C:\Development\ATLAS\dist\releases\0.6.0\ATLAS Beacon`; ZIP package under `C:\Development\ATLAS\dist`; private candidate manifest under `C:\ProgramData\ATLAS\Beacon\analysis-runs`; private analysis evidence under `C:\ProgramData\ATLAS\Beacon\validation\ai-analysis-pilot`; live runtime under `C:\ProgramData\ATLAS\Beacon`; portable documentation under `J:\System\Documentation\ATLAS\`
 - Tests/live checks: Python compilation and 30/30 tests passed with real FFprobe and FFmpeg; pre-migration live backup `beacon-20260723T171525.208121Z.db` is schema-3 healthy with SHA-256 `abb3e2dd84d28664a36e1445d637eb2b26b21536f078ff7800fc8fefec1c092d`; live schema-4 database is healthy with five assets, six locations, one analysis run, five candidate results, and zero catalog failures; exact manifest re-import reused its run; candidate search passed; all six observed local paths remain byte-identical to catalog SHA-256; source and packaged analysis cards reviewed; packaged QML matches source; capability audit passed; bundle contains 1,748 files and 178,052,749 bytes with zero blocked capabilities; executable SHA-256 `D353EC59051C1978AACE0DC452E6B881CC6C6E740382BD6DB4EEF2B118787FDB`; package SHA-256 `F22B1DE8309D86674B8B07708CEF2B5555AB16E5D271BEDD96A736689F2F2020`
-- Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, full `J:\Inbox` size/format/privacy distribution, production stability thresholds, database restore/retention policy, code-signing strategy, GPU capacity, local model choices, external-model cost/authorization, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
+- Unverified assumptions: physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, full `J:\Inbox` size/format/privacy distribution, production stability thresholds, database restore/retention policy, code-signing strategy, local model choices and measured throughput on the RTX 3060, external-model cost/authorization, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
 - Next smallest step: after Connor confirms the copy is finished, take a read-only stable inventory of the exact approved inbox scope and estimate a representative local-first analysis batch before running the full corpus
