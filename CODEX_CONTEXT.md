@@ -189,19 +189,23 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ### Current Beacon baseline (2026-07-24)
 
-- Beacon 0.17.2 is the current live schema-15 baseline on `main`.
-  The 500-item analysis job completed 500/500 before migration. A verified
-  schema-13 online backup was created, one bounded live Qwen conversation
-  returned a durable grounded result, and post-run integrity remained clean.
-- The verified 0.17.2 release executable is the running desktop app, and a
+- Beacon 0.18.0 is the current live schema-15 baseline on `main`.
+  The 500-item analysis job completed 500/500 before this release. A verified
+  pre-activation online backup was created, a live Qwen agent request returned
+  three distinct grounded images, and post-run integrity remained clean.
+- The verified 0.18.0 release executable is the running desktop app, and a
   local foreground watch worker automatically consumes queued Desk replies.
-- Grounded delivery now deterministically honors explicit no-search requests,
-  resolves one exact filename to one exact card by default, excludes generic
-  provenance/test matches, and attaches only evidence the answer actually
-  used. Explicit corrections persist only within their originating thread.
-- Positive retrieval phrases such as `Find me an image of X and Y` bypass the
-  planning model's search/no-search choice. Multi-name requests require every
-  requested name to match the same asset.
+- Beacon conversation is Qwen-led rather than phrase-routed. Qwen formalizes
+  the active request, then controls bounded catalog search, refinement,
+  inspection, clarification, selection, and final wording.
+- Code supplies read-only tools and enforces local inference, bounded
+  resources, the model-authored count/media goal, and observed-ID grounding.
+  It does not substitute fixed conversational answers or trigger logic.
+- Exploratory search interleaves query buckets and likely filename series so
+  Qwen can choose distinct scenes instead of adjacent captures. This is a
+  lightweight search signal, not perceptual duplicate detection.
+- Explicit corrections remain thread-scoped and are identified by Qwen from
+  conversation context rather than a fixed correction phrase list.
 - Custom intake supports either exact multi-file selection or recursive
   selection of one approved folder, with the existing optional file limit.
 - The bounded 250-file production tranche completed intake and contextual

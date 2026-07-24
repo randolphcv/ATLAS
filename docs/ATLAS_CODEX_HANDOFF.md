@@ -1,5 +1,38 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-24 Beacon 0.18.0 Qwen-led conversation agent
+
+Beacon conversation is no longer routed by fixed retrieval/no-search phrase
+logic. Qwen now formalizes the active request and controls a bounded
+search/inspect/respond loop. The worker retains only hard local safety,
+resource, audit, and observed-ID grounding boundaries.
+
+Exploratory search interleaves query buckets and probable filename series so
+Qwen can honor distinct/unique requests without defaulting to adjacent
+captures. A focused final Qwen pass selects the exact grounded cards and writes
+the answer. Thread-scoped correction memory is also identified by Qwen from
+conversation context.
+
+All 87 tests pass. Isolated real-Qwen acceptance passed Connor-and-Jules exact
+retrieval, an explicit no-search turn, and three distinct food images.
+Packaged 0.18.0 smoke and capability audit pass. The verified 0.18.0 desktop
+and watch worker are live on schema 15; a live three-food-image request returned
+exactly three distinct cards. Post-run integrity is `ok` with zero foreign-key
+violations.
+
+Release:
+
+- executable:
+  `C:\Development\ATLAS\dist\releases\0.18.0\ATLAS Beacon\ATLAS Beacon.exe`
+- executable SHA-256:
+  `0c236690208069283e57522e4942c9be797bf4b78abb033bfd41233044f62631`
+- ZIP:
+  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.18.0-win64.zip`
+- ZIP SHA-256:
+  `67a5db721412ba2f29a7294af244e3c12f27d92ca13a8cb9030f9f8201370b57`
+- pre-activation backup:
+  `C:\ProgramData\ATLAS\Beacon\backups\beacon-20260724T225332.693652Z.db`
+
 ## 2026-07-24 Beacon 0.17.2 positive retrieval trigger hotfix
 
 The first user test exposed a separate false-negative: Qwen planned

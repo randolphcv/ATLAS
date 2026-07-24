@@ -2,22 +2,24 @@
 
 ## Unreleased
 
-- Explicit `Find`, `Show`, `Locate`, `Retrieve`, and `Get` media requests now
-  force catalog retrieval instead of allowing the planning model to choose
-  no search. Multi-person `X and Y` requests require both terms on one asset.
-- Made catalog search intent deterministic for explicit no-search requests and
-  exact filenames; exact requests default to one exact result.
-- Result cards now include only evidence references actually used by Beacon,
-  with a three-card default unless the human asks for a collection.
-- Generic system/provenance terms and known live test/sandbox paths no longer
-  produce ordinary grounded results.
-- Added schema-15 thread-scoped correction memory so explicit human
-  corrections survive bounded-history truncation without becoming global
-  catalog rules.
+- Replaced Beacon's phrase-triggered conversation router with a bounded
+  Qwen-authored goal and iterative read-only catalog-agent loop.
+- Qwen now decides intent, count, media type, constraints, search/refinement,
+  inspection, clarification, final wording, and selected result cards.
+- Added broader candidate discovery and lightweight filename-series signals so
+  requests for unique results do not default to adjacent captures from one
+  burst or setup.
+- Added a focused Qwen composition pass that attaches only model-selected,
+  previously observed asset IDs and honors the model-authored result count.
+- Added durable audit events for every agent tool step, structured-output
+  retry, a 16K local context window, and hard rejection of invented result IDs.
+- Thread-scoped correction memory is now identified by Qwen from the active
+  human turn instead of a fixed phrase list.
+- Retained hard local safety boundaries: loopback inference only, bounded
+  history/steps/results, read-only catalog search and inspection, no generic
+  filesystem or mutation tool, and hidden live test/sandbox paths.
 - Added schema-14 durable conversational-worker leases and run history with a
   hard pause while catalog analysis owns the local inference lane.
-- Added a loopback-only two-pass Qwen conversation adapter with bounded
-  history and read-only catalog search.
 - Added message-linked grounded catalog result cards whose only native action
   is to inspect the permanent asset identity in Library.
 - Added a native folder picker for custom intake batches; the selected folder

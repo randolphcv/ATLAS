@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import socket
 import sqlite3
 import urllib.error
@@ -10,54 +9,24 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
 from .database import connect, migrate, record_event
 from .desk import MESSAGE_LIMIT, _insert_result_cards, thread_detail
-from .repository import search_assets
+from .repository import asset_detail, search_assets
 
-MAX_SEARCH_QUERIES = 4
+MAX_AGENT_STEPS = 6
+MAX_SEARCH_QUERIES = 6
 MAX_RESULT_CARDS = 8
-DEFAULT_RESULT_CARDS = 3
+MAX_SEARCH_RESULTS = 16
+MAX_INSPECT_ASSETS = 8
 MAX_HISTORY_MESSAGES = 20
-MAX_HISTORY_CHARACTERS = 24_000
+MAX_HISTORY_CHARACTERS = 20_000
+MAX_AGENT_CONTEXT_CHARACTERS = 42_000
 DEFAULT_LEASE_SECONDS = 15 * 60
 FAILURE_BACKOFF_SECONDS = 5 * 60
-GENERIC_SEARCH_TERMS = frozenset(
-    {
-        "atlas",
-        "beacon",
-        "catalog",
-        "library",
-        "asset",
-        "assets",
-        "file",
-        "files",
-    }
-)
-MEDIA_EXTENSION_TERMS = frozenset(
-    {
-        "cr2", "cr3", "dng", "jpg", "jpeg", "png", "gif", "heic",
-        "mov", "mp4", "m4v", "avi", "mkv", "wav", "mp3", "m4a", "flac",
-    }
-)
-NO_SEARCH_PATTERNS = (
-    r"\bdo not search\b",
-    r"\bdon.t search\b",
-    r"\bwithout (?:searching|a search)\b",
-    r"\bno (?:catalog|library) search\b",
-)
-CORRECTION_PATTERNS = (
-    *NO_SEARCH_PATTERNS,
-    r"\bthat(?:'s| is) (?:not right|wrong|incorrect)\b",
-    r"\bnot what i meant\b",
-    r"\byou misunderstood\b",
-    r"\bi meant\b",
-    r"\bplease correct\b",
-    r"\bonly (?:show|return|include|use)\b",
-)
 
 
 def _utc_now() -> str:
@@ -93,16 +62,33 @@ def validate_loopback_endpoint(endpoint: str) -> str:
 
 
 @dataclass(frozen=True)
-class ConversationPlan:
-    search_queries: tuple[str, ...]
-    search_mode: str = "catalog"
-    max_results: int = DEFAULT_RESULT_CARDS
+class AgentAction:
+    action: str
+    queries: tuple[str, ...] = ()
+    match_strategy: str = "any"
+    media_type: str = "all"
+    result_limit: int = 8
+    asset_ids: tuple[str, ...] = ()
+    message: str = ""
+    selected_asset_ids: tuple[str, ...] = ()
+    decision_summary: str = ""
 
 
 @dataclass(frozen=True)
-class ConversationResponse:
+class AgentGoal:
+    request_summary: str
+    requires_catalog_evidence: bool
+    requested_result_count: int = 0
+    media_type: str = "all"
+    constraints: tuple[str, ...] = ()
+    latest_human_corrects_beacon: bool = False
+
+
+@dataclass(frozen=True)
+class AgentResponse:
     message: str
-    used_references: tuple[int, ...] = ()
+    selected_asset_ids: tuple[str, ...] = ()
+    request_fully_satisfied: bool = False
 
 
 @dataclass(frozen=True)
@@ -124,17 +110,27 @@ class WorkerCycleResult:
 
 
 class ConversationAdapter(Protocol):
-    def plan(self, messages: list[dict[str, str]]) -> ConversationPlan: ...
+    def understand(self, messages: list[dict[str, str]]) -> AgentGoal: ...
 
-    def respond(
+    def decide(
         self,
+        goal: AgentGoal,
         messages: list[dict[str, str]],
-        results: list[dict[str, Any]],
-    ) -> ConversationResponse: ...
+        observations: list[dict[str, Any]],
+        available_assets: list[dict[str, Any]],
+    ) -> AgentAction: ...
+
+    def compose(
+        self,
+        goal: AgentGoal,
+        messages: list[dict[str, str]],
+        available_assets: list[dict[str, Any]],
+        draft: AgentAction,
+    ) -> AgentResponse: ...
 
 
 class OllamaConversationAdapter:
-    """Loopback-only, two-pass adapter with no free-form filesystem tools."""
+    """Loopback-only agent adapter with bounded, read-only catalog tools."""
 
     def __init__(
         self,
@@ -156,309 +152,487 @@ class OllamaConversationAdapter:
         content: str,
         schema: dict[str, Any],
     ) -> dict[str, Any]:
-        payload = json.dumps(
-            {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": content},
-                ],
-                "format": schema,
-                "stream": False,
-                "options": {"temperature": 0, "num_predict": 1200},
-            }
-        ).encode("utf-8")
-        request = urllib.request.Request(
-            f"{self.endpoint}/api/chat",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(
-                request, timeout=self.timeout_seconds
-            ) as response:
-                outer = json.loads(response.read().decode("utf-8"))
-        except (OSError, urllib.error.URLError, json.JSONDecodeError) as error:
-            raise RuntimeError(
-                f"Local Beacon conversation model is unavailable: {error}"
-            ) from error
-        message = outer.get("message")
-        if not isinstance(message, dict):
-            raise ValueError("Local conversation model returned no message.")
-        content_value = message.get("content")
-        if not isinstance(content_value, str):
-            raise ValueError("Local conversation model returned invalid content.")
-        result = json.loads(content_value)
-        if not isinstance(result, dict):
-            raise ValueError("Local conversation model result is not an object.")
-        return result
+        last_error: Exception | None = None
+        for attempt in range(2):
+            retry_instruction = (
+                "\n\nYour prior structured output was invalid or incomplete. "
+                "Retry concisely and return one complete JSON object matching "
+                "the schema."
+                if attempt
+                else ""
+            )
+            payload = json.dumps(
+                {
+                    "model": self.model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": f"{system}{retry_instruction}",
+                        },
+                        {"role": "user", "content": content},
+                    ],
+                    "format": schema,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0,
+                        "num_predict": 1800,
+                        "num_ctx": 16384,
+                    },
+                }
+            ).encode("utf-8")
+            request = urllib.request.Request(
+                f"{self.endpoint}/api/chat",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(
+                    request, timeout=self.timeout_seconds
+                ) as response:
+                    outer = json.loads(response.read().decode("utf-8"))
+                message = outer.get("message")
+                if not isinstance(message, dict):
+                    raise ValueError(
+                        "Local conversation model returned no message."
+                    )
+                content_value = message.get("content")
+                if not isinstance(content_value, str):
+                    raise ValueError(
+                        "Local conversation model returned invalid content."
+                    )
+                result = json.loads(content_value)
+                if not isinstance(result, dict):
+                    raise ValueError(
+                        "Local conversation model result is not an object."
+                    )
+                return result
+            except (
+                OSError,
+                urllib.error.URLError,
+                json.JSONDecodeError,
+                ValueError,
+            ) as error:
+                last_error = error
+        raise RuntimeError(
+            f"Local Beacon conversation model returned invalid structured "
+            f"output after retry: {last_error}"
+        ) from last_error
 
-    def plan(self, messages: list[dict[str, str]]) -> ConversationPlan:
+    def understand(self, messages: list[dict[str, str]]) -> AgentGoal:
         schema = {
             "type": "object",
             "properties": {
-                "search_mode": {
-                    "type": "string",
-                    "enum": ["none", "catalog"],
-                },
-                "search_queries": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "maxItems": MAX_SEARCH_QUERIES,
-                },
-                "max_results": {
+                "request_summary": {"type": "string"},
+                "requires_catalog_evidence": {"type": "boolean"},
+                "requested_result_count": {
                     "type": "integer",
                     "minimum": 0,
                     "maximum": MAX_RESULT_CARDS,
                 },
+                "media_type": {
+                    "type": "string",
+                    "enum": ["all", "photo", "video", "audio", "other"],
+                },
+                "constraints": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 8,
+                },
+                "latest_human_corrects_beacon": {"type": "boolean"},
             },
-            "required": ["search_mode", "search_queries", "max_results"],
+            "required": [
+                "request_summary",
+                "requires_catalog_evidence",
+                "requested_result_count",
+                "media_type",
+                "constraints",
+                "latest_human_corrects_beacon",
+            ],
         }
         result = self._chat_json(
             system=(
-                "You are the planning boundary for Beacon's read-only local "
-                "catalog. Search only when the latest human request requires "
-                "catalog facts. An explicit request not to search means mode "
-                "none. Return zero to four specific literal queries using "
-                "names, places, projects, exact filenames, or visual concepts. "
-                "Never use generic system words such as ATLAS, Beacon, catalog, "
-                "library, file, or asset as queries. Default to at most three "
-                "results unless the human asks for a collection or alternatives. "
-                "Never propose a file operation."
+                "You are Beacon's reasoning model. Formalize only the active "
+                "latest_human_request supplied to you. prior_conversation is "
+                "context for resolving follow-ups and references; do not repeat "
+                "or combine a prior request that Beacon already answered unless "
+                "the latest human explicitly asks for it again. Preserve explicit count, "
+                "media kind, names, exact filenames, scope, exclusions, and "
+                "quality requirements. Map images/photos/pictures to photo; map "
+                "videos/clips/footage to video; use all only when no media kind "
+                "is requested. requested_result_count is the explicit count, or "
+                "0 when no count was stated. Put requirements such as unique, "
+                "different, exact, oldest, or excluding something into "
+                "constraints in operational language. A request to find, show, "
+                "retrieve, compare, or answer about local assets requires catalog "
+                "evidence. requires_catalog_evidence is false only for ordinary "
+                "conversation or when the latest human explicitly says not to "
+                "search. A follow-up can be a new request. Mark "
+                "latest_human_corrects_beacon true only when that latest turn "
+                "actually says or clearly implies Beacon's prior answer was "
+                "mistaken—not merely because a Beacon turn precedes it. Summarize "
+                "the goal without proposing an answer or inventing catalog facts."
             ),
-            content=json.dumps({"conversation": messages}, ensure_ascii=False),
+            content=json.dumps(
+                _active_request_context(messages),
+                ensure_ascii=False,
+            ),
             schema=schema,
         )
-        mode = str(result.get("search_mode") or "none").strip().casefold()
-        queries = _normalize_queries(result.get("search_queries"))
-        if mode != "catalog" or not queries:
-            return ConversationPlan((), search_mode="none", max_results=0)
+        media_type = str(result.get("media_type") or "all").casefold()
+        if media_type not in {"all", "photo", "video", "audio", "other"}:
+            media_type = "all"
         try:
-            max_results = int(result.get("max_results") or DEFAULT_RESULT_CARDS)
+            count = int(result.get("requested_result_count") or 0)
         except (TypeError, ValueError):
-            max_results = DEFAULT_RESULT_CARDS
-        return ConversationPlan(
-            search_queries=queries,
-            search_mode="catalog",
-            max_results=max(1, min(max_results, MAX_RESULT_CARDS)),
+            count = 0
+        summary = " ".join(
+            str(result.get("request_summary") or "").split()
+        )[:1000]
+        if not summary:
+            raise ValueError("Local conversation model returned no request goal.")
+        return AgentGoal(
+            request_summary=summary,
+            requires_catalog_evidence=bool(
+                result.get("requires_catalog_evidence")
+            ),
+            requested_result_count=max(0, min(count, MAX_RESULT_CARDS)),
+            media_type=media_type,
+            constraints=_normalize_strings(
+                result.get("constraints"),
+                maximum=8,
+                item_limit=240,
+            ),
+            latest_human_corrects_beacon=bool(
+                result.get("latest_human_corrects_beacon")
+            ),
         )
 
-    def respond(
+    def decide(
         self,
+        goal: AgentGoal,
         messages: list[dict[str, str]],
-        results: list[dict[str, Any]],
-    ) -> ConversationResponse:
+        observations: list[dict[str, Any]],
+        available_assets: list[dict[str, Any]],
+    ) -> AgentAction:
+        schema = {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["search_catalog", "inspect_assets", "respond"],
+                },
+                "queries": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": MAX_SEARCH_QUERIES,
+                },
+                "match_strategy": {
+                    "type": "string",
+                    "enum": ["any", "all"],
+                },
+                "media_type": {
+                    "type": "string",
+                    "enum": ["all", "photo", "video", "audio", "other"],
+                },
+                "result_limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": MAX_SEARCH_RESULTS,
+                },
+                "asset_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": MAX_INSPECT_ASSETS,
+                },
+            },
+            "required": ["action"],
+        }
+        result = self._chat_json(
+            system=(
+                "You are Beacon, an agentic local archive partner with a warm, "
+                "capable personality. Another reasoning pass by you has already "
+                "formalized the human's current goal. Treat that goal as stable "
+                "throughout this tool loop: do not change its requested media "
+                "type, count, or constraints. You can iteratively use "
+                "search_catalog and inspect_assets before responding.\n\n"
+                "Available actions:\n"
+                "- search_catalog: choose one or more useful literal search "
+                "queries, a media_type, an any/all match strategy, and a result "
+                "limit. With any matching, result_limit is the candidate depth "
+                "per query and the tool interleaves those query buckets (up to "
+                f"{MAX_SEARCH_RESULTS} total); with all matching, it is the total "
+                "limit. If the first wording is sparse, reason about synonyms, "
+                "related visual concepts, places, people, projects, filenames, "
+                "or likely metadata and search again. Search queries should be "
+                "concepts likely to exist in catalog metadata; do not search for "
+                "instruction words such as unique, different, best, exactly, or "
+                "a requested count. Use all when every query must describe the "
+                "same asset; use any to explore alternatives. For this action, "
+                "return queries, match_strategy, media_type, and result_limit; "
+                "omit message, selected_asset_ids, and asset_ids.\n"
+                "- inspect_assets: choose IDs already returned by search when "
+                "you need richer contextual analysis, descriptions, people, "
+                "transcripts, or other metadata to judge relevance or diversity. "
+                "For this action, return asset_ids and omit search/response fields.\n"
+                "- respond: answer naturally. selected_asset_ids must contain "
+                "indicates that you have enough evidence to compose the answer "
+                "or need to ask the human a focused question. A separate focused "
+                "Qwen composition pass will write and ground the final answer. "
+                "For this action, omit search and inspection fields.\n\n"
+                "If requires_catalog_evidence is false, respond without a catalog "
+                "tool. Otherwise, use catalog evidence before making catalog "
+                "claims. Honor explicit instructions, including no-search. "
+                "Treat exact filenames as exact retrieval goals unless context "
+                "says otherwise. For 'unique', 'distinct', or 'different' "
+                "results, retrieve a larger candidate pool than the requested "
+                "count, inspect candidates when their summaries could belong to "
+                "one burst/series, and choose meaningfully different scenes or "
+                "subjects. Similar filenames, near-identical titles, or adjacent "
+                "variations of one setup are not meaningfully unique. If the "
+                "first candidates are too similar, broaden the concepts and "
+                "search again. For example, a request for three distinct food "
+                "images should search useful catalog concepts such as food, "
+                "meal, cooking, dessert, or dining with an exploratory pool "
+                "larger than three; it should not search for the word unique "
+                "or accept three adjacent variations of the same dish. "
+                "Conversation context matters: pronouns and follow-ups "
+                "refer to prior turns when logic supports that reading.\n\n"
+                "Catalog tools are read-only. Never claim you copied, moved, "
+                "shared, opened, deleted, or modified anything. Never invent "
+                "catalog facts or asset IDs."
+            ),
+            content=_bounded_agent_payload(
+                {
+                    "stable_goal": {
+                        "request_summary": goal.request_summary,
+                        "requires_catalog_evidence": (
+                            goal.requires_catalog_evidence
+                        ),
+                        "requested_result_count": goal.requested_result_count,
+                        "media_type": goal.media_type,
+                        "constraints": list(goal.constraints),
+                    },
+                    "conversation": messages,
+                    "tool_observations": observations,
+                    "available_assets": available_assets,
+                }
+            ),
+            schema=schema,
+        )
+        action = str(result.get("action") or "").strip().casefold()
+        if action not in {"search_catalog", "inspect_assets", "respond"}:
+            raise ValueError("Local conversation model returned an invalid action.")
+        queries = _normalize_strings(
+            result.get("queries"),
+            maximum=MAX_SEARCH_QUERIES,
+            item_limit=120,
+        )
+        asset_ids = _normalize_strings(
+            result.get("asset_ids"),
+            maximum=MAX_INSPECT_ASSETS,
+            item_limit=80,
+        )
+        selected_asset_ids = _normalize_strings(
+            result.get("selected_asset_ids"),
+            maximum=MAX_RESULT_CARDS,
+            item_limit=80,
+        )
+        message = str(result.get("message") or "").strip()
+        # Repair a structurally inconsistent tool envelope using only the
+        # model-supplied action arguments. This does not reinterpret the human
+        # request: Qwen's own populated argument set identifies the intended tool.
+        if action == "search_catalog" and not queries and asset_ids:
+            action = "inspect_assets"
+        elif (
+            action in {"search_catalog", "inspect_assets"}
+            and message
+            and selected_asset_ids
+        ):
+            action = "respond"
+        try:
+            result_limit = int(result.get("result_limit") or 8)
+        except (TypeError, ValueError):
+            result_limit = 8
+        return AgentAction(
+            action=action,
+            queries=queries,
+            match_strategy=(
+                "all"
+                if str(result.get("match_strategy")).casefold() == "all"
+                else "any"
+            ),
+            media_type=(
+                str(result.get("media_type")).casefold()
+                if str(result.get("media_type")).casefold()
+                in {"all", "photo", "video", "audio", "other"}
+                else "all"
+            ),
+            result_limit=max(1, min(result_limit, MAX_SEARCH_RESULTS)),
+            asset_ids=asset_ids,
+            message=message,
+            selected_asset_ids=selected_asset_ids,
+            decision_summary=" ".join(
+                str(result.get("decision_summary") or "").split()
+            )[:500],
+        )
+
+    def compose(
+        self,
+        goal: AgentGoal,
+        messages: list[dict[str, str]],
+        available_assets: list[dict[str, Any]],
+        draft: AgentAction,
+    ) -> AgentResponse:
         schema = {
             "type": "object",
             "properties": {
                 "message": {"type": "string"},
-                "used_references": {
+                "selected_asset_ids": {
                     "type": "array",
-                    "items": {"type": "integer", "minimum": 1},
+                    "items": {"type": "string"},
                     "maxItems": MAX_RESULT_CARDS,
                 },
+                "request_fully_satisfied": {"type": "boolean"},
             },
-            "required": ["message", "used_references"],
+            "required": [
+                "message",
+                "selected_asset_ids",
+                "request_fully_satisfied",
+            ],
         }
-        evidence = [
-            {
-                "reference": index,
-                "atlas_uri": item["atlas_uri"],
-                "filename": item["filename"],
-                "path": item["primary_path"],
-                "kind": item.get("kind"),
-                "title": (
-                    item.get("editable_metadata") or {}
-                ).get("display_title"),
-                "match_reason": item["match_reason"],
-                "available": item["available"],
-            }
-            for index, item in enumerate(results, start=1)
-        ]
         result = self._chat_json(
             system=(
-                "You are Beacon, a calm local archive librarian. Answer only "
-                "from the conversation and supplied catalog evidence. Cite "
-                "catalog matches as [1], [2], and so on. If evidence is "
-                "insufficient or the request is ambiguous, ask one focused "
-                "question. Never claim to have copied, moved, shared, opened, "
-                "or modified a file. Return used_references containing only "
-                "evidence actually used in the answer. Return an empty list "
-                "when the answer uses no catalog evidence. Result cards let "
-                "the human inspect those cited assets."
+                "You are Beacon, a capable local archive partner. Compose the "
+                "final natural answer for the stable model-authored goal using "
+                "only the available_assets. Return a non-empty message and the "
+                "exact asset IDs that materially support it. When an explicit "
+                "result count is requested and enough qualifying assets exist, "
+                "select exactly that many—never extras. Honor all constraints. "
+                "For unique/distinct results, select meaningfully different "
+                "scenes or subjects; avoid adjacent filenames, near-identical "
+                "titles, and variations of one setup. potential_series_hint is "
+                "a filename/path-based caution that nearby captures may belong "
+                "to one series; choose at most one asset with the same hint for "
+                "a uniqueness request unless the metadata clearly proves the "
+                "scenes are meaningfully different. If evidence is genuinely "
+                "insufficient, say what is missing and ask one focused question "
+                "or offer a useful broadened option and set "
+                "request_fully_satisfied false. Set it true only when the "
+                "response meets the full count and every constraint. Do not invent assets or "
+                "claim any file operation. Do not print raw asset IDs or ATLAS "
+                "URIs in the prose; the attached result cards provide those."
             ),
-            content=json.dumps(
-                {"conversation": messages, "catalog_evidence": evidence},
-                ensure_ascii=False,
+            content=_bounded_agent_payload(
+                {
+                    "stable_goal": {
+                        "request_summary": goal.request_summary,
+                        "requested_result_count": goal.requested_result_count,
+                        "media_type": goal.media_type,
+                        "constraints": list(goal.constraints),
+                    },
+                    "conversation": messages,
+                    "available_assets": available_assets,
+                    "agent_readiness_summary": draft.decision_summary,
+                }
             ),
             schema=schema,
         )
         message = str(result.get("message") or "").strip()
         if not message:
-            raise ValueError("Local conversation model returned an empty message.")
-        if len(message) > MESSAGE_LIMIT:
-            raise ValueError("Local conversation response exceeds the Desk limit.")
-        references = _normalize_references(
-            result.get("used_references"),
-            result_count=len(results),
+            raise ValueError(
+                "Local conversation model returned an empty final response."
+            )
+        return AgentResponse(
             message=message,
+            selected_asset_ids=_normalize_strings(
+                result.get("selected_asset_ids"),
+                maximum=MAX_RESULT_CARDS,
+                item_limit=80,
+            ),
+            request_fully_satisfied=bool(
+                result.get("request_fully_satisfied")
+            ),
         )
-        return ConversationResponse(message, references)
 
 
-def _normalize_queries(value: object) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        return ()
-    queries: list[str] = []
-    seen: set[str] = set()
-    for item in value:
-        query = " ".join(str(item).split()).strip()
-        key = query.casefold()
-        if not query or len(query) > 120 or key in seen:
-            continue
-        seen.add(key)
-        queries.append(query)
-        if len(queries) >= MAX_SEARCH_QUERIES:
-            break
-    return tuple(queries)
+def _bounded_agent_payload(value: dict[str, Any]) -> str:
+    payload = json.dumps(value, ensure_ascii=False)
+    if len(payload) <= MAX_AGENT_CONTEXT_CHARACTERS:
+        return payload
+    trimmed = {
+        **value,
+        "tool_observations": list(value.get("tool_observations") or []),
+        "available_assets": [
+            dict(item) for item in value.get("available_assets") or []
+        ],
+    }
+    observations = list(trimmed.get("tool_observations") or [])
+    while observations and len(
+        json.dumps({**trimmed, "tool_observations": observations}, ensure_ascii=False)
+    ) > MAX_AGENT_CONTEXT_CHARACTERS:
+        observations.pop(0)
+    trimmed["tool_observations"] = observations
+    payload = json.dumps(trimmed, ensure_ascii=False)
+    if len(payload) <= MAX_AGENT_CONTEXT_CHARACTERS:
+        return payload
+    for item in trimmed["available_assets"]:
+        if not item.get("inspection"):
+            item.pop("editable_metadata", None)
+    payload = json.dumps(trimmed, ensure_ascii=False)
+    if len(payload) <= MAX_AGENT_CONTEXT_CHARACTERS:
+        return payload
+    for item in trimmed["available_assets"]:
+        item.pop("editable_metadata", None)
+        inspection = item.get("inspection")
+        if isinstance(inspection, dict):
+            item["inspection"] = _compact_json(inspection, limit=1800)
+    # Always return valid JSON. The compact fallback keeps every observed asset
+    # ID available for grounding even when rich evidence exceeds the soft cap.
+    return json.dumps(trimmed, ensure_ascii=False)
 
 
-def _normalize_references(
+def _normalize_strings(
     value: object,
     *,
-    result_count: int,
-    message: str,
-) -> tuple[int, ...]:
-    candidates: list[object] = list(value) if isinstance(value, list) else []
-    candidates.extend(re.findall(r"\[(\d+)\]", message))
-    references: list[int] = []
-    for candidate in candidates:
-        try:
-            reference = int(candidate)
-        except (TypeError, ValueError):
+    maximum: int,
+    item_limit: int,
+) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    values: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        normalized = " ".join(str(item).split()).strip()
+        key = normalized.casefold()
+        if not normalized or len(normalized) > item_limit or key in seen:
             continue
-        if 1 <= reference <= result_count and reference not in references:
-            references.append(reference)
-    return tuple(references[:MAX_RESULT_CARDS])
+        seen.add(key)
+        values.append(normalized)
+        if len(values) >= maximum:
+            break
+    return tuple(values)
 
 
-def _latest_human_body(messages: list[dict[str, str]]) -> str:
-    for message in reversed(messages):
-        if str(message.get("author") or "").casefold() == "human":
-            return str(message.get("body") or "")
-    return ""
-
-
-def _explicit_no_search(body: str) -> bool:
-    folded = body.casefold()
-    return any(re.search(pattern, folded) for pattern in NO_SEARCH_PATTERNS)
-
-
-def _wants_collection(body: str) -> bool:
-    return bool(
-        re.search(
-            r"\b(all|every|collection|alternatives?|similar|related|"
-            r"other|several|multiple)\b",
-            body.casefold(),
-        )
-    )
-
-
-def _exact_filename(body: str) -> str | None:
-    matches = re.findall(
-        r"(?i)\b([a-z0-9][a-z0-9_.()-]*\.[a-z0-9]{1,10})\b",
-        body,
-    )
-    return matches[-1] if matches else None
-
-
-def _explicit_retrieval_plan(body: str) -> ConversationPlan | None:
-    match = re.search(
-        r"(?i)\b(?:find|show|locate|pull up|retrieve|get)\s+"
-        r"(?:me\s+)?(?:all\s+|some\s+|an?\s+|the\s+)?"
-        r"(?:images?|photos?|pictures?|videos?|clips?|audio|files?|assets?)"
-        r"(?:\s+of|\s+for)?\s+(.+?)(?:[.?!]|$)",
-        body,
-    )
-    if match is None:
-        return None
-    target = " ".join(match.group(1).strip(" \"'").split())
-    if not target:
-        return None
-    terms = tuple(
-        part.strip()
-        for part in re.split(r"\s+(?:and|&)\s+", target, flags=re.IGNORECASE)
-        if part.strip()
-    )
-    max_results = (
-        MAX_RESULT_CARDS if _wants_collection(body) else DEFAULT_RESULT_CARDS
-    )
-    if 2 <= len(terms) <= MAX_SEARCH_QUERIES:
-        return ConversationPlan(
-            terms,
-            search_mode="all_terms",
-            max_results=max_results,
-        )
-    return ConversationPlan(
-        (target,),
-        search_mode="catalog",
-        max_results=max_results,
-    )
-
-
-def _apply_search_policy(
-    plan: ConversationPlan,
+def _active_request_context(
     messages: list[dict[str, str]],
-) -> ConversationPlan:
-    latest = _latest_human_body(messages)
-    if _explicit_no_search(latest):
-        return ConversationPlan((), search_mode="none", max_results=0)
-    filename = _exact_filename(latest)
-    if filename and not _wants_collection(latest):
-        return ConversationPlan(
-            (filename,),
-            search_mode="exact_filename",
-            max_results=1,
-        )
-    wants_collection = _wants_collection(latest)
-    accepted: list[str] = []
-    for query in plan.search_queries:
-        key = query.casefold().strip().lstrip(".")
-        if key in GENERIC_SEARCH_TERMS:
-            continue
-        if key in MEDIA_EXTENSION_TERMS and not (
-            wants_collection and key in latest.casefold()
-        ):
-            continue
-        accepted.append(query)
-    if plan.search_mode == "none" or not accepted:
-        return ConversationPlan((), search_mode="none", max_results=0)
-    ceiling = MAX_RESULT_CARDS if wants_collection else DEFAULT_RESULT_CARDS
-    return ConversationPlan(
-        tuple(accepted[:MAX_SEARCH_QUERIES]),
-        search_mode="catalog",
-        max_results=max(1, min(plan.max_results, ceiling)),
-    )
-
-
-def _forced_search_plan(
-    messages: list[dict[str, str]],
-) -> ConversationPlan | None:
-    latest = _latest_human_body(messages)
-    if _explicit_no_search(latest):
-        return ConversationPlan((), search_mode="none", max_results=0)
-    filename = _exact_filename(latest)
-    if filename and not _wants_collection(latest):
-        return ConversationPlan(
-            (filename,),
-            search_mode="exact_filename",
-            max_results=1,
-        )
-    retrieval = _explicit_retrieval_plan(latest)
-    if retrieval is not None:
-        return retrieval
-    return None
+) -> dict[str, Any]:
+    latest_index = -1
+    for index in range(len(messages) - 1, -1, -1):
+        if str(messages[index].get("author") or "").casefold() == "human":
+            latest_index = index
+            break
+    if latest_index < 0:
+        return {
+            "prior_conversation": messages,
+            "latest_human_request": "",
+        }
+    return {
+        "prior_conversation": messages[:latest_index],
+        "latest_human_request": str(
+            messages[latest_index].get("body") or ""
+        ),
+    }
 
 
 def _bounded_history(detail: dict[str, Any]) -> list[dict[str, str]]:
@@ -484,56 +658,10 @@ def _bounded_history(detail: dict[str, Any]) -> list[dict[str, str]]:
     return prepared
 
 
-def _is_explicit_correction(body: str) -> bool:
-    folded = body.casefold()
-    return any(re.search(pattern, folded) for pattern in CORRECTION_PATTERNS)
-
-
-def _record_and_load_corrections(
+def _load_corrections(
     db_path: Path,
     detail: dict[str, Any],
 ) -> list[str]:
-    messages = detail.get("messages") or []
-    if len(messages) >= 2:
-        latest = messages[-1]
-        prior = messages[-2]
-        note = " ".join(str(latest.get("body") or "").split())[:2000]
-        if (
-            latest.get("author") == "human"
-            and prior.get("author") == "beacon"
-            and note
-            and _is_explicit_correction(note)
-        ):
-            with connect(db_path) as connection:
-                migrate(connection)
-                inserted = connection.execute(
-                    """
-                    INSERT OR IGNORE INTO beacon_conversation_feedback(
-                        id,thread_id,human_message_id,prior_beacon_message_id,
-                        kind,note,created_at
-                    ) VALUES (?, ?, ?, ?, 'correction', ?, ?)
-                    """,
-                    (
-                        str(uuid.uuid4()),
-                        detail["id"],
-                        latest["id"],
-                        prior["id"],
-                        note,
-                        _utc_now(),
-                    ),
-                )
-                if inserted.rowcount:
-                    record_event(
-                        connection,
-                        kind="beacon_conversation_feedback",
-                        state="complete",
-                        message="Beacon retained an explicit human correction.",
-                        details={
-                            "thread_id": detail["id"],
-                            "human_message_id": latest["id"],
-                            "scope": "thread",
-                        },
-                    )
     with connect(db_path) as connection:
         migrate(connection)
         rows = connection.execute(
@@ -544,6 +672,55 @@ def _record_and_load_corrections(
             (detail["id"],),
         ).fetchall()
     return [str(row["note"]) for row in reversed(rows)]
+
+
+def _record_latest_correction(
+    db_path: Path,
+    detail: dict[str, Any],
+) -> None:
+    messages = detail.get("messages") or []
+    if len(messages) < 2:
+        return
+    latest = messages[-1]
+    prior = messages[-2]
+    note = " ".join(str(latest.get("body") or "").split())[:2000]
+    if (
+        latest.get("author") != "human"
+        or prior.get("author") != "beacon"
+        or not note
+    ):
+        return
+    with connect(db_path) as connection:
+        migrate(connection)
+        inserted = connection.execute(
+            """
+            INSERT OR IGNORE INTO beacon_conversation_feedback(
+                id,thread_id,human_message_id,prior_beacon_message_id,
+                kind,note,created_at
+            ) VALUES (?, ?, ?, ?, 'correction', ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                detail["id"],
+                latest["id"],
+                prior["id"],
+                note,
+                _utc_now(),
+            ),
+        )
+        if inserted.rowcount:
+            record_event(
+                connection,
+                kind="beacon_conversation_feedback",
+                state="complete",
+                message="Beacon retained a model-identified human correction.",
+                details={
+                    "thread_id": detail["id"],
+                    "human_message_id": latest["id"],
+                    "scope": "thread",
+                    "identified_by": "conversation_model",
+                },
+            )
 
 
 def _history_with_corrections(
@@ -689,59 +866,74 @@ def claim_next_thread(
     )
 
 
-def _grounded_search(
+def _search_catalog_tool(
     db_path: Path,
-    plan: ConversationPlan,
+    action: AgentAction,
 ) -> list[dict[str, Any]]:
     matches: dict[str, dict[str, Any]] = {}
     reasons: dict[str, list[str]] = {}
     matched_queries: dict[str, set[str]] = {}
-    if plan.search_mode == "none" or not plan.search_queries:
-        return []
-    for query in plan.search_queries:
+    query_result_ids: dict[str, list[str]] = {}
+    for query in action.queries:
+        query_key = query.casefold()
+        query_result_ids[query_key] = []
         page = search_assets(
             db_path,
             query=query,
-            limit=max(12, plan.max_results * 4),
+            file_type=action.media_type,
+            limit=max(20, action.result_limit * 4),
         )
         for item in page["items"]:
             path = str(item.get("primary_path") or "")
             if _is_nonproduction_path(path):
                 continue
-            if (
-                plan.search_mode == "exact_filename"
-                and PureWindowsPath(path).name.casefold() != query.casefold()
-            ):
-                continue
             asset_id = str(item["id"])
             matches.setdefault(asset_id, item)
+            query_result_ids[query_key].append(asset_id)
             reasons.setdefault(asset_id, []).append(
                 _catalog_match_reason(db_path, item, query)
             )
-            matched_queries.setdefault(asset_id, set()).add(query.casefold())
-            if (
-                plan.search_mode == "exact_filename"
-                and len(matches) >= plan.max_results
-            ):
-                break
-        if (
-            plan.search_mode == "exact_filename"
-            and len(matches) >= plan.max_results
-        ):
-            break
+            matched_queries.setdefault(asset_id, set()).add(query_key)
     grounded: list[dict[str, Any]] = []
-    ordered_ids = sorted(
-        matches,
-        key=lambda asset_id: -len(matched_queries.get(asset_id, set())),
-    )
-    if plan.search_mode == "all_terms":
-        required = {query.casefold() for query in plan.search_queries}
+    required = {query.casefold() for query in action.queries}
+    if action.match_strategy == "all":
         ordered_ids = [
             asset_id
-            for asset_id in ordered_ids
+            for asset_id in matches
             if matched_queries.get(asset_id, set()) >= required
         ]
-    for asset_id in ordered_ids[:plan.max_results]:
+        ordered_ids.sort(
+            key=lambda asset_id: _search_rank(
+                matches[asset_id],
+                action.queries,
+                matched_queries.get(asset_id, set()),
+            ),
+            reverse=True,
+        )
+    else:
+        ordered_ids = []
+        largest = max(
+            (len(asset_ids) for asset_ids in query_result_ids.values()),
+            default=0,
+        )
+        for position in range(largest):
+            for query in action.queries:
+                asset_ids = query_result_ids.get(query.casefold(), [])
+                if position >= len(asset_ids):
+                    continue
+                asset_id = asset_ids[position]
+                if asset_id not in ordered_ids:
+                    ordered_ids.append(asset_id)
+        ordered_ids = _interleave_candidate_series(ordered_ids, matches)
+    tool_limit = (
+        action.result_limit
+        if action.match_strategy == "all"
+        else min(
+            MAX_SEARCH_RESULTS,
+            action.result_limit * max(1, len(action.queries)),
+        )
+    )
+    for asset_id in ordered_ids[:tool_limit]:
         item = matches[asset_id]
         path = str(item.get("primary_path") or "")
         grounded.append(
@@ -752,6 +944,124 @@ def _grounded_search(
             }
         )
     return grounded
+
+
+def _search_rank(
+    item: dict[str, Any],
+    queries: tuple[str, ...],
+    matched_queries: set[str],
+) -> tuple[int, int, int]:
+    filename = str(item.get("filename") or "").casefold()
+    metadata = item.get("editable_metadata") or {}
+    title = str(metadata.get("display_title") or "").casefold()
+    exact = sum(
+        1 for query in queries if query.casefold() in {filename, title}
+    )
+    phrase = sum(
+        1
+        for query in queries
+        if query.casefold() in filename or query.casefold() in title
+    )
+    return len(matched_queries), exact, phrase
+
+
+def _candidate_series_hint(item: dict[str, Any]) -> str:
+    path = str(item.get("primary_path") or "")
+    filename = Path(path).stem
+    digit_start = len(filename)
+    while digit_start > 0 and filename[digit_start - 1].isdigit():
+        digit_start -= 1
+    digits = filename[digit_start:]
+    if len(digits) < 2:
+        return f"single:{item['id']}"
+    prefix = filename[:digit_start]
+    numeric_family = f"{digits[:-1]}x"
+    parent = str(Path(path).parent).casefold()
+    return f"{parent}|{prefix.casefold()}{numeric_family}"
+
+
+def _interleave_candidate_series(
+    ordered_ids: list[str],
+    matches: dict[str, dict[str, Any]],
+) -> list[str]:
+    buckets: dict[str, list[str]] = {}
+    for asset_id in ordered_ids:
+        hint = _candidate_series_hint(matches[asset_id])
+        buckets.setdefault(hint, []).append(asset_id)
+    diversified: list[str] = []
+    largest = max((len(bucket) for bucket in buckets.values()), default=0)
+    for position in range(largest):
+        for bucket in buckets.values():
+            if position < len(bucket):
+                diversified.append(bucket[position])
+    return diversified
+
+
+def _compact_json(value: object, *, limit: int) -> object:
+    if value in (None, "", [], {}):
+        return value
+    encoded = json.dumps(value, ensure_ascii=False)
+    if len(encoded) <= limit:
+        return value
+    return f"{encoded[:limit]}…"
+
+
+def _agent_asset_summary(item: dict[str, Any]) -> dict[str, Any]:
+    metadata = item.get("editable_metadata") or {}
+    result: dict[str, Any] = {
+        "asset_id": item["id"],
+        "atlas_uri": item["atlas_uri"],
+        "title": metadata.get("display_title") or item.get("filename"),
+        "filename": item.get("filename"),
+        "path": item.get("primary_path"),
+        "kind": item.get("kind"),
+        "dimensions": item.get("dimensions"),
+        "duration_seconds": item.get("duration_seconds"),
+        "available": bool(item.get("available")),
+        "match_reason": item.get("match_reason"),
+        "potential_series_hint": _candidate_series_hint(item),
+        "editable_metadata": _compact_json(metadata, limit=1000),
+    }
+    if item.get("inspection"):
+        result["inspection"] = item["inspection"]
+    return result
+
+
+def _inspect_asset_tool(db_path: Path, item: dict[str, Any]) -> dict[str, Any]:
+    detail = asset_detail(db_path, str(item["id"]))
+    if detail is None:
+        return {"asset_id": item["id"], "error": "Asset no longer exists."}
+    analyses = []
+    for analysis in detail.get("analysis") or []:
+        if analysis.get("review_state") not in {"candidate", "approved"}:
+            continue
+        analyses.append(
+            {
+                "kind": analysis.get("analysis_kind"),
+                "confidence": analysis.get("confidence"),
+                "review_state": analysis.get("review_state"),
+                "payload": _compact_json(analysis.get("payload"), limit=1800),
+            }
+        )
+        if len(analyses) >= 2:
+            break
+    transcript = detail.get("transcript") or {}
+    text = " ".join(str(transcript.get("text") or "").split())
+    return {
+        "asset_id": detail["id"],
+        "editable_metadata": _compact_json(
+            detail.get("editable_metadata") or {},
+            limit=1400,
+        ),
+        "contextual_analysis": analyses,
+        "transcript_excerpt": (
+            f"{text[:1000]}…" if len(text) > 1000 else text
+        ),
+        "music_analysis": _compact_json(
+            detail.get("music_analysis") or {},
+            limit=800,
+        ),
+    }
 
 
 def _is_nonproduction_path(path: str) -> bool:
@@ -796,6 +1106,262 @@ def _catalog_match_reason(
             excerpt = f"{excerpt}…"
         return f'Transcript match for “{query}”: “{excerpt}”'
     return f'Analyzed catalog context match for “{query}”'
+
+
+def _record_agent_step(
+    db_path: Path,
+    claim: WorkerClaim,
+    *,
+    step: int,
+    action: AgentAction,
+    state: str,
+    result_ids: list[str] | None = None,
+    error: str | None = None,
+) -> None:
+    with connect(db_path) as connection:
+        migrate(connection)
+        record_event(
+            connection,
+            kind="beacon_conversation_agent",
+            state=state,
+            message=(
+                f"Beacon agent step {step}: {action.action}."
+                if not error
+                else f"Beacon agent step {step} could not use {action.action}."
+            ),
+            details={
+                "run_id": claim.run_id,
+                "thread_id": claim.thread_id,
+                "step": step,
+                "action": action.action,
+                "queries": list(action.queries),
+                "match_strategy": action.match_strategy,
+                "media_type": action.media_type,
+                "requested_asset_ids": list(action.asset_ids),
+                "selected_asset_ids": list(action.selected_asset_ids),
+                "result_asset_ids": result_ids or [],
+                "decision_summary": action.decision_summary,
+                "error": error,
+                "file_action_authorized": False,
+            },
+        )
+
+
+def _run_agent_session(
+    db_path: Path,
+    claim: WorkerClaim,
+    detail: dict[str, Any],
+    adapter: ConversationAdapter,
+) -> tuple[str, list[dict[str, Any]]]:
+    history = _bounded_history(detail)
+    corrections = _load_corrections(db_path, detail)
+    grounded_history = _history_with_corrections(history, corrections)
+    goal = adapter.understand(grounded_history)
+    if goal.latest_human_corrects_beacon:
+        _record_latest_correction(db_path, detail)
+    observations: list[dict[str, Any]] = []
+    seen: dict[str, dict[str, Any]] = {}
+
+    for step in range(1, MAX_AGENT_STEPS + 1):
+        available = [_agent_asset_summary(item) for item in seen.values()]
+        action = adapter.decide(
+            goal,
+            grounded_history,
+            observations,
+            available,
+        )
+
+        if action.action == "search_catalog":
+            if not goal.requires_catalog_evidence:
+                error = (
+                    "search_catalog conflicts with the model-authored goal, "
+                    "which says catalog evidence is not required."
+                )
+            elif (
+                goal.media_type != "all"
+                and action.media_type != goal.media_type
+            ):
+                error = (
+                    f"search_catalog media_type {action.media_type!r} conflicts "
+                    f"with the stable goal media_type {goal.media_type!r}."
+                )
+            elif not action.queries:
+                error = "search_catalog requires at least one query."
+            else:
+                error = ""
+            if error:
+                observations.append(
+                    {"step": step, "tool": action.action, "error": error}
+                )
+                _record_agent_step(
+                    db_path,
+                    claim,
+                    step=step,
+                    action=action,
+                    state="failed",
+                    error=error,
+                )
+                continue
+            results = _search_catalog_tool(db_path, action)
+            for item in results:
+                asset_id = str(item["id"])
+                previous = seen.get(asset_id)
+                if previous and previous.get("inspection"):
+                    item["inspection"] = previous["inspection"]
+                seen[asset_id] = item
+            summaries = [_agent_asset_summary(item) for item in results]
+            observations.append(
+                {
+                    "step": step,
+                    "tool": action.action,
+                    "input": {
+                        "queries": list(action.queries),
+                        "match_strategy": action.match_strategy,
+                        "media_type": action.media_type,
+                        "result_limit": action.result_limit,
+                    },
+                    "returned_count": len(summaries),
+                    "result_asset_ids": [
+                        item["asset_id"] for item in summaries
+                    ],
+                }
+            )
+            _record_agent_step(
+                db_path,
+                claim,
+                step=step,
+                action=action,
+                state="complete",
+                result_ids=[str(item["id"]) for item in results],
+            )
+            continue
+
+        if action.action == "inspect_assets":
+            requested = [
+                asset_id for asset_id in action.asset_ids if asset_id in seen
+            ]
+            unknown = [
+                asset_id for asset_id in action.asset_ids if asset_id not in seen
+            ]
+            if not requested:
+                error = (
+                    "inspect_assets requires asset IDs previously returned by "
+                    "search_catalog."
+                )
+                observations.append(
+                    {
+                        "step": step,
+                        "tool": action.action,
+                        "error": error,
+                        "unknown_asset_ids": unknown,
+                    }
+                )
+                _record_agent_step(
+                    db_path,
+                    claim,
+                    step=step,
+                    action=action,
+                    state="failed",
+                    error=error,
+                )
+                continue
+            inspected = []
+            for asset_id in requested:
+                inspection = _inspect_asset_tool(db_path, seen[asset_id])
+                seen[asset_id]["inspection"] = inspection
+                inspected.append(inspection)
+            observations.append(
+                {
+                    "step": step,
+                    "tool": action.action,
+                    "inspected_asset_ids": [
+                        item["asset_id"] for item in inspected
+                    ],
+                    "unknown_asset_ids": unknown,
+                }
+            )
+            _record_agent_step(
+                db_path,
+                claim,
+                step=step,
+                action=action,
+                state="complete",
+                result_ids=requested,
+            )
+            continue
+
+        if action.action == "respond":
+            response = adapter.compose(
+                goal,
+                grounded_history,
+                available,
+                action,
+            )
+            if len(response.message) > MESSAGE_LIMIT:
+                error = "Response exceeds the Beacon Desk message limit."
+            else:
+                unknown = [
+                    asset_id
+                    for asset_id in response.selected_asset_ids
+                    if asset_id not in seen
+                ]
+                error = (
+                    "respond selected assets that were not observed through "
+                    f"catalog tools: {', '.join(unknown)}"
+                    if unknown
+                    else ""
+                )
+                if (
+                    not error
+                    and goal.requested_result_count
+                    and response.request_fully_satisfied
+                    and len(response.selected_asset_ids)
+                    != goal.requested_result_count
+                ):
+                    error = (
+                        "The model marked the request fully satisfied without "
+                        "selecting the model-authored result count "
+                        f"({goal.requested_result_count})."
+                    )
+                elif (
+                    not error
+                    and goal.requested_result_count
+                    and len(response.selected_asset_ids)
+                    > goal.requested_result_count
+                ):
+                    error = (
+                        "respond selected more assets than the model-authored "
+                        f"goal permits ({goal.requested_result_count})."
+                    )
+            if error:
+                observations.append(
+                    {"step": step, "tool": action.action, "error": error}
+                )
+                _record_agent_step(
+                    db_path,
+                    claim,
+                    step=step,
+                    action=action,
+                    state="failed",
+                    error=error,
+                )
+                continue
+            selected = [
+                seen[asset_id] for asset_id in response.selected_asset_ids
+            ]
+            _record_agent_step(
+                db_path,
+                claim,
+                step=step,
+                action=action,
+                state="complete",
+                result_ids=[str(item["id"]) for item in selected],
+            )
+            return response.message, selected
+
+    raise RuntimeError(
+        f"Beacon did not reach a grounded response within {MAX_AGENT_STEPS} steps."
+    )
 
 
 def _complete_claim(
@@ -918,26 +1484,16 @@ def run_worker_once(
         detail = thread_detail(db_path, claim.thread_id)
         if detail is None:
             raise LookupError("Claimed Beacon conversation was not found.")
-        history = _bounded_history(detail)
-        corrections = _record_and_load_corrections(db_path, detail)
-        grounded_history = _history_with_corrections(history, corrections)
-        plan = _forced_search_plan(grounded_history)
-        if plan is None:
-            plan = _apply_search_policy(
-                selected_adapter.plan(grounded_history),
-                grounded_history,
-            )
-        results = _grounded_search(db_path, plan)
-        response = selected_adapter.respond(grounded_history, results)
-        selected_results = [
-            results[reference - 1]
-            for reference in response.used_references
-            if 1 <= reference <= len(results)
-        ]
+        response, selected_results = _run_agent_session(
+            db_path,
+            claim,
+            detail,
+            selected_adapter,
+        )
         message_id = _complete_claim(
             db_path,
             claim,
-            response.message,
+            response,
             selected_results,
         )
         return WorkerCycleResult(

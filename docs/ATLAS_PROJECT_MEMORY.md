@@ -102,6 +102,41 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
   417,608,838 bytes, the ZIP is 160,930,625 bytes, and the capability audit
   found zero blocked files.
 
+### Beacon 0.18.0 Qwen-led conversation agent
+
+- The fixed conversational phrase router is removed from the primary flow.
+  Qwen formalizes the active human goal, including catalog need, count, media
+  type, constraints, and correction intent, then controls a bounded iterative
+  search/inspect/respond loop.
+- Catalog code is a read-only tool and safety boundary, not the conversational
+  decision-maker. Hard limits cover loopback inference, history/context,
+  agent steps, search/inspection counts, and observed asset IDs. Beacon still
+  receives no generic filesystem, cloud, or mutation tool.
+- Qwen chooses search concepts and refinement, can inspect accepted contextual
+  analysis and transcripts, asks focused questions when needed, selects the
+  exact grounded cards, and composes its own answer.
+- Exploratory query buckets and likely filename series are interleaved.
+  `potential_series_hint` helps Qwen avoid adjacent captures when the human
+  requests distinct results. This does not replace future perceptual
+  near-duplicate analysis.
+- Thread-scoped correction memory remains schema 15, but Qwen now identifies
+  actual corrections from context rather than a fixed correction-phrase list.
+- All 87 tests pass. Isolated real-Qwen acceptance passed exact
+  Connor-and-Jules retrieval, explicit no-search conversation, and three
+  distinct food-image selection with exactly three cards.
+- Packaged 0.18.0 smoke exited 0. The release is 417,616,746 bytes; the ZIP is
+  160,939,571 bytes. Executable SHA-256:
+  `0c236690208069283e57522e4942c9be797bf4b78abb033bfd41233044f62631`.
+  ZIP SHA-256:
+  `67a5db721412ba2f29a7294af244e3c12f27d92ca13a8cb9030f9f8201370b57`.
+- The verified pre-activation backup is
+  `beacon-20260724T225332.693652Z.db`, SHA-256
+  `048b0dc111d199591f1c64fb20f7d38cf227412f62f5d40f683d1999e1c9f492`.
+- The live 0.18.0 worker returned a guacamole-preparation photo, an event food
+  presentation, and a dark-chocolate close-up for the three-unique-food-images
+  acceptance request. The acceptance thread was resolved afterward. Live
+  schema 15 integrity is `ok` with zero foreign-key violations.
+
 ### Identity
 
 - Project: **ATLAS — Adaptive Topological Library & Archive System**
@@ -439,8 +474,8 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-24 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, `main` at `22fddbc`
-- Current milestone: Beacon 0.17.2 deterministic positive retrieval
+- Working branch: `C:\Development\ATLAS`, `main`
+- Current milestone: Beacon 0.18.0 Qwen-led conversation agent
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
   242 unique identities were cataloged and the final one-item contextual retry
   completed. Beacon 0.14 adds independently scrollable Recents/Explorer Library
@@ -452,18 +487,17 @@ Next smallest step:
   contextual claims, and moves every unambiguous analyzed Inbox location.
   Beacon 0.16 adds schema-13 truthful durable pipeline stages and the
   persistent shell-level Beacon Desk conversation dock.
-- In progress: user-directed conversational search testing; Beacon 0.17.2 and
+- In progress: user-directed conversational search testing; Beacon 0.18.0 and
   its local watch worker are running.
 - Blocked: none for the current bounded release.
-- Files changed: schema-15 thread correction memory, deterministic search
-  policy, evidence-selected result cards, tests, packaging, and docs.
-- Tests/live checks: all 84 tests passed, including the real ffprobe
-  acceptance checks; live schema 15 integrity is `ok` with zero foreign-key
-  errors; verified pre-schema-15 and older backups are retained. Packaged
-  0.17.1 isolated smoke
-  exited 0 and the canonical capability audit found no browser/web/API or
-  other blocked desktop capability files. The release directory is
-  417,607,625 bytes and the ZIP is 160,930,913 bytes.
+- Files changed: Qwen-authored goal and tool loop, grounded final composition,
+  filename-series search evidence, structured retry/context sizing, agent
+  audit events, tests, packaging, and docs.
+- Tests/live checks: all 87 tests passed, including real ffprobe acceptance;
+  live schema 15 integrity is `ok` with zero foreign-key errors; the verified
+  pre-activation and older backups are retained. Packaged 0.18.0 isolated
+  smoke exited 0 and the canonical capability audit found no blocked desktop
+  capability files.
 - Unverified assumptions: post-restart Windows hostname, physical SMART state,
   DrivePool duplication/parity, independent archive backup strategy, code
   signing, production chord/key accuracy, acceptable stem storage policy,
@@ -484,5 +518,6 @@ Next smallest step:
   temporary and cleaned. New live thumbnails route to
   `J:\Beacon\Thumbnails`; Demucs stems remain disabled by default.
 - Next smallest step: run user-directed Beacon questions that exercise exact
-  filenames, explicit no-search replies, ambiguous concepts, collections, and
-  corrections before expanding the trigger-word policy.
+  filenames, no-search replies, ambiguous concepts, collections, follow-up
+  context, and corrections; improve Qwen prompts/tool evidence from observed
+  failures without restoring fixed conversational trigger logic.
