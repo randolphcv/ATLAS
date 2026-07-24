@@ -32,6 +32,12 @@ State what is true, what changed, and what remains unresolved. Keep routine proc
 
 Inspect first, make reasonable low-risk assumptions, implement the requested change, and verify it. Ask only when a missing choice would materially affect architecture, privacy, cost, destructive behavior, or the treatment of user media.
 
+### Flag model escalation before starting
+
+If a task genuinely warrants Sol High or Ultra, tell Connor before beginning
+and pause for the model change. Connor prefers that interruption over
+continuing substantial work on an underpowered model.
+
 ### Use live artifacts as truth
 
 Prefer the current filesystem, Git state, tests, service status, database contents, logs, and rendered interface over plans or backend assumptions. A command returning successfully is not always proof that the user-facing or destination state is correct.
