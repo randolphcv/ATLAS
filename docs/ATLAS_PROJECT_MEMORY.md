@@ -344,13 +344,13 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-23 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, branch `feature/local-music-intelligence-v1`
+- Working branch/commit: `C:\Development\ATLAS`, branch `main`, commit `151ad64`
 - Current milestone: Beacon 0.13 local music intelligence before broader intake
 - Verified complete: Beacon 0.12 transcript and managed-placement phase; isolated
   Python 3.11 music runtime; CUDA-enabled Demucs on the RTX 3060; ONNX Basic
   Pitch; librosa BPM/key/chord analysis; schema-12 checksum-bound music results
   and derivatives; conservative speech-versus-music gate
-- In progress: documentation synchronization and feature-branch commit
+- In progress: none; Beacon 0.13 music-intelligence setup is complete
 - Blocked: no current blocker
 - Files changed: music worker/runtime installer, schema, orchestration, local
   analysis context, repository/controller/QML, tests, versioning, and docs
@@ -365,5 +365,5 @@ Next smallest step:
   signing, production chord/key accuracy, acceptable stem storage policy,
   Essentia licensing, face-analysis policy, rights taxonomy, and canonical
   sidecar-versus-SQLite metadata policy
-- Next smallest step: package and verify Beacon 0.13, synchronize durable
-  documentation, and merge the feature branch before broader intake.
+- Next smallest step: define the first bounded production intake scope under
+  the new analysis, placement, transcript, and music-intelligence policies.
