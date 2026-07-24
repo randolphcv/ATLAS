@@ -164,7 +164,7 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ### Current Beacon baseline (2026-07-24)
 
-- Beacon 0.15.0 is the current packaged candidate on branch
+- Beacon 0.15.1 is the current packaged candidate on branch
   `ops/overnight-250-tranche`.
 - The bounded 250-file production tranche completed intake and contextual
   analysis locally; the one malformed Qwen JSON response passed on a one-item

@@ -19,7 +19,7 @@ ATLAS is a modular, long-term media storage and intelligence platform designed t
 The Windows hostname was still `DESKTOP-8B4OJIR` when verified on 2026-07-23.
 Connor intends to rename it to `Ultron`, effective only after a later restart.
 
-> Current implementation note (2026-07-24): Beacon 0.15.0 is a packaged native
+> Current implementation note (2026-07-24): Beacon 0.15.1 is a packaged native
 > Windows app, not a browser-first dashboard. Schema 12 adds persistent,
 > checksum-bound full transcripts to the existing recursive
 > Archive Intake snapshots, durable item-level progress, cancel-between-files,

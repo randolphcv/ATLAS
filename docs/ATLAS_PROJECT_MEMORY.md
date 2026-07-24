@@ -346,7 +346,7 @@ Next smallest step:
 - Last verified: 2026-07-24 on the Windows ATLAS host
 - Working branch/commit: `C:\Development\ATLAS`, branch
   `ops/overnight-250-tranche`
-- Current milestone: Beacon 0.15 selected intake, evidence-gated RAW analysis,
+- Current milestone: Beacon 0.15.1 selected intake, evidence-gated RAW analysis,
   and complete analyzed-Inbox placement
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
   242 unique identities were cataloged and the final one-item contextual retry

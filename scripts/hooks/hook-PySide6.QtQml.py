@@ -25,6 +25,7 @@ module_roots = (
     qml_root / "QtQml" / "WorkerScript",
     qml_root / "QtQuick",
     qml_root / "QtQuick" / "Controls",
+    qml_root / "QtQuick" / "Dialogs",
     qml_root / "QtQuick" / "Layouts",
     qml_root / "QtQuick" / "NativeStyle",
     qml_root / "QtQuick" / "Templates",
