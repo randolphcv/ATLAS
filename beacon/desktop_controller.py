@@ -1461,6 +1461,18 @@ class DesktopController(QObject):
         )
         self._thread_pool.start(worker)
 
+    @Slot(QUrl, str)
+    def createSelectedIntakeFolder(
+        self,
+        selected_url: QUrl,
+        limit_text: str,
+    ) -> None:
+        local_path = selected_url.toLocalFile()
+        if not local_path:
+            self._set_status("Choose an approved local intake folder.", "error")
+            return
+        self.createIntakeJob(local_path, limit_text)
+
     def _conversation_worker_finished(
         self,
         worker: _ConversationWorker,

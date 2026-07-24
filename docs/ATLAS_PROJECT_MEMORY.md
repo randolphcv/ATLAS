@@ -37,7 +37,7 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
   weights. Measure the app separately from optional models, derivatives,
   transcripts, and caches.
 
-### Beacon 0.17.0 conversation-worker candidate
+### Beacon 0.17.0 live conversation worker
 
 - Branch `worker_build` adds schema-14 durable exactly-once worker leases,
   loopback model provenance, failure recovery/backoff, and message-linked
@@ -48,9 +48,15 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
 - Grounded search covers filename/path, analyzed context, editable metadata,
   and checksum-bound transcript text. Inspect opens the permanent asset in
   Library without copying or changing the source.
-- Live activation remains blocked until the current 500-item analysis job is
-  terminal, schema 13 is backed up and verified, and one bounded worker question
-  passes against the migrated schema-14 live catalog.
+- The 500-item job `d020d54c-b39a-42eb-b9d9-6b8cb800b29f` completed 500/500
+  before activation. The verified pre-schema-14 backup is
+  `beacon-pre-schema14-20260724T212407.964644Z.db`, SHA-256
+  `6d6d573a4760a14e9a20281edd23fb463cb87768ddc614f38d0cbc0ae4374fb4`.
+- The live schema-14 worker answered the bounded `IMG_0414.CR3` activation
+  request in one durable run. The requested asset was grounded at rank one;
+  post-run integrity remained `ok` with zero foreign-key errors.
+- Custom intake now offers both exact multi-file selection and recursive
+  selection of one approved folder with the existing optional item limit.
 - Near-duplicate/series intelligence is the next analysis-efficiency milestone:
   perceptual fingerprints and capture adjacency shortlist candidates before a
   local visual model reviews relationships.
@@ -393,8 +399,8 @@ Next smallest step:
 
 - Last verified: 2026-07-24 on the Windows ATLAS host
 - Working branch/commit: `C:\Development\ATLAS`, `worker_build` from `main`
-  commit `4180872`
-- Current milestone: Beacon 0.17.0 grounded conversational-worker candidate
+  commit `4180872`; worker implementation commit `579c73c`
+- Current milestone: Beacon 0.17.0 live grounded conversation worker
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
   242 unique identities were cataloged and the final one-item contextual retry
   completed. Beacon 0.14 adds independently scrollable Recents/Explorer Library
@@ -406,20 +412,19 @@ Next smallest step:
   contextual claims, and moves every unambiguous analyzed Inbox location.
   Beacon 0.16 adds schema-13 truthful durable pipeline stages and the
   persistent shell-level Beacon Desk conversation dock.
-- In progress: live 500-item analysis on packaged 0.16.0. A read-only
-  2026-07-24 snapshot showed 303 complete, 196 pending, and one running.
-  Isolated worker verification and packaging are complete on `worker_build`.
-- Blocked: live schema-14 activation waits for the analysis job to become
-  terminal
+- In progress: final package rebuild and 0.16→0.17 desktop-process promotion
+  after the successful live schema-14 activation.
+- Blocked: none for the current bounded release.
 - Files changed: schema-14 worker leases/result links, local conversation
   worker, transcript-aware grounded search, desktop controller/QML cards,
   tests, native validation image, versioning, and docs.
-- Tests/live checks: all 77 tests passed, including the real ffprobe
-  acceptance checks; live schema 13 integrity is `ok` with zero foreign-key errors;
-  verified schema-12 online backup retained. Packaged 0.17.0 isolated smoke
+- Tests/live checks: all 78 tests passed, including the real ffprobe
+  acceptance checks; live schema 14 integrity is `ok` with zero foreign-key
+  errors; the verified pre-schema-14 backup and older schema-12 backup are
+  retained. Packaged 0.17.0 isolated smoke
   exited 0 and the canonical capability audit found no browser/web/API or
   other blocked desktop capability files. The release directory is
-  417,601,229 bytes and the ZIP is 160,923,116 bytes.
+  417,601,992 bytes and the ZIP is 160,925,033 bytes.
 - Unverified assumptions: post-restart Windows hostname, physical SMART state,
   DrivePool duplication/parity, independent archive backup strategy, code
   signing, production chord/key accuracy, acceptable stem storage policy,

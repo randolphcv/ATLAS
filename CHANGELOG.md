@@ -8,6 +8,8 @@
   history and read-only catalog search.
 - Added message-linked grounded catalog result cards whose only native action
   is to inspect the permanent asset identity in Library.
+- Added a native folder picker for custom intake batches; the selected folder
+  is snapshotted recursively with the same approved-root and file-limit gates.
 - Added schema-13 truthful durable catalog-analysis pipeline stages, including
   active checksum-bound filenames and accurate recovery/cancel/terminal state.
 - Added the compact application-shell Beacon conversation dock using the

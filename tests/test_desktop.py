@@ -10,7 +10,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
-from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
+from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer, QUrl
 
 from beacon.catalog import catalog_file
 from beacon.desktop import DEFAULT_RUNTIME, _catalog_label
@@ -368,6 +368,44 @@ class DesktopControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.selectedIntakeJob["state"], "complete")
         self.assertEqual(self.controller.selectedIntakeJob["progressLabel"], "100%")
         self.assertEqual(self.controller.intakeSummary["active"], 0)
+
+    def test_selected_folder_intake_recurses_with_limit(self) -> None:
+        nested = self.source.parent / "chosen-folder" / "nested"
+        nested.mkdir(parents=True)
+        (nested / "second.txt").write_text(
+            "second folder intake file", encoding="utf-8"
+        )
+        (nested / "third.txt").write_text(
+            "third folder intake file", encoding="utf-8"
+        )
+        loop = QEventLoop()
+        timed_out = False
+
+        def stop_when_finished() -> None:
+            if not self.controller.busy:
+                loop.quit()
+
+        def timeout() -> None:
+            nonlocal timed_out
+            timed_out = True
+            loop.quit()
+
+        self.controller.busyChanged.connect(stop_when_finished)
+        QTimer.singleShot(10000, timeout)
+        self.controller.createSelectedIntakeFolder(
+            QUrl.fromLocalFile(str(nested.parent)),
+            "1",
+        )
+        loop.exec()
+
+        self.assertFalse(timed_out)
+        self.assertEqual(self.controller.intakeJobs.rowCount(), 1)
+        self.assertEqual(self.controller.selectedIntakeJob["state"], "queued")
+        self.assertEqual(self.controller.selectedIntakeJob["pendingCount"], 1)
+        self.assertEqual(
+            self.controller.selectedIntakeJob["sourceRoot"],
+            str(nested.parent.resolve()),
+        )
 
 
 class NativeQmlSmokeTests(unittest.TestCase):

@@ -1,23 +1,24 @@
 # ATLAS — Codex Project Handoff
 
-## 2026-07-24 Beacon 0.17.0 conversation-worker candidate
+## 2026-07-24 Beacon 0.17.0 live conversation worker
 
 Branch `worker_build`, created from local `main` commit `4180872`, adds the
-lean local Beacon conversation worker without changing the active production
-runtime. Schema 14 provides durable worker leases and message-linked grounded
+lean local Beacon conversation worker. Schema 14 provides durable worker leases and message-linked grounded
 catalog result cards. The worker uses only a loopback model endpoint, bounded
 conversation history, and read-only catalog search; it has no generic
 filesystem or catalog-mutation tool.
 
-The current 500-item contextual-analysis job remains the activation gate.
-While any catalog-analysis job is running, the worker returns
-`analysis_running` before migration or inference. Do not launch the 0.17.0
-candidate against the live schema-13 catalog until that job is terminal.
-Then back up and verify the catalog, migrate it once, and run one bounded
-live Beacon question before treating this build as the production baseline.
+The 500-item contextual-analysis job completed 500/500 before activation.
+A verified schema-13 backup was created and hashed, the live catalog migrated
+to schema 14, and one bounded Qwen request returned the requested asset as its
+rank-one grounded card. Post-run integrity is `ok` with zero foreign-key
+errors. The worker still returns `analysis_running` before migration or
+inference whenever a future catalog-analysis job owns the inference lane.
 
 Grounded result cards resolve the current preferred path and can be inspected
 in Library. They do not copy, move, delete, or otherwise change source files.
+Custom intake now provides both exact multi-file selection and recursive
+selection of one approved folder with the existing optional file limit.
 Near-duplicate and capture-series intelligence is recorded as the next
 analysis-efficiency milestone in `ROADMAP.md`.
 

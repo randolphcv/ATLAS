@@ -779,7 +779,7 @@ ApplicationWindow {
                                 font.letterSpacing: 1.0
                             }
                             Text {
-                                text: "Choose exactly which Inbox files belong in this job."
+                                text: "Choose exact files or recursively include one Inbox folder."
                                 color: root.muted
                                 font.pixelSize: 10
                             }
@@ -788,6 +788,11 @@ ApplicationWindow {
                             text: "Choose files…"
                             quiet: true
                             onClicked: selectedIntakeFiles.open()
+                        }
+                        PrimaryButton {
+                            text: "Choose folderâ€¦"
+                            quiet: true
+                            onClicked: selectedIntakeFolder.open()
                         }
                     }
                 }
@@ -946,6 +951,19 @@ ApplicationWindow {
         currentFolder: "file:///J:/Inbox"
         onAccepted: {
             backend.createSelectedIntakeJob(selectedFiles)
+            newIntakeDialog.close()
+        }
+    }
+
+    FolderDialog {
+        id: selectedIntakeFolder
+        title: "Choose a folder for this Beacon intake"
+        currentFolder: "file:///J:/Inbox"
+        onAccepted: {
+            backend.createSelectedIntakeFolder(
+                selectedFolder,
+                newIntakeLimit.text
+            )
             newIntakeDialog.close()
         }
     }

@@ -183,11 +183,12 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ### Current Beacon baseline (2026-07-24)
 
-- Beacon 0.16.0 is the current live packaged baseline on `main`.
-- Beacon 0.17.0 is an isolated candidate on `worker_build`. It adds a
-  loopback-only durable conversation worker and grounded catalog result cards.
-  Do not launch it against the live schema-13 catalog until the active
-  500-item analysis job is terminal and the activation gate is completed.
+- Beacon 0.17.0 is the current live schema-14 baseline on `worker_build`.
+  The 500-item analysis job completed 500/500 before migration. A verified
+  schema-13 online backup was created, one bounded live Qwen conversation
+  returned a durable grounded result, and post-run integrity remained clean.
+- Custom intake supports either exact multi-file selection or recursive
+  selection of one approved folder, with the existing optional file limit.
 - The bounded 250-file production tranche completed intake and contextual
   analysis locally; the one malformed Qwen JSON response passed on a one-item
   retry.

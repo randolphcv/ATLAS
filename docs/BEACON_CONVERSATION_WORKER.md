@@ -2,8 +2,8 @@
 
 Updated: 2026-07-24
 
-Status: implemented on `worker_build`; activation against the live catalog is
-blocked until the current 500-item catalog-analysis job is terminal.
+Status: live on schema 14. The 500-item activation-gate analysis completed
+500/500 before migration, and the first bounded grounded request passed.
 
 ## Purpose
 
@@ -79,16 +79,16 @@ For a deliberate foreground worker after schema-14 activation:
 The watch loop polls every five seconds by default and remains inference-idle
 when no conversation is queued.
 
-## Live activation gate
+## Live activation result
 
-Do not launch source Beacon 0.17 or this worker against the live database until
-the current analysis job is terminal. Then:
+Activation completed on 2026-07-24:
 
-1. verify the job has no pending/running items;
-2. confirm SQLite integrity and foreign keys;
-3. create and hash a verified schema-13 online backup;
-4. migrate the live database to schema 14;
-5. run one synthetic/custom-catalog packaged smoke test;
-6. queue one bounded live question and run the worker once;
-7. inspect the response, result cards, run record, and audit event;
-8. only then enable the watch loop.
+1. job `d020d54c-b39a-42eb-b9d9-6b8cb800b29f` finished 500/500;
+2. schema-13 integrity and foreign keys passed;
+3. a verified, SHA-256-hashed schema-13 online backup was retained;
+4. the live catalog migrated once to schema 14;
+5. isolated packaged smoke testing passed;
+6. one bounded live Qwen request completed with the requested asset as its
+   rank-one grounded card;
+7. the worker run, message/card links, and audit events persisted;
+8. post-run integrity remained `ok` with zero foreign-key errors.
