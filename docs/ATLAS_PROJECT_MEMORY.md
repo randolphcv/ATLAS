@@ -65,6 +65,29 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
   perceptual fingerprints and capture adjacency shortlist candidates before a
   local visual model reviews relationships.
 
+### Beacon 0.17.1 grounded-delivery correction
+
+- Explicit no-search language bypasses catalog planning and retrieval.
+- A single exact filename bypasses planning and defaults to one exact result.
+- Generic system/provenance terms are rejected; known live use-test and
+  sandbox paths are excluded from ordinary worker retrieval.
+- The structured answer identifies evidence it actually used. Only those
+  references become durable result cards; ordinary searches default to three
+  candidates unless the human asks for a collection.
+- Schema 15 retains explicit corrections with the correcting human message and
+  prior Beacon response. Memory is thread-scoped and cannot silently become a
+  global catalog rule or alter model weights.
+- The verified pre-schema-15 backup is
+  `beacon-pre-schema15-20260724T220248.319996Z.db`, SHA-256
+  `eaffcec837eae9b81e1279525f38c456c63337696b26aafd2b61bb72df078d96`.
+- All 83 tests passed. Isolated real-Qwen acceptance returned exactly one card
+  for `Beacon-exact-test.mov` and zero cards for an explicit no-search request.
+- Packaged 0.17.1 smoke exited 0; the release is 417,607,625 bytes, the ZIP is
+  160,930,913 bytes, and the capability audit found zero blocked files.
+- The live catalog migrated to schema 15 with integrity `ok` and zero
+  foreign-key errors. The 0.17.1 desktop and replacement watch worker are
+  running.
+
 ### Identity
 
 - Project: **ATLAS — Adaptive Topological Library & Archive System**
@@ -403,7 +426,7 @@ Next smallest step:
 
 - Last verified: 2026-07-24 on the Windows ATLAS host
 - Working branch/commit: `C:\Development\ATLAS`, `main` at `22fddbc`
-- Current milestone: Beacon 0.17.0 live grounded conversation worker
+- Current milestone: Beacon 0.17.1 corrected grounded delivery
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
   242 unique identities were cataloged and the final one-item contextual retry
   completed. Beacon 0.14 adds independently scrollable Recents/Explorer Library
@@ -415,19 +438,18 @@ Next smallest step:
   contextual claims, and moves every unambiguous analyzed Inbox location.
   Beacon 0.16 adds schema-13 truthful durable pipeline stages and the
   persistent shell-level Beacon Desk conversation dock.
-- In progress: no bounded release work; Beacon 0.17.0 and its local watch
-  worker are running.
+- In progress: user-directed conversational search testing; Beacon 0.17.1 and
+  its local watch worker are running.
 - Blocked: none for the current bounded release.
-- Files changed: schema-14 worker leases/result links, local conversation
-  worker, transcript-aware grounded search, desktop controller/QML cards,
-  tests, native validation image, versioning, and docs.
-- Tests/live checks: all 78 tests passed, including the real ffprobe
-  acceptance checks; live schema 14 integrity is `ok` with zero foreign-key
-  errors; the verified pre-schema-14 backup and older schema-12 backup are
-  retained. Packaged 0.17.0 isolated smoke
+- Files changed: schema-15 thread correction memory, deterministic search
+  policy, evidence-selected result cards, tests, packaging, and docs.
+- Tests/live checks: all 83 tests passed, including the real ffprobe
+  acceptance checks; live schema 15 integrity is `ok` with zero foreign-key
+  errors; verified pre-schema-15 and older backups are retained. Packaged
+  0.17.1 isolated smoke
   exited 0 and the canonical capability audit found no browser/web/API or
   other blocked desktop capability files. The release directory is
-  417,601,992 bytes and the ZIP is 160,925,033 bytes.
+  417,607,625 bytes and the ZIP is 160,930,913 bytes.
 - Unverified assumptions: post-restart Windows hostname, physical SMART state,
   DrivePool duplication/parity, independent archive backup strategy, code
   signing, production chord/key accuracy, acceptable stem storage policy,
@@ -447,5 +469,6 @@ Next smallest step:
   Whisper. Corpus analysis does not copy source media to C:; sampled frames are
   temporary and cleaned. New live thumbnails route to
   `J:\Beacon\Thumbnails`; Demucs stems remain disabled by default.
-- Next smallest step: when the 500-item job is terminal, verify health, back up
-  schema 13, migrate to schema 14, and run one bounded live worker question.
+- Next smallest step: run user-directed Beacon questions that exercise exact
+  filenames, explicit no-search replies, ambiguous concepts, collections, and
+  corrections before expanding the trigger-word policy.

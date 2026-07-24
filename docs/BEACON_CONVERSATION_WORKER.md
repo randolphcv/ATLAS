@@ -2,9 +2,7 @@
 
 Updated: 2026-07-24
 
-Status: live on schema 14. The 500-item activation-gate analysis completed
-500/500 before migration, the first bounded grounded request passed, and the
-watch worker automatically answered a subsequent queued reply.
+Status: Beacon 0.17.1/schema 15 correction release under final live promotion.
 
 ## Purpose
 
@@ -33,16 +31,22 @@ interfering with an older packaged runner.
 
 ## Local model boundary
 
-Only loopback HTTP endpoints are accepted. The default adapter makes two
-structured local-model calls:
+Only loopback HTTP endpoints are accepted. The default adapter makes at most
+two structured local-model calls:
 
-1. choose zero to four short catalog search queries;
+1. when deterministic policy does not already decide, choose zero to four
+   short catalog search queries;
 2. answer from bounded conversation history and the returned catalog evidence.
 
+Explicit no-search language produces no catalog query. One exact filename
+produces one exact result unless the human asks for alternatives or a
+collection. Generic system/provenance terms are rejected, ordinary searches
+default to three candidates, and known live test/sandbox paths are excluded.
+
 Beacon supplies at most 20 recent messages, 24,000 conversation characters,
-four search queries, and eight catalog results. Responses must fit the existing
-8,000-character Desk limit. The model receives no file bytes and no
-consequential tools.
+four search queries, and eight catalog results only for an explicitly broad
+collection. Responses must fit the existing 8,000-character Desk limit. The
+model receives no file bytes and no consequential tools.
 
 ## Grounded result cards
 
@@ -55,9 +59,25 @@ Each result card is linked to a permanent asset UUID and includes:
 - current local-availability state;
 - optional existing thumbnail.
 
+The structured answer identifies which evidence references it actually used.
+Only those references become durable cards; unused search candidates are
+discarded.
+
 **Inspect** opens the asset record in Library. It does not open, copy, or move
 the source file. A future file-collection feature requires a separate typed,
 checksum-verified retrieval job.
+
+## Correction memory
+
+When a human explicitly corrects the immediately preceding Beacon response,
+schema 15 retains that correction with both message identities. The most recent
+thread corrections remain available even after ordinary bounded history would
+drop the original exchange.
+
+Correction memory is deliberately thread-scoped. Beacon does not promote one
+misunderstanding into a global search rule, rewrite catalog metadata, or train
+model weights automatically. A later reviewed-policy feature can promote
+repeated corrections explicitly.
 
 ## Native and CLI entry points
 

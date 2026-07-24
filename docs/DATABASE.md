@@ -1,6 +1,6 @@
 # Database
 
-Schema version 14 separates content, locations, derivatives, audit events,
+Schema version 15 separates content, locations, derivatives, audit events,
 AI-generated candidates, durable Beacon conversations, editable context, and
 managed file operations:
 
@@ -20,6 +20,8 @@ managed file operations:
   completion state, and failure evidence for conversational work.
 - `beacon_message_assets`: ranked grounded catalog assets and match reasons
   attached to a specific Beacon message.
+- `beacon_conversation_feedback`: thread-scoped explicit human corrections,
+  linked to the correcting human message and the prior Beacon response.
 - `beacon_policies`: structured operational policy with source provenance.
 - `asset_metadata`: the current editable contextual metadata revision for an
   asset identity.
@@ -81,6 +83,11 @@ active stage and asset while preserving the time of that boundary.
 Schema 14 adds durable conversation-worker claims and message-linked grounded
 asset cards. Conversation results retain permanent asset IDs while the UI
 resolves the current preferred location at read time.
+
+Schema 15 adds thread-scoped correction memory. Corrections remain attributable
+to the human message that supplied them and do not silently become global
+catalog rules. Search policy also limits persisted result cards to evidence
+the response actually used.
 
 Connections use WAL mode, normal synchronous durability, foreign keys, and a
 30-second busy timeout. Health checks run SQLite integrity and foreign-key

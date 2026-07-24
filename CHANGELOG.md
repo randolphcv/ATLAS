@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Made catalog search intent deterministic for explicit no-search requests and
+  exact filenames; exact requests default to one exact result.
+- Result cards now include only evidence references actually used by Beacon,
+  with a three-card default unless the human asks for a collection.
+- Generic system/provenance terms and known live test/sandbox paths no longer
+  produce ordinary grounded results.
+- Added schema-15 thread-scoped correction memory so explicit human
+  corrections survive bounded-history truncation without becoming global
+  catalog rules.
 - Added schema-14 durable conversational-worker leases and run history with a
   hard pause while catalog analysis owns the local inference lane.
 - Added a loopback-only two-pass Qwen conversation adapter with bounded

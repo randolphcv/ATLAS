@@ -8,33 +8,48 @@ from pathlib import Path
 from beacon.catalog import catalog_file
 from beacon.conversation_worker import (
     ConversationPlan,
+    ConversationResponse,
+    _is_nonproduction_path,
     claim_next_thread,
     run_worker_once,
     validate_loopback_endpoint,
 )
 from beacon.database import SCHEMA_VERSION, database_integrity
-from beacon.desk import create_human_thread, thread_detail
+from beacon.desk import create_human_thread, reply_to_thread, thread_detail
 from beacon.local_analysis import create_local_analysis_job
 
 
 class FakeAdapter:
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+        plan: ConversationPlan | None = None,
+        used_references: tuple[int, ...] = (1,),
+    ) -> None:
         self.fail = fail
+        self.configured_plan = plan or ConversationPlan(("waterfall",))
+        self.used_references = used_references
         self.results: list[dict] = []
+        self.histories: list[list[dict[str, str]]] = []
 
     def plan(self, messages: list[dict[str, str]]) -> ConversationPlan:
         if self.fail:
             raise RuntimeError("synthetic local model failure")
-        self.asserted_history = messages
-        return ConversationPlan(("waterfall",))
+        self.histories.append(messages)
+        return self.configured_plan
 
     def respond(
         self,
         messages: list[dict[str, str]],
         results: list[dict],
-    ) -> str:
+    ) -> ConversationResponse:
         self.results = results
-        return "I found one grounded catalog match [1]."
+        references = ", ".join(f"[{item}]" for item in self.used_references)
+        return ConversationResponse(
+            f"I used these grounded catalog matches: {references}".strip(),
+            self.used_references,
+        )
 
 
 class ConversationWorkerTests(unittest.TestCase):
@@ -200,6 +215,157 @@ class ConversationWorkerTests(unittest.TestCase):
             connection.close()
         self.assertEqual(state, "failed")
         self.assertIn("synthetic local model failure", error)
+
+    def test_explicit_no_search_overrides_model_plan_and_attaches_no_cards(
+        self,
+    ) -> None:
+        thread_id = create_human_thread(
+            self.db,
+            subject="No catalog search",
+            body="Confirm Beacon is active. Do not search the catalog.",
+        )
+        adapter = FakeAdapter(
+            plan=ConversationPlan(("beacon", "waterfall"), max_results=8),
+        )
+
+        result = run_worker_once(
+            self.db,
+            model="fixture-model",
+            adapter=adapter,
+        )
+
+        self.assertEqual(result.state, "complete")
+        self.assertEqual(result.result_count, 0)
+        self.assertEqual(adapter.results, [])
+        detail = thread_detail(self.db, thread_id)
+        assert detail is not None
+        self.assertEqual(detail["messages"][-1]["result_cards"], [])
+
+    def test_exact_filename_defaults_to_one_exact_result(self) -> None:
+        other = self.root / "other-waterfall.mov"
+        other.write_bytes(b"another waterfall")
+        catalog_file(
+            other,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        thread_id = create_human_thread(
+            self.db,
+            subject="Find one exact file",
+            body="Please find Iceland-waterfall.mov.",
+        )
+        adapter = FakeAdapter(
+            plan=ConversationPlan(("waterfall", "mov"), max_results=8),
+        )
+
+        result = run_worker_once(
+            self.db,
+            model="fixture-model",
+            adapter=adapter,
+        )
+
+        self.assertEqual(result.result_count, 1)
+        self.assertEqual(len(adapter.results), 1)
+        self.assertEqual(adapter.results[0]["id"], self.asset.asset_id)
+        detail = thread_detail(self.db, thread_id)
+        assert detail is not None
+        self.assertEqual(
+            detail["messages"][-1]["result_cards"][0]["asset_id"],
+            self.asset.asset_id,
+        )
+
+    def test_only_used_evidence_becomes_result_cards(self) -> None:
+        second = self.root / "waterfall-alternate.mov"
+        second.write_bytes(b"alternate waterfall")
+        catalog_file(
+            second,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        thread_id = create_human_thread(
+            self.db,
+            subject="Choose a useful result",
+            body="Find waterfall footage.",
+        )
+        adapter = FakeAdapter(
+            plan=ConversationPlan(("waterfall",), max_results=3),
+            used_references=(2,),
+        )
+
+        result = run_worker_once(
+            self.db,
+            model="fixture-model",
+            adapter=adapter,
+        )
+
+        self.assertEqual(len(adapter.results), 2)
+        self.assertEqual(result.result_count, 1)
+        detail = thread_detail(self.db, thread_id)
+        assert detail is not None
+        [card] = detail["messages"][-1]["result_cards"]
+        self.assertEqual(card["asset_id"], adapter.results[1]["id"])
+
+    def test_explicit_correction_is_retained_for_the_thread(self) -> None:
+        thread_id = create_human_thread(
+            self.db,
+            subject="Learn from correction",
+            body="Find waterfall footage.",
+        )
+        run_worker_once(
+            self.db,
+            model="fixture-model",
+            adapter=FakeAdapter(),
+        )
+        reply_to_thread(
+            self.db,
+            thread_id,
+            "That's wrong. I meant only the Iceland waterfall.",
+        )
+        adapter = FakeAdapter()
+
+        result = run_worker_once(
+            self.db,
+            model="fixture-model",
+            adapter=adapter,
+        )
+
+        self.assertEqual(result.state, "complete")
+        self.assertIn(
+            "Thread-scoped human corrections",
+            adapter.histories[0][0]["body"],
+        )
+        connection = sqlite3.connect(self.db)
+        try:
+            row = connection.execute(
+                """
+                SELECT kind,note FROM beacon_conversation_feedback
+                WHERE thread_id=?
+                """,
+                (thread_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        self.assertEqual(row[0], "correction")
+        self.assertIn("I meant only", row[1])
+
+    def test_live_retrieval_excludes_known_test_and_sandbox_paths(self) -> None:
+        self.assertTrue(
+            _is_nonproduction_path(
+                r"C:\ProgramData\ATLAS\Beacon\use-tests\UseTest-01\item.mov"
+            )
+        )
+        self.assertTrue(
+            _is_nonproduction_path(
+                r"C:\ProgramData\ATLAS\Beacon\sandbox\inbox\item.mov"
+            )
+        )
+        self.assertFalse(
+            _is_nonproduction_path(r"J:\Projects\Client\item.mov")
+        )
 
 
 if __name__ == "__main__":

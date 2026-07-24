@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import sqlite3
 import urllib.error
@@ -9,7 +10,7 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
@@ -19,10 +20,44 @@ from .repository import search_assets
 
 MAX_SEARCH_QUERIES = 4
 MAX_RESULT_CARDS = 8
+DEFAULT_RESULT_CARDS = 3
 MAX_HISTORY_MESSAGES = 20
 MAX_HISTORY_CHARACTERS = 24_000
 DEFAULT_LEASE_SECONDS = 15 * 60
 FAILURE_BACKOFF_SECONDS = 5 * 60
+GENERIC_SEARCH_TERMS = frozenset(
+    {
+        "atlas",
+        "beacon",
+        "catalog",
+        "library",
+        "asset",
+        "assets",
+        "file",
+        "files",
+    }
+)
+MEDIA_EXTENSION_TERMS = frozenset(
+    {
+        "cr2", "cr3", "dng", "jpg", "jpeg", "png", "gif", "heic",
+        "mov", "mp4", "m4v", "avi", "mkv", "wav", "mp3", "m4a", "flac",
+    }
+)
+NO_SEARCH_PATTERNS = (
+    r"\bdo not search\b",
+    r"\bdon.t search\b",
+    r"\bwithout (?:searching|a search)\b",
+    r"\bno (?:catalog|library) search\b",
+)
+CORRECTION_PATTERNS = (
+    *NO_SEARCH_PATTERNS,
+    r"\bthat(?:'s| is) (?:not right|wrong|incorrect)\b",
+    r"\bnot what i meant\b",
+    r"\byou misunderstood\b",
+    r"\bi meant\b",
+    r"\bplease correct\b",
+    r"\bonly (?:show|return|include|use)\b",
+)
 
 
 def _utc_now() -> str:
@@ -60,6 +95,14 @@ def validate_loopback_endpoint(endpoint: str) -> str:
 @dataclass(frozen=True)
 class ConversationPlan:
     search_queries: tuple[str, ...]
+    search_mode: str = "catalog"
+    max_results: int = DEFAULT_RESULT_CARDS
+
+
+@dataclass(frozen=True)
+class ConversationResponse:
+    message: str
+    used_references: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,7 +130,7 @@ class ConversationAdapter(Protocol):
         self,
         messages: list[dict[str, str]],
         results: list[dict[str, Any]],
-    ) -> str: ...
+    ) -> ConversationResponse: ...
 
 
 class OllamaConversationAdapter:
@@ -155,39 +198,68 @@ class OllamaConversationAdapter:
         schema = {
             "type": "object",
             "properties": {
+                "search_mode": {
+                    "type": "string",
+                    "enum": ["none", "catalog"],
+                },
                 "search_queries": {
                     "type": "array",
                     "items": {"type": "string"},
                     "maxItems": MAX_SEARCH_QUERIES,
-                }
+                },
+                "max_results": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": MAX_RESULT_CARDS,
+                },
             },
-            "required": ["search_queries"],
+            "required": ["search_mode", "search_queries", "max_results"],
         }
         result = self._chat_json(
             system=(
                 "You are the planning boundary for Beacon's read-only local "
-                "catalog. Return zero to four short literal catalog search "
-                "queries. Use individual names, places, projects, filenames, "
-                "or visual concepts rather than full sentences. Return no "
-                "query when the conversation does not require catalog facts. "
+                "catalog. Search only when the latest human request requires "
+                "catalog facts. An explicit request not to search means mode "
+                "none. Return zero to four specific literal queries using "
+                "names, places, projects, exact filenames, or visual concepts. "
+                "Never use generic system words such as ATLAS, Beacon, catalog, "
+                "library, file, or asset as queries. Default to at most three "
+                "results unless the human asks for a collection or alternatives. "
                 "Never propose a file operation."
             ),
             content=json.dumps({"conversation": messages}, ensure_ascii=False),
             schema=schema,
         )
+        mode = str(result.get("search_mode") or "none").strip().casefold()
+        queries = _normalize_queries(result.get("search_queries"))
+        if mode != "catalog" or not queries:
+            return ConversationPlan((), search_mode="none", max_results=0)
+        try:
+            max_results = int(result.get("max_results") or DEFAULT_RESULT_CARDS)
+        except (TypeError, ValueError):
+            max_results = DEFAULT_RESULT_CARDS
         return ConversationPlan(
-            search_queries=_normalize_queries(result.get("search_queries"))
+            search_queries=queries,
+            search_mode="catalog",
+            max_results=max(1, min(max_results, MAX_RESULT_CARDS)),
         )
 
     def respond(
         self,
         messages: list[dict[str, str]],
         results: list[dict[str, Any]],
-    ) -> str:
+    ) -> ConversationResponse:
         schema = {
             "type": "object",
-            "properties": {"message": {"type": "string"}},
-            "required": ["message"],
+            "properties": {
+                "message": {"type": "string"},
+                "used_references": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 1},
+                    "maxItems": MAX_RESULT_CARDS,
+                },
+            },
+            "required": ["message", "used_references"],
         }
         evidence = [
             {
@@ -211,7 +283,10 @@ class OllamaConversationAdapter:
                 "catalog matches as [1], [2], and so on. If evidence is "
                 "insufficient or the request is ambiguous, ask one focused "
                 "question. Never claim to have copied, moved, shared, opened, "
-                "or modified a file. Result cards let the human inspect assets."
+                "or modified a file. Return used_references containing only "
+                "evidence actually used in the answer. Return an empty list "
+                "when the answer uses no catalog evidence. Result cards let "
+                "the human inspect those cited assets."
             ),
             content=json.dumps(
                 {"conversation": messages, "catalog_evidence": evidence},
@@ -224,7 +299,12 @@ class OllamaConversationAdapter:
             raise ValueError("Local conversation model returned an empty message.")
         if len(message) > MESSAGE_LIMIT:
             raise ValueError("Local conversation response exceeds the Desk limit.")
-        return message
+        references = _normalize_references(
+            result.get("used_references"),
+            result_count=len(results),
+            message=message,
+        )
+        return ConversationResponse(message, references)
 
 
 def _normalize_queries(value: object) -> tuple[str, ...]:
@@ -242,6 +322,106 @@ def _normalize_queries(value: object) -> tuple[str, ...]:
         if len(queries) >= MAX_SEARCH_QUERIES:
             break
     return tuple(queries)
+
+
+def _normalize_references(
+    value: object,
+    *,
+    result_count: int,
+    message: str,
+) -> tuple[int, ...]:
+    candidates: list[object] = list(value) if isinstance(value, list) else []
+    candidates.extend(re.findall(r"\[(\d+)\]", message))
+    references: list[int] = []
+    for candidate in candidates:
+        try:
+            reference = int(candidate)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= reference <= result_count and reference not in references:
+            references.append(reference)
+    return tuple(references[:MAX_RESULT_CARDS])
+
+
+def _latest_human_body(messages: list[dict[str, str]]) -> str:
+    for message in reversed(messages):
+        if str(message.get("author") or "").casefold() == "human":
+            return str(message.get("body") or "")
+    return ""
+
+
+def _explicit_no_search(body: str) -> bool:
+    folded = body.casefold()
+    return any(re.search(pattern, folded) for pattern in NO_SEARCH_PATTERNS)
+
+
+def _wants_collection(body: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(all|every|collection|alternatives?|similar|related|"
+            r"other|several|multiple)\b",
+            body.casefold(),
+        )
+    )
+
+
+def _exact_filename(body: str) -> str | None:
+    matches = re.findall(
+        r"(?i)\b([a-z0-9][a-z0-9_.()-]*\.[a-z0-9]{1,10})\b",
+        body,
+    )
+    return matches[-1] if matches else None
+
+
+def _apply_search_policy(
+    plan: ConversationPlan,
+    messages: list[dict[str, str]],
+) -> ConversationPlan:
+    latest = _latest_human_body(messages)
+    if _explicit_no_search(latest):
+        return ConversationPlan((), search_mode="none", max_results=0)
+    filename = _exact_filename(latest)
+    if filename and not _wants_collection(latest):
+        return ConversationPlan(
+            (filename,),
+            search_mode="exact_filename",
+            max_results=1,
+        )
+    wants_collection = _wants_collection(latest)
+    accepted: list[str] = []
+    for query in plan.search_queries:
+        key = query.casefold().strip().lstrip(".")
+        if key in GENERIC_SEARCH_TERMS:
+            continue
+        if key in MEDIA_EXTENSION_TERMS and not (
+            wants_collection and key in latest.casefold()
+        ):
+            continue
+        accepted.append(query)
+    if plan.search_mode == "none" or not accepted:
+        return ConversationPlan((), search_mode="none", max_results=0)
+    ceiling = MAX_RESULT_CARDS if wants_collection else DEFAULT_RESULT_CARDS
+    return ConversationPlan(
+        tuple(accepted[:MAX_SEARCH_QUERIES]),
+        search_mode="catalog",
+        max_results=max(1, min(plan.max_results, ceiling)),
+    )
+
+
+def _forced_search_plan(
+    messages: list[dict[str, str]],
+) -> ConversationPlan | None:
+    latest = _latest_human_body(messages)
+    if _explicit_no_search(latest):
+        return ConversationPlan((), search_mode="none", max_results=0)
+    filename = _exact_filename(latest)
+    if filename and not _wants_collection(latest):
+        return ConversationPlan(
+            (filename,),
+            search_mode="exact_filename",
+            max_results=1,
+        )
+    return None
 
 
 def _bounded_history(detail: dict[str, Any]) -> list[dict[str, str]]:
@@ -265,6 +445,87 @@ def _bounded_history(detail: dict[str, Any]) -> list[dict[str, str]]:
             break
     prepared.reverse()
     return prepared
+
+
+def _is_explicit_correction(body: str) -> bool:
+    folded = body.casefold()
+    return any(re.search(pattern, folded) for pattern in CORRECTION_PATTERNS)
+
+
+def _record_and_load_corrections(
+    db_path: Path,
+    detail: dict[str, Any],
+) -> list[str]:
+    messages = detail.get("messages") or []
+    if len(messages) >= 2:
+        latest = messages[-1]
+        prior = messages[-2]
+        note = " ".join(str(latest.get("body") or "").split())[:2000]
+        if (
+            latest.get("author") == "human"
+            and prior.get("author") == "beacon"
+            and note
+            and _is_explicit_correction(note)
+        ):
+            with connect(db_path) as connection:
+                migrate(connection)
+                inserted = connection.execute(
+                    """
+                    INSERT OR IGNORE INTO beacon_conversation_feedback(
+                        id,thread_id,human_message_id,prior_beacon_message_id,
+                        kind,note,created_at
+                    ) VALUES (?, ?, ?, ?, 'correction', ?, ?)
+                    """,
+                    (
+                        str(uuid.uuid4()),
+                        detail["id"],
+                        latest["id"],
+                        prior["id"],
+                        note,
+                        _utc_now(),
+                    ),
+                )
+                if inserted.rowcount:
+                    record_event(
+                        connection,
+                        kind="beacon_conversation_feedback",
+                        state="complete",
+                        message="Beacon retained an explicit human correction.",
+                        details={
+                            "thread_id": detail["id"],
+                            "human_message_id": latest["id"],
+                            "scope": "thread",
+                        },
+                    )
+    with connect(db_path) as connection:
+        migrate(connection)
+        rows = connection.execute(
+            """
+            SELECT note FROM beacon_conversation_feedback
+            WHERE thread_id=? ORDER BY created_at DESC LIMIT 8
+            """,
+            (detail["id"],),
+        ).fetchall()
+    return [str(row["note"]) for row in reversed(rows)]
+
+
+def _history_with_corrections(
+    history: list[dict[str, str]],
+    corrections: list[str],
+) -> list[dict[str, str]]:
+    if not corrections:
+        return history
+    durable = "\n".join(f"- {note}" for note in corrections)
+    return [
+        {
+            "author": "system",
+            "body": (
+                "Thread-scoped human corrections retained from earlier "
+                f"misunderstandings:\n{durable}"
+            ),
+        },
+        *history,
+    ]
 
 
 def _analysis_running(connection: Any) -> bool:
@@ -393,21 +654,35 @@ def claim_next_thread(
 
 def _grounded_search(
     db_path: Path,
-    queries: tuple[str, ...],
+    plan: ConversationPlan,
 ) -> list[dict[str, Any]]:
     matches: dict[str, dict[str, Any]] = {}
     reasons: dict[str, list[str]] = {}
-    for query in queries:
-        page = search_assets(db_path, query=query, limit=6)
+    if plan.search_mode == "none" or not plan.search_queries:
+        return []
+    for query in plan.search_queries:
+        page = search_assets(
+            db_path,
+            query=query,
+            limit=max(12, plan.max_results * 4),
+        )
         for item in page["items"]:
+            path = str(item.get("primary_path") or "")
+            if _is_nonproduction_path(path):
+                continue
+            if (
+                plan.search_mode == "exact_filename"
+                and PureWindowsPath(path).name.casefold() != query.casefold()
+            ):
+                continue
             asset_id = str(item["id"])
             matches.setdefault(asset_id, item)
             reasons.setdefault(asset_id, []).append(
                 _catalog_match_reason(db_path, item, query)
             )
-            if len(matches) >= MAX_RESULT_CARDS:
+            if len(matches) >= plan.max_results:
                 break
-        if len(matches) >= MAX_RESULT_CARDS:
+        if len(matches) >= plan.max_results:
             break
     grounded: list[dict[str, Any]] = []
     for asset_id, item in matches.items():
@@ -420,6 +695,14 @@ def _grounded_search(
             }
         )
     return grounded
+
+
+def _is_nonproduction_path(path: str) -> bool:
+    normalized = path.replace("/", "\\").casefold()
+    return (
+        "\\programdata\\atlas\\beacon\\use-tests\\" in normalized
+        or "\\programdata\\atlas\\beacon\\sandbox\\" in normalized
+    )
 
 
 def _catalog_match_reason(
@@ -579,20 +862,32 @@ def run_worker_once(
         if detail is None:
             raise LookupError("Claimed Beacon conversation was not found.")
         history = _bounded_history(detail)
-        plan = selected_adapter.plan(history)
-        results = _grounded_search(db_path, plan.search_queries)
-        response = selected_adapter.respond(history, results)
+        corrections = _record_and_load_corrections(db_path, detail)
+        grounded_history = _history_with_corrections(history, corrections)
+        plan = _forced_search_plan(grounded_history)
+        if plan is None:
+            plan = _apply_search_policy(
+                selected_adapter.plan(grounded_history),
+                grounded_history,
+            )
+        results = _grounded_search(db_path, plan)
+        response = selected_adapter.respond(grounded_history, results)
+        selected_results = [
+            results[reference - 1]
+            for reference in response.used_references
+            if 1 <= reference <= len(results)
+        ]
         message_id = _complete_claim(
             db_path,
             claim,
-            response,
-            results,
+            response.message,
+            selected_results,
         )
         return WorkerCycleResult(
             state="complete",
             thread_id=claim.thread_id,
             message_id=message_id,
-            result_count=len(results),
+            result_count=len(selected_results),
         )
     except Exception as error:
         _fail_claim(db_path, claim, error)

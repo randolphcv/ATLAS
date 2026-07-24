@@ -1,5 +1,21 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-24 Beacon 0.17.1 corrected grounded delivery
+
+Beacon now treats search intent as a policy boundary rather than relying on
+the planning model alone. Explicit no-search requests produce no catalog
+query. A single exact filename produces one exact card by default. Generic
+system/provenance terms and known live test/sandbox paths are excluded, and
+only evidence references actually used by the answer become durable cards.
+
+Schema 15 adds thread-scoped correction memory linked to the correcting human
+message and prior Beacon response. Corrections survive bounded history but do
+not silently become global rules, alter catalog metadata, or train weights.
+
+All 83 tests and isolated real-Qwen exact/no-search acceptance passed. A
+verified schema-14 backup was retained before the healthy live schema-15
+migration. Packaged Beacon 0.17.1 and its watch worker are running.
+
 ## 2026-07-24 Beacon 0.17.0 live conversation worker
 
 Branch `worker_build`, created from local `main` commit `4180872`, adds the

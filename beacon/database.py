@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 
 @dataclass(frozen=True)
@@ -217,6 +217,20 @@ def migrate(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_beacon_message_assets_asset
             ON beacon_message_assets(asset_id);
+        CREATE TABLE IF NOT EXISTS beacon_conversation_feedback (
+            id TEXT PRIMARY KEY,
+            thread_id TEXT NOT NULL
+                REFERENCES beacon_threads(id) ON DELETE CASCADE,
+            human_message_id TEXT NOT NULL UNIQUE
+                REFERENCES beacon_messages(id) ON DELETE CASCADE,
+            prior_beacon_message_id TEXT NOT NULL
+                REFERENCES beacon_messages(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL CHECK(kind IN ('correction')),
+            note TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_beacon_feedback_thread_created
+            ON beacon_conversation_feedback(thread_id, created_at);
         CREATE TABLE IF NOT EXISTS beacon_policies (
             key TEXT PRIMARY KEY,
             value_json TEXT NOT NULL,
