@@ -189,16 +189,19 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ### Current Beacon baseline (2026-07-24)
 
-- Beacon 0.17.1 is the current live schema-15 baseline on `main`.
+- Beacon 0.17.2 is the current live schema-15 baseline on `main`.
   The 500-item analysis job completed 500/500 before migration. A verified
   schema-13 online backup was created, one bounded live Qwen conversation
   returned a durable grounded result, and post-run integrity remained clean.
-- The verified 0.17.1 release executable is the running desktop app, and a
+- The verified 0.17.2 release executable is the running desktop app, and a
   local foreground watch worker automatically consumes queued Desk replies.
 - Grounded delivery now deterministically honors explicit no-search requests,
   resolves one exact filename to one exact card by default, excludes generic
   provenance/test matches, and attaches only evidence the answer actually
   used. Explicit corrections persist only within their originating thread.
+- Positive retrieval phrases such as `Find me an image of X and Y` bypass the
+  planning model's search/no-search choice. Multi-name requests require every
+  requested name to match the same asset.
 - Custom intake supports either exact multi-file selection or recursive
   selection of one approved folder, with the existing optional file limit.
 - The bounded 250-file production tranche completed intake and contextual

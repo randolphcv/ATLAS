@@ -2,7 +2,7 @@
 
 Updated: 2026-07-24
 
-Status: Beacon 0.17.1/schema 15 correction release under final live promotion.
+Status: Beacon 0.17.2/schema 15 is live.
 
 ## Purpose
 
@@ -42,6 +42,9 @@ Explicit no-search language produces no catalog query. One exact filename
 produces one exact result unless the human asks for alternatives or a
 collection. Generic system/provenance terms are rejected, ordinary searches
 default to three candidates, and known live test/sandbox paths are excluded.
+Explicit `Find`, `Show`, `Locate`, `Pull up`, `Retrieve`, and `Get` media
+requests force retrieval without asking the planning model whether to search.
+Conjoined person targets require every name on the same asset.
 
 Beacon supplies at most 20 recent messages, 24,000 conversation characters,
 four search queries, and eight catalog results only for an explicitly broad

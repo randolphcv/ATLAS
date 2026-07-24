@@ -373,6 +373,40 @@ def _exact_filename(body: str) -> str | None:
     return matches[-1] if matches else None
 
 
+def _explicit_retrieval_plan(body: str) -> ConversationPlan | None:
+    match = re.search(
+        r"(?i)\b(?:find|show|locate|pull up|retrieve|get)\s+"
+        r"(?:me\s+)?(?:all\s+|some\s+|an?\s+|the\s+)?"
+        r"(?:images?|photos?|pictures?|videos?|clips?|audio|files?|assets?)"
+        r"(?:\s+of|\s+for)?\s+(.+?)(?:[.?!]|$)",
+        body,
+    )
+    if match is None:
+        return None
+    target = " ".join(match.group(1).strip(" \"'").split())
+    if not target:
+        return None
+    terms = tuple(
+        part.strip()
+        for part in re.split(r"\s+(?:and|&)\s+", target, flags=re.IGNORECASE)
+        if part.strip()
+    )
+    max_results = (
+        MAX_RESULT_CARDS if _wants_collection(body) else DEFAULT_RESULT_CARDS
+    )
+    if 2 <= len(terms) <= MAX_SEARCH_QUERIES:
+        return ConversationPlan(
+            terms,
+            search_mode="all_terms",
+            max_results=max_results,
+        )
+    return ConversationPlan(
+        (target,),
+        search_mode="catalog",
+        max_results=max_results,
+    )
+
+
 def _apply_search_policy(
     plan: ConversationPlan,
     messages: list[dict[str, str]],
@@ -421,6 +455,9 @@ def _forced_search_plan(
             search_mode="exact_filename",
             max_results=1,
         )
+    retrieval = _explicit_retrieval_plan(latest)
+    if retrieval is not None:
+        return retrieval
     return None
 
 
@@ -658,6 +695,7 @@ def _grounded_search(
 ) -> list[dict[str, Any]]:
     matches: dict[str, dict[str, Any]] = {}
     reasons: dict[str, list[str]] = {}
+    matched_queries: dict[str, set[str]] = {}
     if plan.search_mode == "none" or not plan.search_queries:
         return []
     for query in plan.search_queries:
@@ -680,12 +718,31 @@ def _grounded_search(
             reasons.setdefault(asset_id, []).append(
                 _catalog_match_reason(db_path, item, query)
             )
-            if len(matches) >= plan.max_results:
+            matched_queries.setdefault(asset_id, set()).add(query.casefold())
+            if (
+                plan.search_mode == "exact_filename"
+                and len(matches) >= plan.max_results
+            ):
                 break
-        if len(matches) >= plan.max_results:
+        if (
+            plan.search_mode == "exact_filename"
+            and len(matches) >= plan.max_results
+        ):
             break
     grounded: list[dict[str, Any]] = []
-    for asset_id, item in matches.items():
+    ordered_ids = sorted(
+        matches,
+        key=lambda asset_id: -len(matched_queries.get(asset_id, set())),
+    )
+    if plan.search_mode == "all_terms":
+        required = {query.casefold() for query in plan.search_queries}
+        ordered_ids = [
+            asset_id
+            for asset_id in ordered_ids
+            if matched_queries.get(asset_id, set()) >= required
+        ]
+    for asset_id in ordered_ids[:plan.max_results]:
+        item = matches[asset_id]
         path = str(item.get("primary_path") or "")
         grounded.append(
             {

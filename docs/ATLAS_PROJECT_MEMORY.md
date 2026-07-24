@@ -88,6 +88,20 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
   foreign-key errors. The 0.17.1 desktop and replacement watch worker are
   running.
 
+### Beacon 0.17.2 positive retrieval trigger hotfix
+
+- Qwen incorrectly planned `Find me an image of Connor and Jules` as no
+  search even though one live asset contained both names.
+- `Find`, `Show`, `Locate`, `Pull up`, `Retrieve`, and `Get` media requests now
+  force deterministic catalog retrieval.
+- Conjoined multi-person targets use all-terms matching, so one asset must
+  match every requested name instead of unioning unrelated individual matches.
+- The live proof resolves exactly one asset:
+  `Connor and Jules in Colorado Springs`.
+- All 84 tests pass. Packaged 0.17.2 smoke exited 0; the release is
+  417,608,838 bytes, the ZIP is 160,930,625 bytes, and the capability audit
+  found zero blocked files.
+
 ### Identity
 
 - Project: **ATLAS — Adaptive Topological Library & Archive System**
@@ -426,7 +440,7 @@ Next smallest step:
 
 - Last verified: 2026-07-24 on the Windows ATLAS host
 - Working branch/commit: `C:\Development\ATLAS`, `main` at `22fddbc`
-- Current milestone: Beacon 0.17.1 corrected grounded delivery
+- Current milestone: Beacon 0.17.2 deterministic positive retrieval
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
   242 unique identities were cataloged and the final one-item contextual retry
   completed. Beacon 0.14 adds independently scrollable Recents/Explorer Library
@@ -438,12 +452,12 @@ Next smallest step:
   contextual claims, and moves every unambiguous analyzed Inbox location.
   Beacon 0.16 adds schema-13 truthful durable pipeline stages and the
   persistent shell-level Beacon Desk conversation dock.
-- In progress: user-directed conversational search testing; Beacon 0.17.1 and
+- In progress: user-directed conversational search testing; Beacon 0.17.2 and
   its local watch worker are running.
 - Blocked: none for the current bounded release.
 - Files changed: schema-15 thread correction memory, deterministic search
   policy, evidence-selected result cards, tests, packaging, and docs.
-- Tests/live checks: all 83 tests passed, including the real ffprobe
+- Tests/live checks: all 84 tests passed, including the real ffprobe
   acceptance checks; live schema 15 integrity is `ok` with zero foreign-key
   errors; verified pre-schema-15 and older backups are retained. Packaged
   0.17.1 isolated smoke

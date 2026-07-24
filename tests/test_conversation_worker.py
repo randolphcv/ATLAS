@@ -17,6 +17,7 @@ from beacon.conversation_worker import (
 from beacon.database import SCHEMA_VERSION, database_integrity
 from beacon.desk import create_human_thread, reply_to_thread, thread_detail
 from beacon.local_analysis import create_local_analysis_job
+from beacon.metadata import save_asset_metadata
 
 
 class FakeAdapter:
@@ -366,6 +367,66 @@ class ConversationWorkerTests(unittest.TestCase):
         self.assertFalse(
             _is_nonproduction_path(r"J:\Projects\Client\item.mov")
         )
+
+    def test_explicit_retrieval_phrase_forces_multi_person_cooccurrence(
+        self,
+    ) -> None:
+        save_asset_metadata(
+            self.db,
+            self.asset.asset_id,
+            {
+                "display_title": "Connor and Jules together",
+                "description": "A portrait containing Connor and Jules.",
+                "people": ["Connor", "Jules"],
+            },
+            updated_by="human",
+            source="test",
+        )
+        for filename, person in (
+            ("connor-only.jpg", "Connor"),
+            ("jules-only.jpg", "Jules"),
+        ):
+            source = self.root / filename
+            source.write_bytes(person.encode("utf-8"))
+            cataloged = catalog_file(
+                source,
+                self.db,
+                stability_seconds=0,
+                include_media_probe=False,
+                include_thumbnail_generation=False,
+            )
+            save_asset_metadata(
+                self.db,
+                cataloged.asset_id,
+                {
+                    "display_title": f"{person} alone",
+                    "description": f"A portrait containing {person}.",
+                    "people": [person],
+                },
+                updated_by="human",
+                source="test",
+            )
+        thread_id = create_human_thread(
+            self.db,
+            subject="Connor and Jules",
+            body="Find me an image of Connor and Jules.",
+        )
+        adapter = FakeAdapter(fail=True)
+
+        result = run_worker_once(
+            self.db,
+            model="fixture-model",
+            adapter=adapter,
+        )
+
+        self.assertEqual(result.state, "complete")
+        self.assertEqual(result.result_count, 1)
+        self.assertEqual(len(adapter.results), 1)
+        self.assertEqual(adapter.results[0]["id"], self.asset.asset_id)
+        detail = thread_detail(self.db, thread_id)
+        assert detail is not None
+        [card] = detail["messages"][-1]["result_cards"]
+        self.assertEqual(card["asset_id"], self.asset.asset_id)
 
 
 if __name__ == "__main__":

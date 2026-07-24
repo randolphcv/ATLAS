@@ -1,5 +1,16 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-24 Beacon 0.17.2 positive retrieval trigger hotfix
+
+The first user test exposed a separate false-negative: Qwen planned
+`Find me an image of Connor and Jules` as no search despite one matching live
+asset. Beacon now deterministically recognizes explicit media-retrieval verbs
+and uses all-terms matching for conjoined names. The live proof resolves only
+`Connor and Jules in Colorado Springs`.
+
+All 84 tests pass. Packaged 0.17.2 smoke and capability audit pass, and the
+0.17.2 desktop plus corrected watch worker are running on healthy schema 15.
+
 ## 2026-07-24 Beacon 0.17.1 corrected grounded delivery
 
 Beacon now treats search intent as a policy boundary rather than relying on

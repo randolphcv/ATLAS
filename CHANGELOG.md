@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Explicit `Find`, `Show`, `Locate`, `Retrieve`, and `Get` media requests now
+  force catalog retrieval instead of allowing the planning model to choose
+  no search. Multi-person `X and Y` requests require both terms on one asset.
 - Made catalog search intent deterministic for explicit no-search requests and
   exact filenames; exact requests default to one exact result.
 - Result cards now include only evidence references actually used by Beacon,
