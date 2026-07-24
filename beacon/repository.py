@@ -330,6 +330,24 @@ def asset_detail(db_path: Path, asset_id: str) -> dict[str, Any] | None:
             (asset_id, result["sha256"]),
         ).fetchone()
         result["transcript"] = dict(transcript) if transcript else {}
+        music = connection.execute(
+            """
+            SELECT result_json,worker_version,verified_at
+            FROM asset_music_analysis
+            WHERE asset_id=? AND source_sha256=?
+            ORDER BY verified_at DESC LIMIT 1
+            """,
+            (asset_id, result["sha256"]),
+        ).fetchone()
+        result["music_analysis"] = (
+            {
+                **json.loads(music["result_json"]),
+                "worker_version": music["worker_version"],
+                "verified_at": music["verified_at"],
+            }
+            if music
+            else {}
+        )
         editable = connection.execute(
             """
             SELECT metadata_json, revision, updated_by, updated_at

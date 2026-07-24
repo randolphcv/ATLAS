@@ -127,14 +127,14 @@ authorization note. Re-importing the same manifest returns the existing run.
 
 ## Local catalog analysis
 
-Beacon 0.12.0 provides **Analyze catalog** in the Catalog Operations header. The
+Beacon 0.13.0 provides **Analyze catalog** in the Catalog Operations header. The
 dialog checks `http://127.0.0.1:11434` for a local Ollama-compatible runtime
 and lists installed models. Start remains disabled when the endpoint or models
 are unavailable; Beacon never falls back to a cloud service.
 
 The default scope is assets without an existing contextual-metadata candidate.
 The dialog reports visual, audio, and other asset counts before starting.
-Local jobs persist at schema 11, record live worker ownership, attach the UI
+Local jobs persist at schema 12, record live worker ownership, attach the UI
 to an active worker across window restarts, and recover genuinely interrupted
 items as pending.
 Results use the existing checksum-bound candidate import and never overwrite

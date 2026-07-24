@@ -23,6 +23,7 @@ from .database import connect, migrate, record_event
 from .desk import seed_threads
 from .managed_moves import commit_analyzed_file, placement_needs_clarification
 from .metadata import apply_analysis_metadata, apply_analysis_organization_path
+from .music_analysis import analyze_asset_music
 from .transcripts import get_asset_transcript, save_asset_transcript
 
 DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
@@ -674,6 +675,32 @@ def _prepare_media_context(
         context["speech_analysis"]["transcript"] = speech.get(
             "analysis_excerpt", ""
         )
+        if asset.get("db_path") and asset.get("asset_id"):
+            try:
+                music = analyze_asset_music(
+                    Path(str(asset["db_path"])),
+                    asset_id=str(asset["asset_id"]),
+                    source_path=source,
+                    source_sha256=str(asset.get("source_sha256") or ""),
+                    full=True,
+                )
+                context["music_analysis"] = {
+                    key: value
+                    for key, value in music.items()
+                    if key not in {"derivatives", "stems"}
+                }
+                context["music_analysis"]["stem_kinds"] = [
+                    item.get("kind")
+                    for item in music.get("stems") or []
+                    if item.get("kind")
+                ]
+            except ValueError:
+                raise
+            except Exception as error:
+                context["music_analysis"] = {
+                    "status": "failed",
+                    "error": str(error)[:1000],
+                }
     return context, images, temp_root
 
 

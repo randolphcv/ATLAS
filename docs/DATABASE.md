@@ -1,6 +1,6 @@
 # Database
 
-Schema version 11 separates content, locations, derivatives, audit events,
+Schema version 12 separates content, locations, derivatives, audit events,
 AI-generated candidates, durable Beacon conversations, editable context, and
 managed file operations:
 
@@ -32,6 +32,8 @@ managed file operations:
   attempts, validated candidate JSON, and failure evidence.
 - `asset_transcripts`: full local transcript text, text SHA-256, source
   checksum, language, generator, and verification timestamps.
+- `asset_music_analysis`: checksum-bound local BPM, key, chord, note, and stem
+  results with canonical result hashes and worker provenance.
 - `schema_version`: applied schema versions.
 
 SHA-256 is unique in `assets`; paths are unique in `locations`. This recognizes

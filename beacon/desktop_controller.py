@@ -1315,6 +1315,44 @@ class DesktopController(QObject):
                     if transcript.get("verified_at") else ""
                 ),
             }
+            music = detail.get("music_analysis") or {}
+            detail["musicAnalysis"] = (
+                {
+                    **music,
+                    "confidenceLabel": (
+                        f"{float(music.get('music_confidence') or 0):.0%}"
+                    ),
+                    "keyLabel": (
+                        f"{music.get('key') or 'Unknown'} "
+                        f"({float(music.get('key_confidence') or 0):.0%})"
+                    ),
+                    "bpmLabel": (
+                        f"{float(music['bpm']):.1f} BPM"
+                        if music.get("bpm") is not None
+                        else "Unknown"
+                    ),
+                    "notesLabel": " Â· ".join(
+                        (music.get("notes") or {}).get("prominent_notes") or []
+                    ),
+                    "pitchRangeLabel": (
+                        (music.get("notes") or {}).get("pitch_range") or ""
+                    ),
+                    "chordsLabel": "  â†’  ".join(
+                        item.get("chord") or ""
+                        for item in (music.get("chords") or [])[:24]
+                        if item.get("chord")
+                    ),
+                    "stemsLabel": " Â· ".join(
+                        str(item.get("kind") or "").replace("music_stem_", "")
+                        for item in music.get("stems") or []
+                    ),
+                    "verifiedLabel": format_timestamp(
+                        music.get("verified_at")
+                    ),
+                }
+                if music
+                else {}
+            )
             editable = empty_metadata()
             editable.update(detail.get("editable_metadata") or {})
             detail["catalogMetadata"] = {

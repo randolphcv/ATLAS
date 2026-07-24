@@ -209,6 +209,9 @@ The first implementation target is a read-only vertical slice against synthetic 
 | Analysis imports are checksum-bound, atomic, and idempotent | Decided in Beacon 0.6.0 | Reject stale or partial result sets and attach intelligence to asset identity rather than filename/location |
 | Every AI result begins as a reviewable candidate | Decided in Beacon 0.6.0 | Keep human judgment over titles, tags, privacy, rights, and archive meaning |
 | Analysis completion commits unambiguous Inbox placement | Supersedes the Beacon 0.6.0 suggestion-only rule in Beacon 0.12.0 | Remove routine approval friction while retaining checksum, collision, root, reparse, audit, and rollback safeguards |
+| Music models run in an isolated Python 3.11 runtime | Decided in Beacon 0.13.0 | Preserve Beacon's Python 3.12 package while supporting Basic Pitch and CUDA-enabled Demucs |
+| Music analysis is gated by tonal stability before MIDI or stems | Decided in Beacon 0.13.0 | Avoid expensive false-positive processing of speech and weakly musical recordings |
+| Essentia remains an optional uninstalled adapter | Decided in Beacon 0.13.0 | Its AGPL license and Windows packaging need a deliberate distribution decision |
 | External inference requires explicit recorded authorization and execution labeling | Decided in Beacon 0.6.0 | Keep local/cloud boundaries visible and auditable |
 | Beacon questions and human replies persist as ordered SQLite conversations | Decided in Beacon 0.7.0 | Make blockers and context durable across app restarts and analysis sessions |
 | Human replies queue a conversation but do not resolve it automatically | Decided in Beacon 0.7.0 | Preserve an explicit handshake between supplied context and Beacon review |
@@ -341,19 +344,26 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-23 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, branch `main`, commit `e176229`
-- Current milestone: Beacon 0.12 transcript persistence, transcript UI, and analysis-complete managed placement
-- Verified complete: both 30-asset local analysis jobs; schema-11 migration; 21 analyzed media files moved from `J:\Inbox\Anna King\2021 Naked Retreat` to the corresponding `J:\Projects` hierarchy with source and destination verification; four `.DS_Store` files intentionally ignored; database integrity and foreign keys clean
-- In progress: none; Beacon 0.12 phase is complete
+- Working branch/commit: `C:\Development\ATLAS`, branch `feature/local-music-intelligence-v1`
+- Current milestone: Beacon 0.13 local music intelligence before broader intake
+- Verified complete: Beacon 0.12 transcript and managed-placement phase; isolated
+  Python 3.11 music runtime; CUDA-enabled Demucs on the RTX 3060; ONNX Basic
+  Pitch; librosa BPM/key/chord analysis; schema-12 checksum-bound music results
+  and derivatives; conservative speech-versus-music gate
+- In progress: documentation synchronization and feature-branch commit
 - Blocked: no current blocker
-- Files changed: analysis, transcript persistence, managed placement, desktop controller/QML, tests, versioning, and operational documentation
-- Tests/live checks: all 63 tests pass with two opt-in real-ffprobe tests
-  skipped; all 21 moved sources (10,436,235,075 bytes) re-hash to their catalog
-  identities; 12 audio-only assets have persistent full transcripts totaling
-  143,277 characters with verified text hashes and source bindings; native
-  transcript preview and final packaged 0.12 live screenshot captured; schema
-  11 integrity and foreign keys clean; pre-change live backup
-  `beacon-20260723T234922.245378Z.db` verified
-- Unverified assumptions: post-restart Windows hostname, physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, code signing, music-analysis stack, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
-- Next smallest step: evaluate a bounded local music-intelligence prototype
-  before adding it to Beacon or MONO.
+- Files changed: music worker/runtime installer, schema, orchestration, local
+  analysis context, repository/controller/QML, tests, versioning, and docs
+- Tests/live checks: all 64 tests pass with two opt-in real-ffprobe tests
+  skipped; synthetic C-major fixture produced MIDI and four verified stems;
+  six-second live spoken clip scored 31% under worker v2 and correctly skipped
+  MIDI/stems; source and result hashes match; packaged Beacon 0.13 live
+  screenshot passed; schema 12 integrity and foreign keys clean; pre-schema-12
+  backup `beacon-20260724T021910.173707Z.db` verified
+- Unverified assumptions: post-restart Windows hostname, physical SMART state,
+  DrivePool duplication/parity, independent archive backup strategy, code
+  signing, production chord/key accuracy, acceptable stem storage policy,
+  Essentia licensing, face-analysis policy, rights taxonomy, and canonical
+  sidecar-versus-SQLite metadata policy
+- Next smallest step: package and verify Beacon 0.13, synchronize durable
+  documentation, and merge the feature branch before broader intake.

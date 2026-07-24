@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added an isolated Python 3.11 music runtime with CUDA-enabled Demucs,
+  ONNX-backed Basic Pitch, and librosa tonal/rhythm analysis.
+- Added schema-12 checksum-bound music results and verified MIDI/stem
+  derivatives, with a conservative gate that skips expensive models for
+  speech and other weakly tonal audio.
+- Added Music Intelligence detail UI for confidence, BPM, estimated key,
+  chord path, pitch range, prominent notes, and generated stems.
 - Added schema-11 checksum-bound full transcripts, cached across later
   metadata analysis passes.
 - Added waveform plus transcript audio previews and a full transcript section

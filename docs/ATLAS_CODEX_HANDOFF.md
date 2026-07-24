@@ -19,8 +19,8 @@ ATLAS is a modular, long-term media storage and intelligence platform designed t
 The Windows hostname was still `DESKTOP-8B4OJIR` when verified on 2026-07-23.
 Connor intends to rename it to `Ultron`, effective only after a later restart.
 
-> Current implementation note (2026-07-23): Beacon 0.12.0 is a packaged native
-> Windows app, not a browser-first dashboard. Schema 11 adds persistent,
+> Current implementation note (2026-07-23): Beacon 0.13.0 is a packaged native
+> Windows app, not a browser-first dashboard. Schema 12 adds persistent,
 > checksum-bound full transcripts to the existing recursive
 > Archive Intake snapshots, durable item-level progress, cancel-between-files,
 > resume, retry-only-failures, and interrupted-session recovery. Intake remains
@@ -28,11 +28,14 @@ Connor intends to rename it to `Ultron`, effective only after a later restart.
 > placement when the Inbox hierarchy provides an unambiguous final home; only
 > unclear placement produces a clarification. See
 > `ATLAS_PROJECT_MEMORY.md` for the current verified runtime and release state.
+> Music intelligence runs through a separate Python 3.11 environment with
+> CUDA Demucs, ONNX Basic Pitch, and librosa DSP. Essentia is intentionally not
+> distributed pending an explicit AGPL licensing decision.
 
 ## Immediate Next Task
 
-Finish the one-time transcript backfill, verify the 0.12 native package against
-the live catalog, then merge the feature branch to main.
+Verify and merge the bounded Beacon 0.13 music-intelligence feature before
+starting broader intake.
 
 ---
 

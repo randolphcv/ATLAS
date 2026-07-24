@@ -170,6 +170,9 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 - Make local-first behavior the baseline; external AI services must be optional adapters.
 - Keep proprietary intelligence replaceable and preserve ordinary-file access.
 - Optimize only after measuring the real bottleneck.
+- Keep Beacon's music models in the isolated Python 3.11 runtime under
+  `C:\ProgramData\ATLAS\MusicRuntime`; do not fold CUDA/TensorFlow dependencies
+  into the packaged Python 3.12 application.
 - Keep source, runtime state, derivatives, backups, and originals in clearly different locations.
 
 ## Privacy and Authority Boundaries

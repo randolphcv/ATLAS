@@ -5,7 +5,7 @@ observes and catalogs files without owning or changing originals.
 
 ## Current application
 
-Beacon 0.12.0 is a native Windows desktop application. It includes:
+Beacon 0.13.0 is a native Windows desktop application. It includes:
 
 - the verified Phase 1 read-only catalog;
 - a branded Qt Quick desktop shell with no embedded browser;
@@ -17,6 +17,8 @@ Beacon 0.12.0 is a native Windows desktop application. It includes:
   thumbnail in the detail header;
 - checksum-bound Beacon analysis candidates with explicit confidence,
   provenance, privacy flags, and execution location;
+- staged local music intelligence with BPM, key, chord-path, MIDI-note, and
+  GPU-separated-stem derivatives for confidently musical audio;
 - catalog search across candidate titles, descriptions, and tags without
   merging AI output into verified technical facts;
 - a local-only **Analyze catalog** dialog with durable schema-11 jobs, explicit

@@ -3030,6 +3030,75 @@ ApplicationWindow {
                                             ColumnLayout {
                                                 Layout.fillWidth: true
                                                 spacing: 10
+                                                visible: ((backend.selectedAsset.musicAnalysis || {}).status || "").length > 0
+                                                Text {
+                                                    text: "MUSIC INTELLIGENCE"
+                                                    color: root.brass
+                                                    font.pixelSize: 9
+                                                    font.weight: Font.DemiBold
+                                                    font.letterSpacing: 1.4
+                                                }
+                                                GridLayout {
+                                                    Layout.fillWidth: true
+                                                    columns: width >= 560 ? 2 : 1
+                                                    columnSpacing: 24
+                                                    rowSpacing: 9
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Music confidence"
+                                                        value: (backend.selectedAsset.musicAnalysis || {}).confidenceLabel || ""
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Tempo"
+                                                        value: (backend.selectedAsset.musicAnalysis || {}).bpmLabel || ""
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Estimated key"
+                                                        value: (backend.selectedAsset.musicAnalysis || {}).keyLabel || ""
+                                                    }
+                                                    DetailLine {
+                                                        Layout.fillWidth: true
+                                                        label: "Pitch range"
+                                                        value: (backend.selectedAsset.musicAnalysis || {}).pitchRangeLabel || "Not transcribed"
+                                                    }
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "Chord path"
+                                                    value: (backend.selectedAsset.musicAnalysis || {}).chordsLabel || "No stable chord sequence"
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "Prominent notes"
+                                                    value: (backend.selectedAsset.musicAnalysis || {}).notesLabel || "Not transcribed"
+                                                }
+                                                DetailLine {
+                                                    Layout.fillWidth: true
+                                                    label: "Separated stems"
+                                                    value: (backend.selectedAsset.musicAnalysis || {}).stemsLabel || "Not generated"
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Local estimates · "
+                                                          + ((backend.selectedAsset.musicAnalysis || {}).worker_version || "")
+                                                          + " · Verified "
+                                                          + ((backend.selectedAsset.musicAnalysis || {}).verifiedLabel || "")
+                                                    color: root.muted
+                                                    font.pixelSize: 8
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                            }
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                height: 1
+                                                color: root.line
+                                                visible: ((backend.selectedAsset.musicAnalysis || {}).status || "").length > 0
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 10
                                                 RowLayout {
                                                     Layout.fillWidth: true
                                                     Text {
