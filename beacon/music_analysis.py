@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import uuid
 from datetime import datetime, timezone
@@ -12,7 +13,7 @@ from typing import Any
 from .catalog import sha256_file
 from .database import connect, migrate, record_event
 
-WORKER_VERSION = "beacon-music-v2"
+WORKER_VERSION = "beacon-music-v3"
 
 
 def _utc_now() -> str:
@@ -105,6 +106,7 @@ def analyze_asset_music(
     source_path: Path,
     source_sha256: str,
     full: bool = True,
+    stems: bool = False,
     timeout: float = 7200,
 ) -> dict[str, Any]:
     cached = get_asset_music_analysis(
@@ -131,6 +133,11 @@ def analyze_asset_music(
         / source_sha256
     )
     output.mkdir(parents=True, exist_ok=True)
+    minimum_free = 50 * 1024**3 if stems else 10 * 1024**3
+    if shutil.disk_usage(output).free < minimum_free:
+        raise RuntimeError(
+            "Insufficient derivative free space for local music analysis."
+        )
     command = [
         str(runtime_python()),
         str(runtime_worker()),
@@ -141,6 +148,8 @@ def analyze_asset_music(
     ]
     if full:
         command.append("--full")
+    if stems:
+        command.append("--stems")
     completed = subprocess.run(
         command,
         capture_output=True,

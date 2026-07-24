@@ -40,13 +40,13 @@ p.add_argument("--output", type=Path)
 p.add_argument("--full", action="store_true")
 a=p.parse_args()
 if a.status:
-    print(json.dumps({"worker_version":"beacon-music-v2","cuda_available":True}))
+    print(json.dumps({"worker_version":"beacon-music-v3","cuda_available":True}))
 else:
     a.output.mkdir(parents=True, exist_ok=True)
     midi=a.output/"transcription.mid"
     midi.write_bytes(b"midi fixture")
     print(json.dumps({
-      "worker_version":"beacon-music-v2","status":"complete",
+      "worker_version":"beacon-music-v3","status":"complete",
       "bpm":120.0,"key":"C major","key_confidence":0.8,
       "music_confidence":0.95,"chords":[{"chord":"C"}],
       "notes":{"note_count":3,"pitch_range":"C4-G4","prominent_notes":["C4","E4","G4"]},

@@ -19,8 +19,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 2. Weakly tonal or unstable audio stops at this inexpensive stage.
 3. Confidently musical audio runs Spotify Basic Pitch through its ONNX model
    and saves a verified MIDI derivative.
-4. Music that remains confident after note transcription runs Demucs on the
-   RTX 3060 and saves verified bass, drums, vocals, and other stems.
+4. Demucs stems are an explicit opt-in. They are disabled for the first
+   production tranche because C: is not the long-term derivative volume.
 
 Every result is bound to the catalog asset UUID and source SHA-256. Beacon
 re-hashes the source before and after analysis, hashes every derivative, and
@@ -48,4 +48,5 @@ events, and produced four verified Demucs stems.
 The first bounded live check used a six-second cataloged spoken recording. The
 initial gate was too permissive. Worker v2 reduced its music confidence from
 84% to 31% using key and chord stability, correctly skipping MIDI and stem
-generation. This calibration is retained as the regression boundary.
+generation. Worker v3 also makes stems explicit rather than automatic. This
+calibration is retained as the regression boundary.

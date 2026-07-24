@@ -12,7 +12,7 @@ from typing import Any
 import librosa
 import numpy as np
 
-WORKER_VERSION = "beacon-music-v2"
+WORKER_VERSION = "beacon-music-v3"
 PITCH_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 MAJOR_PROFILE = np.array(
     [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
@@ -109,7 +109,9 @@ def _note_summary(note_events: list[Any]) -> dict[str, Any]:
     }
 
 
-def analyze(source: Path, output: Path, *, full: bool) -> dict[str, Any]:
+def analyze(
+    source: Path, output: Path, *, full: bool, stems_enabled: bool
+) -> dict[str, Any]:
     output.mkdir(parents=True, exist_ok=True)
     y, sample_rate = librosa.load(source, sr=22_050, mono=True)
     if not len(y):
@@ -187,7 +189,7 @@ def analyze(source: Path, output: Path, *, full: bool) -> dict[str, Any]:
                 "size_bytes": midi_path.stat().st_size,
             }
         )
-    if full and music_confidence >= 0.60:
+    if stems_enabled and music_confidence >= 0.60:
         stems_root = output / "stems"
         command = [
             sys.executable,
@@ -223,6 +225,7 @@ def main() -> int:
     parser.add_argument("--source", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--full", action="store_true")
+    parser.add_argument("--stems", action="store_true")
     args = parser.parse_args()
     if args.status:
         import torch
@@ -244,7 +247,16 @@ def main() -> int:
         return 0
     if not args.source or not args.output:
         parser.error("--source and --output are required")
-    print(json.dumps(analyze(args.source, args.output, full=args.full)))
+    print(
+        json.dumps(
+            analyze(
+                args.source,
+                args.output,
+                full=args.full,
+                stems_enabled=args.stems,
+            )
+        )
+    )
     return 0
 
 
