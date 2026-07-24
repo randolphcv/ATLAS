@@ -112,6 +112,13 @@ class WorkerCycleResult:
 class ConversationAdapter(Protocol):
     def understand(self, messages: list[dict[str, str]]) -> AgentGoal: ...
 
+    def reconcile(
+        self,
+        goal: AgentGoal,
+        messages: list[dict[str, str]],
+        action: AgentAction,
+    ) -> AgentGoal: ...
+
     def decide(
         self,
         goal: AgentGoal,
@@ -219,8 +226,9 @@ class OllamaConversationAdapter:
             f"output after retry: {last_error}"
         ) from last_error
 
-    def understand(self, messages: list[dict[str, str]]) -> AgentGoal:
-        schema = {
+    @staticmethod
+    def _goal_schema() -> dict[str, Any]:
+        return {
             "type": "object",
             "properties": {
                 "request_summary": {"type": "string"},
@@ -250,35 +258,9 @@ class OllamaConversationAdapter:
                 "latest_human_corrects_beacon",
             ],
         }
-        result = self._chat_json(
-            system=(
-                "You are Beacon's reasoning model. Formalize only the active "
-                "latest_human_request supplied to you. prior_conversation is "
-                "context for resolving follow-ups and references; do not repeat "
-                "or combine a prior request that Beacon already answered unless "
-                "the latest human explicitly asks for it again. Preserve explicit count, "
-                "media kind, names, exact filenames, scope, exclusions, and "
-                "quality requirements. Map images/photos/pictures to photo; map "
-                "videos/clips/footage to video; use all only when no media kind "
-                "is requested. requested_result_count is the explicit count, or "
-                "0 when no count was stated. Put requirements such as unique, "
-                "different, exact, oldest, or excluding something into "
-                "constraints in operational language. A request to find, show, "
-                "retrieve, compare, or answer about local assets requires catalog "
-                "evidence. requires_catalog_evidence is false only for ordinary "
-                "conversation or when the latest human explicitly says not to "
-                "search. A follow-up can be a new request. Mark "
-                "latest_human_corrects_beacon true only when that latest turn "
-                "actually says or clearly implies Beacon's prior answer was "
-                "mistaken—not merely because a Beacon turn precedes it. Summarize "
-                "the goal without proposing an answer or inventing catalog facts."
-            ),
-            content=json.dumps(
-                _active_request_context(messages),
-                ensure_ascii=False,
-            ),
-            schema=schema,
-        )
+
+    @staticmethod
+    def _parse_goal(result: dict[str, Any]) -> AgentGoal:
         media_type = str(result.get("media_type") or "all").casefold()
         if media_type not in {"all", "photo", "video", "audio", "other"}:
             media_type = "all"
@@ -307,6 +289,78 @@ class OllamaConversationAdapter:
                 result.get("latest_human_corrects_beacon")
             ),
         )
+
+    def understand(self, messages: list[dict[str, str]]) -> AgentGoal:
+        result = self._chat_json(
+            system=(
+                "You are Beacon's reasoning model. Formalize only the active "
+                "latest_human_request supplied to you. prior_conversation is "
+                "context for resolving follow-ups and references; do not repeat "
+                "or combine a prior request that Beacon already answered unless "
+                "the latest human explicitly asks for it again. Preserve explicit count, "
+                "media kind, names, exact filenames, scope, exclusions, and "
+                "quality requirements. Map images/photos/pictures to photo; map "
+                "videos/clips/footage to video; use all only when no media kind "
+                "is requested. requested_result_count is the explicit count, or "
+                "0 when no count was stated. Put requirements such as unique, "
+                "different, exact, oldest, or excluding something into "
+                "constraints in operational language. A request to find, show, "
+                "retrieve, compare, or answer about local assets requires catalog "
+                "evidence. requires_catalog_evidence is false only for ordinary "
+                "conversation or when the latest human explicitly says not to "
+                "search. A follow-up can be a new request. Mark "
+                "latest_human_corrects_beacon true only when that latest turn "
+                "actually says or clearly implies Beacon's prior answer was "
+                "mistaken—not merely because a Beacon turn precedes it. Summarize "
+                "the goal without proposing an answer or inventing catalog facts."
+            ),
+            content=json.dumps(
+                _active_request_context(messages),
+                ensure_ascii=False,
+            ),
+            schema=self._goal_schema(),
+        )
+        return self._parse_goal(result)
+
+    def reconcile(
+        self,
+        goal: AgentGoal,
+        messages: list[dict[str, str]],
+        action: AgentAction,
+    ) -> AgentGoal:
+        result = self._chat_json(
+            system=(
+                "You are Beacon's goal-reconciliation reasoning pass. Qwen's "
+                "working goal and its later proposed tool action conflict. "
+                "Re-read only the active latest_human_request, using prior "
+                "conversation solely for context, and return the corrected "
+                "working goal. The proposed action is evidence about Qwen's "
+                "later interpretation, but do not accept it automatically. "
+                "Infer obvious spelling mistakes and natural conversational "
+                "follow-ups by meaning. Preserve explicit human constraints. "
+                "In particular, an explicit instruction not to search must keep "
+                "requires_catalog_evidence false, while a request to locate or "
+                "answer about catalog assets normally requires evidence. Do not "
+                "invent catalog facts or answer the request."
+            ),
+            content=json.dumps(
+                {
+                    **_active_request_context(messages),
+                    "working_goal": _goal_details(goal),
+                    "proposed_action": {
+                        "action": action.action,
+                        "queries": list(action.queries),
+                        "match_strategy": action.match_strategy,
+                        "media_type": action.media_type,
+                        "result_limit": action.result_limit,
+                        "asset_ids": list(action.asset_ids),
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            schema=self._goal_schema(),
+        )
+        return self._parse_goal(result)
 
     def decide(
         self,
@@ -633,6 +687,36 @@ def _active_request_context(
             messages[latest_index].get("body") or ""
         ),
     }
+
+
+def _goal_details(goal: AgentGoal) -> dict[str, Any]:
+    return {
+        "request_summary": goal.request_summary,
+        "requires_catalog_evidence": goal.requires_catalog_evidence,
+        "requested_result_count": goal.requested_result_count,
+        "media_type": goal.media_type,
+        "constraints": list(goal.constraints),
+        "latest_human_corrects_beacon": (
+            goal.latest_human_corrects_beacon
+        ),
+    }
+
+
+def _search_goal_conflict(
+    goal: AgentGoal,
+    action: AgentAction,
+) -> str:
+    if not goal.requires_catalog_evidence:
+        return (
+            "search_catalog conflicts with the current Qwen working goal, "
+            "which says catalog evidence is not required."
+        )
+    if goal.media_type != "all" and action.media_type != goal.media_type:
+        return (
+            f"search_catalog media_type {action.media_type!r} conflicts with "
+            f"the current Qwen working goal media_type {goal.media_type!r}."
+        )
+    return ""
 
 
 def _bounded_history(detail: dict[str, Any]) -> list[dict[str, str]]:
@@ -1147,6 +1231,35 @@ def _record_agent_step(
         )
 
 
+def _record_agent_goal(
+    db_path: Path,
+    claim: WorkerClaim,
+    goal: AgentGoal,
+    *,
+    phase: str,
+    previous: AgentGoal | None = None,
+) -> None:
+    with connect(db_path) as connection:
+        migrate(connection)
+        record_event(
+            connection,
+            kind="beacon_conversation_goal",
+            state="complete",
+            message=f"Beacon recorded its {phase} working goal.",
+            details={
+                "run_id": claim.run_id,
+                "thread_id": claim.thread_id,
+                "phase": phase,
+                "goal": _goal_details(goal),
+                "previous_goal": (
+                    _goal_details(previous) if previous is not None else None
+                ),
+                "changed": previous is not None and previous != goal,
+                "file_action_authorized": False,
+            },
+        )
+
+
 def _run_agent_session(
     db_path: Path,
     claim: WorkerClaim,
@@ -1157,6 +1270,12 @@ def _run_agent_session(
     corrections = _load_corrections(db_path, detail)
     grounded_history = _history_with_corrections(history, corrections)
     goal = adapter.understand(grounded_history)
+    _record_agent_goal(
+        db_path,
+        claim,
+        goal,
+        phase="initial",
+    )
     if goal.latest_human_corrects_beacon:
         _record_latest_correction(db_path, detail)
     observations: list[dict[str, Any]] = []
@@ -1172,23 +1291,26 @@ def _run_agent_session(
         )
 
         if action.action == "search_catalog":
-            if not goal.requires_catalog_evidence:
-                error = (
-                    "search_catalog conflicts with the model-authored goal, "
-                    "which says catalog evidence is not required."
+            error = _search_goal_conflict(goal, action)
+            if error:
+                previous_goal = goal
+                goal = adapter.reconcile(
+                    goal,
+                    grounded_history,
+                    action,
                 )
-            elif (
-                goal.media_type != "all"
-                and action.media_type != goal.media_type
-            ):
-                error = (
-                    f"search_catalog media_type {action.media_type!r} conflicts "
-                    f"with the stable goal media_type {goal.media_type!r}."
+                _record_agent_goal(
+                    db_path,
+                    claim,
+                    goal,
+                    phase="reconciled",
+                    previous=previous_goal,
                 )
-            elif not action.queries:
+                if goal.latest_human_corrects_beacon:
+                    _record_latest_correction(db_path, detail)
+                error = _search_goal_conflict(goal, action)
+            if not error and not action.queries:
                 error = "search_catalog requires at least one query."
-            else:
-                error = ""
             if error:
                 observations.append(
                     {"step": step, "tool": action.action, "error": error}

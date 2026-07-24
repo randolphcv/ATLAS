@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Treat Qwen's initial request goal as a revisable working interpretation.
+  When a later Qwen tool decision conflicts, a focused Qwen reconciliation pass
+  now revises or confirms the goal instead of allowing code to veto the action.
+- Persist initial and reconciled conversation goals as durable audit events,
+  including the prior goal and whether Qwen changed it.
+- Preserve explicit no-search instructions through reconciliation while
+  allowing obvious typos and natural follow-ups to recover into grounded search.
 - Replaced Beacon's phrase-triggered conversation router with a bounded
   Qwen-authored goal and iterative read-only catalog-agent loop.
 - Qwen now decides intent, count, media type, constraints, search/refinement,

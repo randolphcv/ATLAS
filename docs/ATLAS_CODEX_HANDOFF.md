@@ -1,5 +1,33 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-24 Beacon 0.18.1 goal-reconciliation hotfix
+
+The initial Qwen request goal is now a revisable working interpretation. When
+a later Qwen search action conflicts with that goal, a focused Qwen
+reconciliation pass re-reads the active request and revises or confirms the
+goal. Code no longer vetoes the search independently. Explicit no-search
+instructions remain protected by the same Qwen reconciliation.
+
+Initial and reconciled goals persist as `beacon_conversation_goal` audit
+events. The exact real-Qwen failure sequence—`fine me three unique images
+involving food` after prior conversation—reproduced the false initial goal,
+the later search decision, and a successful revision to catalog evidence
+required.
+
+All 89 tests pass. Packaged 0.18.1 smoke and capability audit pass. The
+0.18.1 desktop and replacement watch worker are live on schema 15.
+
+Release:
+
+- executable:
+  `C:\Development\ATLAS\dist\releases\0.18.1\ATLAS Beacon\ATLAS Beacon.exe`
+- executable SHA-256:
+  `2b9b7c178ca474ff58756b66f8b8aa877b0ffc3de8ee982f5a600bae6023baca`
+- ZIP:
+  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.18.1-win64.zip`
+- ZIP SHA-256:
+  `eb9719dc6cf11657d578bde19ccd6a7b13ee5f5f1b58a140af0e7cd2f8fe657a`
+
 ## 2026-07-24 Beacon 0.18.0 Qwen-led conversation agent
 
 Beacon conversation is no longer routed by fixed retrieval/no-search phrase

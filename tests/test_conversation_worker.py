@@ -37,6 +37,7 @@ class FakeAdapter:
         *,
         fail: bool = False,
         goal: AgentGoal | None = None,
+        reconciled_goal: AgentGoal | None = None,
     ) -> None:
         self.actions = list(actions or [])
         self.fail = fail
@@ -44,12 +45,29 @@ class FakeAdapter:
             request_summary="Handle the latest human request.",
             requires_catalog_evidence=True,
         )
+        self.reconciled_goal = reconciled_goal
+        self.reconcile_calls: list[dict] = []
         self.calls: list[dict] = []
 
     def understand(self, messages: list[dict[str, str]]) -> AgentGoal:
         if self.fail:
             raise RuntimeError("synthetic local model failure")
         return self.goal
+
+    def reconcile(
+        self,
+        goal: AgentGoal,
+        messages: list[dict[str, str]],
+        action: AgentAction,
+    ) -> AgentGoal:
+        self.reconcile_calls.append(
+            {
+                "goal": goal,
+                "messages": messages,
+                "action": action,
+            }
+        )
+        return self.reconciled_goal or goal
 
     def decide(
         self,
@@ -335,6 +353,136 @@ class ConversationWorkerTests(unittest.TestCase):
         detail = thread_detail(self.db, thread_id)
         assert detail is not None
         self.assertEqual(detail["messages"][-1]["result_cards"], [])
+
+    def test_later_qwen_search_can_revise_a_misclassified_working_goal(
+        self,
+    ) -> None:
+        for filename, title in (
+            ("meal-prep.jpg", "Meal preparation"),
+            ("dinner-table.jpg", "Dinner table"),
+            ("dessert.jpg", "Dessert"),
+        ):
+            self._catalog_named(
+                filename,
+                title=title,
+                description="A distinct image involving food.",
+            )
+        thread_id = create_human_thread(
+            self.db,
+            subject="Typo-tolerant food search",
+            body="Great! Now fine me three unique images involving food.",
+        )
+
+        def select_three(
+            _messages: list[dict[str, str]],
+            _observations: list[dict],
+            available: list[dict],
+        ) -> AgentAction:
+            return AgentAction(
+                "respond",
+                message="I found three distinct food images.",
+                selected_asset_ids=tuple(
+                    str(item["asset_id"]) for item in available[:3]
+                ),
+            )
+
+        initial = AgentGoal(
+            request_summary="Discuss three food images.",
+            requires_catalog_evidence=False,
+            requested_result_count=3,
+            media_type="photo",
+            constraints=("unique",),
+        )
+        revised = AgentGoal(
+            request_summary="Find three unique images involving food.",
+            requires_catalog_evidence=True,
+            requested_result_count=3,
+            media_type="photo",
+            constraints=("unique",),
+        )
+        adapter = FakeAdapter(
+            [
+                AgentAction(
+                    "search_catalog",
+                    queries=("food",),
+                    media_type="photo",
+                    result_limit=6,
+                ),
+                select_three,
+            ],
+            goal=initial,
+            reconciled_goal=revised,
+        )
+
+        result = run_worker_once(
+            self.db,
+            model="fixture-model",
+            adapter=adapter,
+        )
+
+        self.assertEqual(result.state, "complete")
+        self.assertEqual(result.result_count, 3)
+        self.assertEqual(len(adapter.reconcile_calls), 1)
+        detail = thread_detail(self.db, thread_id)
+        assert detail is not None
+        self.assertEqual(
+            len(detail["messages"][-1]["result_cards"]),
+            3,
+        )
+        with closing(sqlite3.connect(self.db)) as connection:
+            phases = connection.execute(
+                """
+                SELECT json_extract(details_json,'$.phase')
+                FROM system_events
+                WHERE kind='beacon_conversation_goal'
+                  AND json_extract(details_json,'$.thread_id')=?
+                ORDER BY created_at
+                """,
+                (thread_id,),
+            ).fetchall()
+        self.assertEqual(phases, [("initial",), ("reconciled",)])
+
+    def test_reconciliation_preserves_an_explicit_no_search_instruction(
+        self,
+    ) -> None:
+        create_human_thread(
+            self.db,
+            subject="Do not search",
+            body="Tell me what Beacon does, but do not search my library.",
+        )
+        no_search_goal = AgentGoal(
+            request_summary="Explain Beacon without searching.",
+            requires_catalog_evidence=False,
+        )
+        adapter = FakeAdapter(
+            [
+                AgentAction(
+                    "search_catalog",
+                    queries=("Beacon",),
+                    media_type="all",
+                ),
+                AgentAction(
+                    "respond",
+                    message="I can explain without searching.",
+                ),
+            ],
+            goal=no_search_goal,
+            reconciled_goal=no_search_goal,
+        )
+
+        result = run_worker_once(
+            self.db,
+            model="fixture-model",
+            adapter=adapter,
+        )
+
+        self.assertEqual(result.state, "complete")
+        self.assertEqual(result.result_count, 0)
+        self.assertEqual(len(adapter.reconcile_calls), 1)
+        self.assertIn(
+            "not required",
+            adapter.calls[1]["observations"][0]["error"],
+        )
 
     def test_agent_can_retrieve_an_exact_filename_as_one_result(self) -> None:
         other = self.root / "other-waterfall.mov"

@@ -2,7 +2,7 @@
 
 Updated: 2026-07-24
 
-Status: Beacon 0.18.0/schema 15 is live.
+Status: Beacon 0.18.1/schema 15 is live.
 
 ## Purpose
 
@@ -35,7 +35,15 @@ Only loopback HTTP endpoints are accepted. Beacon no longer routes
 conversation through fixed search-trigger phrases. Qwen first formalizes the
 active human goal from conversation context: catalog need, count, media type,
 constraints, and whether the turn corrects an earlier misunderstanding. That
-model-authored goal remains stable during a bounded agent loop.
+model-authored goal begins as a working interpretation during the bounded
+agent loop.
+
+If a later Qwen tool decision conflicts with that working goal—for example,
+Qwen decides search is necessary after initially marking catalog evidence
+unnecessary—the worker asks Qwen to reconcile the goal against the active
+human request. Code no longer vetoes the later decision by itself. Explicit
+no-search instructions remain part of the reconciliation prompt. Initial and
+reconciled goals are durable `beacon_conversation_goal` audit events.
 
 Qwen can then choose among two read-only tools:
 

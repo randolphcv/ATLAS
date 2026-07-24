@@ -137,6 +137,29 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
   acceptance request. The acceptance thread was resolved afterward. Live
   schema 15 integrity is `ok` with zero foreign-key violations.
 
+### Beacon 0.18.1 goal-reconciliation hotfix
+
+- Qwen's initial request goal is now a revisable working interpretation. A
+  conflicting later Qwen tool decision triggers a focused Qwen reconciliation
+  against the active human request instead of a code veto.
+- The exact prior failure was reproduced: the initial Qwen pass marked the
+  typo-containing food request as not requiring catalog evidence, while the
+  later Qwen pass requested a food search. Reconciliation revised the goal to
+  catalog evidence required and returned 16 candidates.
+- Explicit no-search instructions remain protected: a regression test forces a
+  contradictory search action and verifies that Qwen reconciliation preserves
+  the no-search goal.
+- Initial and reconciled goals persist as `beacon_conversation_goal` events
+  with prior/current values and a changed flag.
+- All 89 tests pass. Packaged 0.18.1 smoke exited 0. The release is
+  417,618,345 bytes; the ZIP is 160,940,977 bytes. Executable SHA-256:
+  `2b9b7c178ca474ff58756b66f8b8aa877b0ffc3de8ee982f5a600bae6023baca`.
+  ZIP SHA-256:
+  `eb9719dc6cf11657d578bde19ccd6a7b13ee5f5f1b58a140af0e7cd2f8fe657a`.
+- The 0.18.1 desktop and watch worker are live on schema 15. A live
+  typo-containing three-food-image acceptance returned exactly three cards;
+  the acceptance thread was resolved afterward.
+
 ### Identity
 
 - Project: **ATLAS — Adaptive Topological Library & Archive System**
@@ -475,7 +498,7 @@ Next smallest step:
 
 - Last verified: 2026-07-24 on the Windows ATLAS host
 - Working branch: `C:\Development\ATLAS`, `main`
-- Current milestone: Beacon 0.18.0 Qwen-led conversation agent
+- Current milestone: Beacon 0.18.1 Qwen goal reconciliation
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
   242 unique identities were cataloged and the final one-item contextual retry
   completed. Beacon 0.14 adds independently scrollable Recents/Explorer Library
@@ -487,15 +510,14 @@ Next smallest step:
   contextual claims, and moves every unambiguous analyzed Inbox location.
   Beacon 0.16 adds schema-13 truthful durable pipeline stages and the
   persistent shell-level Beacon Desk conversation dock.
-- In progress: user-directed conversational search testing; Beacon 0.18.0 and
+- In progress: user-directed conversational search testing; Beacon 0.18.1 and
   its local watch worker are running.
 - Blocked: none for the current bounded release.
-- Files changed: Qwen-authored goal and tool loop, grounded final composition,
-  filename-series search evidence, structured retry/context sizing, agent
-  audit events, tests, packaging, and docs.
-- Tests/live checks: all 87 tests passed, including real ffprobe acceptance;
+- Files changed: revisable Qwen working goals, focused contradiction
+  reconciliation, durable goal audit events, tests, packaging, and docs.
+- Tests/live checks: all 89 tests passed, including real ffprobe acceptance;
   live schema 15 integrity is `ok` with zero foreign-key errors; the verified
-  pre-activation and older backups are retained. Packaged 0.18.0 isolated
+  pre-activation and older backups are retained. Packaged 0.18.1 isolated
   smoke exited 0 and the canonical capability audit found no blocked desktop
   capability files.
 - Unverified assumptions: post-restart Windows hostname, physical SMART state,
@@ -521,3 +543,7 @@ Next smallest step:
   filenames, no-search replies, ambiguous concepts, collections, follow-up
   context, and corrections; improve Qwen prompts/tool evidence from observed
   failures without restoring fixed conversational trigger logic.
+- Deferred until the new Personal-files analysis finishes: diagnose missing
+  HEIC support and Apple slow-motion video playback that freezes visually on
+  the first frame while audio continues. Do not interrupt the live analysis
+  for these media-runtime fixes.

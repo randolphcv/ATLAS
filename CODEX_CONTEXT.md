@@ -189,15 +189,18 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ### Current Beacon baseline (2026-07-24)
 
-- Beacon 0.18.0 is the current live schema-15 baseline on `main`.
+- Beacon 0.18.1 is the current live schema-15 baseline on `main`.
   The 500-item analysis job completed 500/500 before this release. A verified
   pre-activation online backup was created, a live Qwen agent request returned
   three distinct grounded images, and post-run integrity remained clean.
-- The verified 0.18.0 release executable is the running desktop app, and a
+- The verified 0.18.1 release executable is the running desktop app, and a
   local foreground watch worker automatically consumes queued Desk replies.
 - Beacon conversation is Qwen-led rather than phrase-routed. Qwen formalizes
   the active request, then controls bounded catalog search, refinement,
   inspection, clarification, selection, and final wording.
+- The initial Qwen goal is a revisable working interpretation. A conflicting
+  later Qwen tool decision triggers a focused Qwen reconciliation pass rather
+  than a code veto. Initial and revised goals are durably audited.
 - Code supplies read-only tools and enforces local inference, bounded
   resources, the model-authored count/media goal, and observed-ID grounding.
   It does not substitute fixed conversational answers or trigger logic.
@@ -234,6 +237,9 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
   page navigation; page or asset context is attached only explicitly.
 - Future thumbnail derivatives live under `J:\Beacon\Thumbnails` for the live
   catalog; C: remains the fast runtime/model/temp tier.
+- After the next Personal-files analysis completes, diagnose HEIC support and
+  Apple slow-motion playback that holds the first video frame while audio
+  continues. Do not interrupt that analysis for the media-runtime work.
 
 - Favor boring, recoverable engineering over clever shortcuts.
 - Use explicit schemas, migrations, typed boundaries, and structured logs.
