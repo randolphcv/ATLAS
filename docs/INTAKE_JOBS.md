@@ -10,6 +10,9 @@ deleting a source file.
 - The packaged app accepts intake roots only at or below `J:\Inbox`.
 - Directory links, file links, and Windows reparse points are excluded.
 - The New Intake dialog defaults to a representative 25-file scope.
+- Beacon 0.15 also offers **Choose files…** for an exact human-curated batch.
+  Every selected file must be a regular non-reparse file beneath the approved
+  Inbox root. Its selected count is stored as the explicit item limit.
 - Leaving the file limit blank is the explicit action that snapshots every
   discovered regular file.
 - A snapshot records each relative path, byte size, modified time, total byte

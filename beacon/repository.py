@@ -79,6 +79,7 @@ def _asset_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "location_count": row["location_count"],
         "thumbnail_path": row["thumbnail_path"],
         "editable_metadata": editable_metadata,
+        "analyzed": bool(row["analyzed"]) if "analyzed" in row.keys() else False,
         **media,
     }
 

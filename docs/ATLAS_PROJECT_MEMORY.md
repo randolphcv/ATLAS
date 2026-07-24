@@ -346,17 +346,21 @@ Next smallest step:
 - Last verified: 2026-07-24 on the Windows ATLAS host
 - Working branch/commit: `C:\Development\ATLAS`, branch
   `ops/overnight-250-tranche`
-- Current milestone: Beacon 0.14 Library navigation and local RAW previews
+- Current milestone: Beacon 0.15 selected intake, evidence-gated RAW analysis,
+  and complete analyzed-Inbox placement
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
   242 unique identities were cataloged and the final one-item contextual retry
   completed. Beacon 0.14 adds independently scrollable Recents/Explorer Library
   panels, catalog-backed folder navigation, file-type filters, brass/cyan
   analysis-state rails, Microsoft Raw Image Extension, and packaged
-  rawpy/Pillow camera-RAW derivatives.
-- In progress: user inspection of production metadata and Beacon 0.14 UI
+  rawpy/Pillow camera-RAW derivatives. Beacon 0.15 fixes analysis-state rails,
+  uses an explicit vertical Flickable for Library detail scrolling, adds exact
+  multi-file Inbox selection, requires a RAW visual derivative before
+  contextual claims, and moves every unambiguous analyzed Inbox location.
+- In progress: user inspection of production metadata and Beacon 0.15 UI
 - Blocked: no current blocker
-- Files changed: Library repository/controller/QML, RAW derivative generator,
-  packaged dependencies, tests, versioning, and docs
+- Files changed: Library repository/controller/QML, intake snapshots, local
+  analysis/placement, RAW derivative routing, tests, versioning, and docs
 - Tests/live checks: all 64 pre-Library tests passed and the focused 28-test
   catalog/desktop suite passed with two opt-in real-ffprobe tests skipped; a
   live CR3 produced a verified PNG derivative without changing source size,
@@ -367,5 +371,14 @@ Next smallest step:
   signing, production chord/key accuracy, acceptable stem storage policy,
   Essentia licensing, face-analysis policy, rights taxonomy, and canonical
   sidecar-versus-SQLite metadata policy
-- Next smallest step: Connor reviews Beacon 0.14 Library behavior and metadata,
-  then the branch can merge to `main`.
+- Live reconciliation: seven `.DS_Store` contextual results were rejected as
+  non-media OS metadata; the eight remaining analyzed duplicate video
+  locations were checksum-verified and moved from Inbox into their preserved
+  `J:\Projects\...\C3` hierarchy. No analyzed locations remain in Inbox.
+- Storage: C: had 52.4 GB free. Fixed consumers were approximately 7.8 GB music
+  runtime, 9.0 GB Ollama models/runtime, 4.7 GB release builds, and 1.0 GB
+  Whisper. Corpus analysis does not copy source media to C:; sampled frames are
+  temporary and cleaned. New live thumbnails route to
+  `J:\Beacon\Thumbnails`; Demucs stems remain disabled by default.
+- Next smallest step: Connor reviews Beacon 0.15 Library behavior and performs
+  a targeted RAW reanalysis before the branch merges to `main`.

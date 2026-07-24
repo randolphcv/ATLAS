@@ -10,6 +10,13 @@
 > already had results. The one truncated-Qwen-JSON failure passed on a bounded
 > one-item retry. The live schema-12 database remained healthy. Do not rerun
 > the obsolete procedure below; it remains only as historical evidence.
+>
+> Follow-up reconciliation on 2026-07-24 rejected seven `.DS_Store`
+> contextual results and checksum-verified the remaining eight analyzed
+> duplicate-video locations into their preserved
+> `J:\Projects\...\DAY 2\C100\C3` hierarchy. The only cataloged locations still
+> under Inbox are seven unanalyzed `.DS_Store` files; no analyzed location
+> remains there.
 
 ## Paste into a fresh Codex task
 

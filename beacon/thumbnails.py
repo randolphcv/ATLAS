@@ -41,6 +41,22 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _thumbnail_directory(db_path: Path) -> Path:
+    configured = os.environ.get("BEACON_THUMBNAIL_ROOT")
+    if configured:
+        return Path(configured)
+    program_data = Path(
+        os.environ.get("PROGRAMDATA", r"C:\ProgramData")
+    ) / "ATLAS" / "Beacon" / "beacon.db"
+    archive_root = Path(r"J:\Beacon\Thumbnails")
+    try:
+        if db_path.resolve() == program_data.resolve() and archive_root.parent.is_dir():
+            return archive_root
+    except OSError:
+        pass
+    return db_path.resolve().parent / "derivatives" / "thumbnails"
+
+
 def _media_kind(
     metadata: dict[str, Any] | None,
     source: Path | None = None,
@@ -190,7 +206,7 @@ def ensure_thumbnail(
 
     source = source.resolve(strict=True)
     source_stat = source.stat()
-    thumbnail_dir = db_path.resolve().parent / "derivatives" / "thumbnails"
+    thumbnail_dir = _thumbnail_directory(db_path)
     thumbnail_dir.mkdir(parents=True, exist_ok=True)
     destination = thumbnail_dir / f"{asset_id}.png"
     temporary = thumbnail_dir / f".{asset_id}.{uuid.uuid4().hex}.partial.png"

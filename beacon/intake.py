@@ -205,6 +205,104 @@ def create_intake_job(
     return job_id
 
 
+def create_selected_intake_job(
+    db_path: Path,
+    *,
+    selected_paths: Iterable[Path],
+    allowed_roots: Iterable[Path],
+    requested_by: str = "human",
+) -> str:
+    """Create an immutable intake snapshot from explicit regular files."""
+    allowed = tuple(Path(root).resolve(strict=True) for root in allowed_roots)
+    if not allowed:
+        raise ValueError("no approved intake roots are configured")
+    selected: dict[str, Path] = {}
+    for value in selected_paths:
+        path = Path(value).resolve(strict=True)
+        if not path.is_file() or _is_reparse_point(path):
+            raise ValueError(f"selected intake item must be a regular file: {path}")
+        matching = [root for root in allowed if _same_or_descendant(path, root)]
+        if not matching:
+            approved = ", ".join(str(root) for root in allowed)
+            raise ValueError(f"selected files must stay within: {approved}")
+        selected[os.path.normcase(str(path))] = path
+    if not selected:
+        raise ValueError("select at least one Inbox file")
+    matching_roots = [
+        root
+        for root in allowed
+        if all(_same_or_descendant(path, root) for path in selected.values())
+    ]
+    if not matching_roots:
+        raise ValueError("selected files must share one approved intake root")
+    source_root = max(matching_roots, key=lambda root: len(root.parts))
+    items = []
+    digest = hashlib.sha256()
+    total_bytes = 0
+    for path in sorted(selected.values(), key=lambda item: str(item).casefold()):
+        item_stat = path.stat()
+        relative = path.relative_to(source_root).as_posix()
+        items.append(
+            (path, relative, item_stat.st_size, item_stat.st_mtime_ns)
+        )
+        total_bytes += item_stat.st_size
+        digest.update(relative.encode("utf-8", errors="surrogatepass"))
+        digest.update(b"\0")
+        digest.update(str(item_stat.st_size).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(item_stat.st_mtime_ns).encode("ascii"))
+        digest.update(b"\n")
+
+    job_id = str(uuid.uuid4())
+    now = _utc_now()
+    with connect(db_path) as connection:
+        migrate(connection)
+        connection.execute(
+            """
+            INSERT INTO intake_jobs(
+                id,source_root,mode,state,snapshot_sha256,total_items,
+                total_bytes,item_limit,cancel_requested,requested_by,
+                created_at,updated_at
+            ) VALUES (?,?,'catalog_only','queued',?,?,?,?,0,?,?,?)
+            """,
+            (
+                job_id, str(source_root), digest.hexdigest(), len(items),
+                total_bytes, len(items), requested_by, now, now,
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO intake_items(
+                id,job_id,source_path,relative_path,size_bytes,modified_ns,
+                state,attempts
+            ) VALUES (?,?,?,?,?,?,'pending',0)
+            """,
+            (
+                (
+                    str(uuid.uuid5(uuid.UUID(job_id), relative)),
+                    job_id, str(path), relative, size_bytes, modified_ns,
+                )
+                for path, relative, size_bytes, modified_ns in items
+            ),
+        )
+        record_event(
+            connection,
+            kind="intake_job",
+            state="queued",
+            message=f"Created selected-file intake for {len(items):,} files",
+            details={
+                "job_id": job_id,
+                "source_root": str(source_root),
+                "snapshot_sha256": digest.hexdigest(),
+                "total_items": len(items),
+                "total_bytes": total_bytes,
+                "item_limit": len(items),
+                "selection": "explicit_files",
+            },
+        )
+    return job_id
+
+
 def _counts(connection: Any, job_id: str) -> dict[str, int]:
     rows = connection.execute(
         """

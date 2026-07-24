@@ -5,7 +5,7 @@ observes and catalogs files without owning or changing originals.
 
 ## Current application
 
-Beacon 0.14.0 is a native Windows desktop application. It includes:
+Beacon 0.15.0 is a native Windows desktop application. It includes:
 
 - the verified Phase 1 read-only catalog;
 - a branded Qt Quick desktop shell with no embedded browser;
@@ -15,6 +15,8 @@ Beacon 0.14.0 is a native Windows desktop application. It includes:
 - verified image, video, and audio thumbnails stored as separate derivatives;
 - local CR2, CR3, and common camera-RAW preview derivatives without changing
   originals;
+- visual-evidence gating that refuses contextual RAW analysis when a verified
+  local preview cannot be generated;
 - a Finder-style Space preview for images, audio, video, and bounded read-only
   plain-text inspection, with a safe metadata fallback for binary formats;
 - a persistent application-level Space shortcut and a larger selected-asset
@@ -32,6 +34,7 @@ Beacon 0.14.0 is a native Windows desktop application. It includes:
 - durable recursive **Archive Intake** jobs on Overview with explicit
   snapshots, live progress, cancel-between-files, resume, retry, and
   interrupted-session recovery;
+- native multi-file selection for exact human-curated Inbox batches;
 - bounded representative intake scopes by default, with an explicit blank
   limit required to snapshot every discovered file;
 - analysis-complete placement for files whose existing Inbox hierarchy gives

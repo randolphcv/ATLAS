@@ -41,6 +41,7 @@ from .metadata import empty_metadata, save_asset_metadata
 from .intake import (
     IntakeRunResult,
     create_intake_job,
+    create_selected_intake_job,
     intake_job_detail,
     list_intake_jobs,
     pause_intake_job,
@@ -198,6 +199,34 @@ class _IntakeCreateWorker(QRunnable):
             self.signals.succeeded.emit(job_id)
         except Exception as error:
             LOGGER.exception("could not create intake job")
+            self.signals.failed.emit(str(error))
+
+
+class _SelectedIntakeCreateWorker(QRunnable):
+    def __init__(
+        self,
+        db_path: Path,
+        selected_paths: tuple[Path, ...],
+        allowed_roots: tuple[Path, ...],
+    ) -> None:
+        super().__init__()
+        self.db_path = db_path
+        self.selected_paths = selected_paths
+        self.allowed_roots = allowed_roots
+        self.signals = _IntakeCreateSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            job_id = create_selected_intake_job(
+                self.db_path,
+                selected_paths=self.selected_paths,
+                allowed_roots=self.allowed_roots,
+                requested_by="human selected batch",
+            )
+            self.signals.succeeded.emit(job_id)
+        except Exception as error:
+            LOGGER.exception("could not create selected-file intake job")
             self.signals.failed.emit(str(error))
 
 
@@ -870,6 +899,39 @@ class DesktopController(QObject):
             Path(source_root.strip()),
             self.settings.allowed_intake_roots,
             item_limit,
+        )
+        self._workers.append(worker)
+        worker.signals.succeeded.connect(
+            lambda job_id, current=worker: self._intake_created(current, job_id)
+        )
+        worker.signals.failed.connect(
+            lambda message, current=worker: self._intake_failed(current, message)
+        )
+        self._thread_pool.start(worker)
+
+    @Slot("QVariantList")
+    def createSelectedIntakeJob(self, selected_urls: list[object]) -> None:
+        if self._busy:
+            return
+        paths = []
+        for value in selected_urls:
+            url = value if isinstance(value, QUrl) else QUrl(str(value))
+            local = url.toLocalFile()
+            if local:
+                paths.append(Path(local))
+        if not paths:
+            self._set_status("Select at least one Inbox file.", "error")
+            return
+        self._busy = True
+        self.busyChanged.emit()
+        self._set_status(
+            f"Building a snapshot of {len(paths):,} selected files…",
+            "working",
+        )
+        worker = _SelectedIntakeCreateWorker(
+            self.settings.db_path,
+            tuple(paths),
+            self.settings.allowed_intake_roots,
         )
         self._workers.append(worker)
         worker.signals.succeeded.connect(

@@ -113,6 +113,7 @@ class AnalysisResultTests(unittest.TestCase):
         found = search_assets(self.db, query="quiet archive")
         self.assertEqual(found["total"], 1)
         self.assertEqual(found["items"][0]["id"], self.asset.asset_id)
+        self.assertTrue(found["items"][0]["analyzed"])
 
         connection = sqlite3.connect(self.db)
         try:

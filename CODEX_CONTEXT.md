@@ -164,7 +164,7 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ### Current Beacon baseline (2026-07-24)
 
-- Beacon 0.14.0 is the current packaged candidate on branch
+- Beacon 0.15.0 is the current packaged candidate on branch
   `ops/overnight-250-tranche`.
 - The bounded 250-file production tranche completed intake and contextual
   analysis locally; the one malformed Qwen JSON response passed on a one-item
@@ -174,6 +174,10 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 - RAW previews are disposable checksum-bound PNG derivatives. Microsoft Raw
   Image Extension and Beacon's packaged rawpy/Pillow fallback are installed;
   originals are never decoded in place or rewritten.
+- Contextual analysis may describe a RAW photo only when the verified local
+  derivative is supplied to the model. Missing visual evidence is a hard stop.
+- Future thumbnail derivatives live under `J:\Beacon\Thumbnails` for the live
+  catalog; C: remains the fast runtime/model/temp tier.
 
 - Favor boring, recoverable engineering over clever shortcuts.
 - Use explicit schemas, migrations, typed boundaries, and structured logs.

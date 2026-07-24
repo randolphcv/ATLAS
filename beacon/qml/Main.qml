@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtMultimedia
+import QtQuick.Dialogs
 
 ApplicationWindow {
     id: root
@@ -655,6 +656,38 @@ ApplicationWindow {
                     lineHeight: 1.4
                     wrapMode: Text.WordWrap
                 }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 62
+                    radius: 7
+                    color: root.ink
+                    border.color: root.line
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text {
+                                text: "MANUAL BATCH"
+                                color: root.brass
+                                font.pixelSize: 8
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 1.0
+                            }
+                            Text {
+                                text: "Choose exactly which Inbox files belong in this job."
+                                color: root.muted
+                                font.pixelSize: 10
+                            }
+                        }
+                        PrimaryButton {
+                            text: "Choose files…"
+                            quiet: true
+                            onClicked: selectedIntakeFiles.open()
+                        }
+                    }
+                }
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 5
@@ -800,6 +833,17 @@ ApplicationWindow {
                     }
                 }
             }
+        }
+    }
+
+    FileDialog {
+        id: selectedIntakeFiles
+        title: "Choose files for this Beacon intake"
+        fileMode: FileDialog.OpenFiles
+        currentFolder: "file:///J:/Inbox"
+        onAccepted: {
+            backend.createSelectedIntakeJob(selectedFiles)
+            newIntakeDialog.close()
         }
     }
 
@@ -2994,14 +3038,21 @@ ApplicationWindow {
                                 radius: 10
                                 color: root.panel
                                 border.color: root.line
-                                ScrollView {
+                                Flickable {
                                     id: assetDetailScroll
                                     anchors.fill: parent
                                     anchors.margins: 1
                                     clip: true
+                                    property real availableWidth: width - 12
                                     contentWidth: availableWidth
-                                    ScrollBar.vertical.policy: ScrollBar.AlwaysOn
+                                    contentHeight: assetDetailColumn.implicitHeight
+                                    boundsBehavior: Flickable.StopAtBounds
+                                    flickableDirection: Flickable.VerticalFlick
+                                    ScrollBar.vertical: ScrollBar {
+                                        policy: ScrollBar.AlwaysOn
+                                    }
                                     ColumnLayout {
+                                        id: assetDetailColumn
                                         width: assetDetailScroll.availableWidth
                                         spacing: 0
                                         visible: backend.selectedAsset.id !== undefined

@@ -24,6 +24,7 @@ from .desk import seed_threads
 from .managed_moves import commit_analyzed_file, placement_needs_clarification
 from .metadata import apply_analysis_metadata, apply_analysis_organization_path
 from .music_analysis import analyze_asset_music
+from .thumbnails import RAW_EXTENSIONS, ensure_thumbnail
 from .transcripts import get_asset_transcript, save_asset_transcript
 
 DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
@@ -132,14 +133,20 @@ def local_runtime_status(endpoint: str = DEFAULT_ENDPOINT) -> LocalRuntimeStatus
 def analysis_scope_preview(db_path: Path, *, include_analyzed: bool = False) -> dict[str, Any]:
     with connect(db_path) as connection:
         migrate(connection)
-        where = "" if include_analyzed else """
-            WHERE NOT EXISTS (
+        where = """
+            WHERE lower(locations.path) NOT LIKE '%.ds_store'
+              AND lower(locations.path) NOT LIKE '%\\desktop.ini'
+              AND lower(locations.path) NOT LIKE '%\\thumbs.db'
+        """
+        if not include_analyzed:
+            where += """
+              AND NOT EXISTS (
                 SELECT 1 FROM analysis_results result
                 WHERE result.asset_id = assets.id
                   AND result.analysis_kind = 'contextual_metadata'
                   AND result.review_state IN ('candidate', 'approved')
             )
-        """
+            """
         rows = connection.execute(
             f"""
             SELECT assets.id, assets.sha256, assets.size_bytes,
@@ -159,7 +166,11 @@ def analysis_scope_preview(db_path: Path, *, include_analyzed: bool = False) -> 
             for stream in metadata.get("streams", [])
             if isinstance(stream, dict)
         }
-        if "video" in kinds or metadata.get("kind") == "image":
+        if (
+            "video" in kinds
+            or metadata.get("kind") == "image"
+            or Path(row["source_path"]).suffix.lower() in RAW_EXTENSIONS
+        ):
             visual += 1
         elif "audio" in kinds:
             audio += 1
@@ -197,12 +208,15 @@ def create_local_analysis_job(
             """
             SELECT assets.id, assets.sha256, MIN(locations.path) AS source_path
             FROM assets JOIN locations ON locations.asset_id = assets.id
-            WHERE ? OR NOT EXISTS (
+            WHERE lower(locations.path) NOT LIKE '%.ds_store'
+              AND lower(locations.path) NOT LIKE '%\\desktop.ini'
+              AND lower(locations.path) NOT LIKE '%\\thumbs.db'
+              AND (? OR NOT EXISTS (
                 SELECT 1 FROM analysis_results result
                 WHERE result.asset_id = assets.id
                   AND result.analysis_kind = 'contextual_metadata'
                   AND result.review_state IN ('candidate', 'approved')
-            )
+              ))
             GROUP BY assets.id ORDER BY source_path COLLATE NOCASE
             """,
             (int(include_analyzed),),
@@ -388,7 +402,9 @@ def _default_analyzer(
         "shot size, angle, composition, camera movement, copy space, mood, concepts, "
         "speech topics, sound sources, music character, and likely B-roll uses. "
         "Do not identify an unnamed person, invent dialogue, rights, relationships, "
-        "or events. Distinguish observation from uncertainty. A managed archive move "
+        "or events. Make visual claims only from supplied images; if no image is "
+        "supplied, explicitly limit the description to technical and path context. "
+        "Distinguish observation from uncertainty. A managed archive move "
         "policy already exists, so provide a useful organization suggestion without "
         "asking for approval; analysis itself must never move or alter an original."
     )
@@ -434,6 +450,7 @@ def _default_analyzer(
         ],
     }
     media_context, image_paths, temporary_root = _prepare_media_context(asset)
+    media_context["visual_evidence_supplied"] = bool(image_paths)
     content = _canonical_json(
         {
             "source_filename": Path(asset["source_path"]).name,
@@ -767,6 +784,7 @@ def run_local_analysis_job(
             ).fetchone()
             if asset is None:
                 raise ValueError(f"catalog checksum changed for {item['asset_id']}")
+            asset = dict(asset)
             connection.execute(
                 "UPDATE local_analysis_items SET state='running',attempts=attempts+1,started_at=?,error=NULL WHERE id=?",
                 (_utc_now(), item["id"]),
@@ -781,6 +799,26 @@ def run_local_analysis_job(
                 raise FileNotFoundError(str(source))
             if sha256_file(source) != item["source_sha256"]:
                 raise ValueError("source bytes changed since cataloging")
+            if (
+                source.suffix.lower() in RAW_EXTENSIONS
+                and not asset.get("thumbnail_path")
+            ):
+                generated = ensure_thumbnail(
+                    source,
+                    db_path,
+                    asset_id=str(item["asset_id"]),
+                    source_sha256=str(item["source_sha256"]),
+                    media_metadata=json.loads(
+                        asset.get("media_metadata_json") or "{}"
+                    ),
+                )
+                if generated is None:
+                    raise RuntimeError(
+                        "RAW visual derivative could not be generated; "
+                        "contextual analysis was stopped to prevent guessing"
+                    )
+                asset["thumbnail_path"] = generated.path
+                asset["thumbnail_sha256"] = generated.sha256
             result = analyzer(
                 job["endpoint"],
                 job["model"],
@@ -933,65 +971,62 @@ def run_local_analysis_job(
                 run_id=run_id,
             )
             with connect(db_path) as connection:
-                location = connection.execute(
+                locations = connection.execute(
                     """
                     SELECT path AS source_path FROM locations
                     WHERE asset_id=?
                     ORDER BY
-                      CASE WHEN path=? THEN 0
-                           WHEN path LIKE ? THEN 1
-                           ELSE 2 END,
+                      CASE WHEN path LIKE ? THEN 0 ELSE 1 END,
                       path COLLATE NOCASE
-                    LIMIT 1
                     """,
                     (
                         candidate["asset_id"],
-                        next(
-                            row["source_path"]
-                            for row in completed_rows
-                            if row["asset_id"] == candidate["asset_id"]
-                        ),
                         r"J:\Inbox\%",
                     ),
-                ).fetchone()
-            if location is None:
+                ).fetchall()
+            if not locations:
                 raise RuntimeError("Analyzed source location could not be recovered.")
-            moved, placement_reason = commit_analyzed_file(
-                db_path,
-                asset_id=candidate["asset_id"],
-                source_path=Path(location["source_path"]),
-                confidence=float(candidate["confidence"]),
-                analysis_run_id=run_id,
-            )
-            if moved is None and placement_needs_clarification(
-                Path(location["source_path"])
-            ):
-                seed_threads(
+            last_move = None
+            for location in locations:
+                source_path = Path(location["source_path"])
+                if not str(source_path).lower().startswith("j:\\inbox\\"):
+                    continue
+                moved, placement_reason = commit_analyzed_file(
                     db_path,
-                    [
-                        {
-                            "seed_key": (
-                                f"analysis-placement:{run_id}:"
-                                f"{candidate['asset_id']}"
-                            ),
-                            "subject": "Where should this analyzed file live?",
-                            "body": (
-                                f"Beacon completed analysis but could not infer a "
-                                f"reliable final home for {location['source_path']}. "
-                                f"{placement_reason}"
-                            ),
-                            "kind": "clarification",
-                            "priority": "normal",
-                            "requires_approval": False,
-                            "asset_id": candidate["asset_id"],
-                        }
-                    ],
+                    asset_id=candidate["asset_id"],
+                    source_path=source_path,
+                    confidence=float(candidate["confidence"]),
+                    analysis_run_id=run_id,
                 )
-            elif moved is not None:
+                if moved is None and placement_needs_clarification(source_path):
+                    seed_threads(
+                        db_path,
+                        [
+                            {
+                                "seed_key": (
+                                    f"analysis-placement:{run_id}:"
+                                    f"{candidate['asset_id']}:{source_path}"
+                                ),
+                                "subject": "Where should this analyzed file live?",
+                                "body": (
+                                    "Beacon completed analysis but could not infer "
+                                    f"a reliable final home for {source_path}. "
+                                    f"{placement_reason}"
+                                ),
+                                "kind": "clarification",
+                                "priority": "normal",
+                                "requires_approval": False,
+                                "asset_id": candidate["asset_id"],
+                            }
+                        ],
+                    )
+                elif moved is not None:
+                    last_move = moved
+            if last_move is not None:
                 apply_analysis_organization_path(
                     db_path,
                     candidate["asset_id"],
-                    Path(moved.destination_path).parent,
+                    Path(last_move.destination_path).parent,
                     run_id=run_id,
                 )
     state = "complete" if counts["failed"] == 0 else ("partial" if counts["complete"] else "failed")

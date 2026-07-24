@@ -8,6 +8,7 @@ from pathlib import Path
 from beacon.catalog import CatalogResult, catalog_file
 from beacon.intake import (
     create_intake_job,
+    create_selected_intake_job,
     intake_job_detail,
     list_intake_jobs,
     pause_intake_job,
@@ -71,6 +72,39 @@ class IntakeJobTests(unittest.TestCase):
             ]
         connection.close()
         self.assertEqual(paths, ["nested/a-first.txt", "nested/b-first.txt"])
+
+    def test_selected_file_snapshot_contains_only_explicit_choices(self) -> None:
+        first = self._write("first.txt", b"first")
+        selected = self._write("nested/selected.txt", b"selected")
+        self._write("nested/not-selected.txt", b"no")
+
+        job_id = create_selected_intake_job(
+            self.db,
+            selected_paths=(selected, first),
+            allowed_roots=(self.inbox,),
+        )
+        detail = intake_job_detail(self.db, job_id)
+
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertEqual(detail["mode"], "catalog_only")
+        self.assertEqual(detail["item_limit"], 2)
+        self.assertEqual(detail["total_items"], 2)
+        connection = sqlite3.connect(self.db)
+        try:
+            paths = [
+                row[0]
+                for row in connection.execute(
+                    """
+                    SELECT relative_path FROM intake_items
+                    WHERE job_id=? ORDER BY relative_path
+                    """,
+                    (job_id,),
+                )
+            ]
+        finally:
+            connection.close()
+        self.assertEqual(paths, ["first.txt", "nested/selected.txt"])
 
     def test_job_catalogs_recursively_and_is_restart_idempotent(self) -> None:
         first = self._write("first.txt", b"first")

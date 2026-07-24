@@ -19,7 +19,7 @@ ATLAS is a modular, long-term media storage and intelligence platform designed t
 The Windows hostname was still `DESKTOP-8B4OJIR` when verified on 2026-07-23.
 Connor intends to rename it to `Ultron`, effective only after a later restart.
 
-> Current implementation note (2026-07-24): Beacon 0.14.0 is a packaged native
+> Current implementation note (2026-07-24): Beacon 0.15.0 is a packaged native
 > Windows app, not a browser-first dashboard. Schema 12 adds persistent,
 > checksum-bound full transcripts to the existing recursive
 > Archive Intake snapshots, durable item-level progress, cancel-between-files,
@@ -36,11 +36,16 @@ Connor intends to rename it to `Ultron`, effective only after a later restart.
 > cataloged-versus-analyzed rails. Microsoft Raw Image Extension plus Beacon's
 > packaged rawpy/Pillow fallback provides non-destructive CR2, CR3, and common
 > camera-RAW previews.
+> RAW contextual analysis now requires a verified local visual derivative;
+> Beacon will fail safely rather than infer image contents from a filename.
+> New Intake can create either a bounded recursive snapshot or an exact
+> human-selected multi-file batch. Analysis placement commits every
+> unambiguous Inbox location for a content identity, not only the first copy.
 
 ## Immediate Next Task
 
-Review and merge Beacon 0.14 Library navigation and RAW-preview support after
-the bounded 250-file production tranche.
+Review and merge Beacon 0.15 after verifying right-panel scrolling, status
+rails, selected-file intake, and a targeted RAW reanalysis.
 
 ---
 
