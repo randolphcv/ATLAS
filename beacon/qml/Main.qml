@@ -198,6 +198,93 @@ ApplicationWindow {
         }
     }
 
+    component GroundedResultCard: Rectangle {
+        id: resultCard
+        property string assetId
+        property string displayTitle
+        property string filename
+        property string path
+        property string atlasUri
+        property string reason
+        property string availabilityLabel
+        property string sizeLabel
+        property string thumbnailUrl
+        property bool available: false
+        implicitHeight: 78
+        radius: 7
+        color: root.shell
+        border.color: root.atlas
+        RowLayout {
+            anchors.fill: parent
+            anchors.margins: 9
+            spacing: 10
+            Rectangle {
+                Layout.preferredWidth: 54
+                Layout.fillHeight: true
+                radius: 5
+                color: root.ink
+                border.color: root.line
+                clip: true
+                Image {
+                    anchors.fill: parent
+                    source: resultCard.thumbnailUrl
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    visible: resultCard.thumbnailUrl.length > 0
+                }
+                Text {
+                    anchors.centerIn: parent
+                    visible: resultCard.thumbnailUrl.length === 0
+                    text: "ATLAS"
+                    color: root.brass
+                    font.family: "Cascadia Mono"
+                    font.pixelSize: 7
+                    font.weight: Font.DemiBold
+                }
+            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 1
+                Text {
+                    Layout.fillWidth: true
+                    text: resultCard.displayTitle || resultCard.filename
+                    color: root.bone
+                    font.pixelSize: 10
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: resultCard.path
+                    color: root.muted
+                    font.family: "Cascadia Mono"
+                    font.pixelSize: 8
+                    elide: Text.ElideMiddle
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: resultCard.reason
+                    color: root.atlasBright
+                    font.pixelSize: 8
+                    elide: Text.ElideRight
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: resultCard.atlasUri + "  ·  " + resultCard.sizeLabel
+                    color: resultCard.available ? root.jade : root.brass
+                    font.family: "Cascadia Mono"
+                    font.pixelSize: 7
+                    elide: Text.ElideRight
+                }
+            }
+            PrimaryButton {
+                text: "Inspect"
+                quiet: true
+                onClicked: backend.inspectBeaconResult(resultCard.assetId)
+            }
+        }
+    }
+
     component IntakeProgress: Rectangle {
         id: intakeProgress
         property real value: 0
@@ -2533,14 +2620,16 @@ ApplicationWindow {
                                                             required property string authorLabel
                                                             required property string body
                                                             required property string timeLabel
+                                                            required property var resultCards
                                                             width: ListView.view.width
-                                                            height: messageBody.implicitHeight + 48
+                                                            height: messageColumn.implicitHeight + 20
                                                             radius: 7
                                                             color: author === "human"
                                                                    ? Qt.rgba(0.29, 0.55, 0.57, 0.14)
                                                                    : root.panel
                                                             border.color: root.line
                                                             ColumnLayout {
+                                                                id: messageColumn
                                                                 anchors.fill: parent
                                                                 anchors.margins: 10
                                                                 spacing: 4
@@ -2569,6 +2658,23 @@ ApplicationWindow {
                                                                     font.pixelSize: 11
                                                                     lineHeight: 1.35
                                                                     wrapMode: Text.WordWrap
+                                                                }
+                                                                Repeater {
+                                                                    model: resultCards || []
+                                                                    delegate: GroundedResultCard {
+                                                                        required property var modelData
+                                                                        Layout.fillWidth: true
+                                                                        assetId: modelData.assetId
+                                                                        displayTitle: modelData.displayTitle
+                                                                        filename: modelData.filename
+                                                                        path: modelData.path
+                                                                        atlasUri: modelData.atlasUri
+                                                                        reason: modelData.reason
+                                                                        availabilityLabel: modelData.availabilityLabel
+                                                                        sizeLabel: modelData.sizeLabel
+                                                                        thumbnailUrl: modelData.thumbnailUrl
+                                                                        available: modelData.available
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -4097,13 +4203,23 @@ ApplicationWindow {
                 }
                 Text {
                     visible: root.beaconDockExpanded
-                    text: backend.analysisReadiness.runtimeAvailable
-                          ? "LOCAL MODEL READY" : "LOCAL MODEL OFFLINE"
-                    color: backend.analysisReadiness.runtimeAvailable
+                    text: backend.beaconDeskSummary.workerStateLabel
+                          || "LOCAL MODEL OFFLINE"
+                    color: backend.beaconDeskSummary.workerCanRun
                            ? root.jade : root.brass
                     font.family: "Cascadia Mono"
                     font.pixelSize: 8
                     font.weight: Font.DemiBold
+                }
+                PrimaryButton {
+                    visible: root.beaconDockExpanded
+                    text: backend.conversationWorkerRunning
+                          ? "Beacon working…" : "Run Beacon"
+                    quiet: true
+                    enabled: backend.beaconDeskSummary.workerCanRun === true
+                    onClicked: backend.runBeaconConversationWorker(
+                        backend.analysisReadiness.defaultModel || ""
+                    )
                 }
                 PrimaryButton {
                     visible: root.beaconDockExpanded
@@ -4145,6 +4261,7 @@ ApplicationWindow {
                             required property string authorLabel
                             required property string body
                             required property string timeLabel
+                            required property var resultCards
                             width: ListView.view.width
                             spacing: 2
                             RowLayout {
@@ -4170,6 +4287,23 @@ ApplicationWindow {
                                 font.pixelSize: 10
                                 lineHeight: 1.25
                                 wrapMode: Text.WordWrap
+                            }
+                            Repeater {
+                                model: resultCards || []
+                                delegate: GroundedResultCard {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    assetId: modelData.assetId
+                                    displayTitle: modelData.displayTitle
+                                    filename: modelData.filename
+                                    path: modelData.path
+                                    atlasUri: modelData.atlasUri
+                                    reason: modelData.reason
+                                    availabilityLabel: modelData.availabilityLabel
+                                    sizeLabel: modelData.sizeLabel
+                                    thumbnailUrl: modelData.thumbnailUrl
+                                    available: modelData.available
+                                }
                             }
                             Rectangle {
                                 Layout.fillWidth: true

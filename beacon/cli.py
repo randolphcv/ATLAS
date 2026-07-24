@@ -4,11 +4,13 @@ import argparse
 import json
 import logging
 import sqlite3
+import time
 from pathlib import Path
 from typing import Sequence
 
 from .analysis import import_analysis_manifest, load_analysis_manifest
 from .catalog import catalog_file, scan_directory, watch_directory
+from .conversation_worker import run_worker_once
 from .database import connect, migrate
 from .identity import atlas_uri
 
@@ -53,6 +55,19 @@ def _parser() -> argparse.ArgumentParser:
     analysis_import = commands.add_parser("analysis-import")
     analysis_import.add_argument("manifest", type=Path)
     analysis_import.add_argument("--db", type=Path, required=True)
+
+    conversation = commands.add_parser("conversation-worker")
+    conversation.add_argument("--db", type=Path, required=True)
+    conversation.add_argument(
+        "--endpoint", default="http://127.0.0.1:11434"
+    )
+    conversation.add_argument("--model", default="qwen2.5vl:7b")
+    conversation.add_argument(
+        "--watch",
+        action="store_true",
+        help="wait for queued conversations and pause during catalog analysis",
+    )
+    conversation.add_argument("--poll-seconds", type=float, default=5.0)
     return parser
 
 
@@ -117,6 +132,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 0
+    if args.command == "conversation-worker":
+        poll_seconds = max(1.0, min(float(args.poll_seconds), 60.0))
+        try:
+            while True:
+                result = run_worker_once(
+                    args.db,
+                    endpoint=args.endpoint,
+                    model=args.model,
+                )
+                print(json.dumps(result.__dict__, indent=2))
+                if not args.watch:
+                    return 1 if result.state == "failed" else 0
+                time.sleep(poll_seconds)
+        except KeyboardInterrupt:
+            print("conversation worker stopped")
+            return 130
 
     with connect(args.db) as connection:
         migrate(connection)

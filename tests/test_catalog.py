@@ -13,9 +13,10 @@ from unittest.mock import patch
 
 from beacon.catalog import catalog_file, scan_directory, sha256_file, watch_directory
 from beacon.media import probe
-from beacon.repository import asset_detail
+from beacon.repository import asset_detail, search_assets
 from beacon.stability import wait_until_stable
 from beacon.thumbnails import ensure_thumbnail
+from beacon.transcripts import save_asset_transcript
 
 
 class CatalogTests(unittest.TestCase):
@@ -63,6 +64,29 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM assets").fetchone()[0], 1)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM locations").fetchone()[0], 2)
         connection.close()
+
+    def test_catalog_search_finds_checksum_bound_transcript_text(self) -> None:
+        source = self._write("interview.wav", b"synthetic interview")
+        cataloged = catalog_file(
+            source,
+            self.db,
+            0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        save_asset_transcript(
+            self.db,
+            asset_id=cataloged.asset_id,
+            source_sha256=cataloged.sha256,
+            text="Anna discusses the northern lights during the retreat.",
+            language="en",
+            language_probability=0.99,
+        )
+
+        results = search_assets(self.db, query="northern lights")
+
+        self.assertEqual(results["total"], 1)
+        self.assertEqual(results["items"][0]["id"], cataloged.asset_id)
 
     def test_stability_resets_when_signature_changes(self) -> None:
         source = self._write("growing.bin", b"a")

@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 
 @dataclass(frozen=True)
@@ -186,6 +186,37 @@ def migrate(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_beacon_messages_thread_created
             ON beacon_messages(thread_id, created_at);
+        CREATE TABLE IF NOT EXISTS beacon_worker_runs (
+            id TEXT PRIMARY KEY,
+            thread_id TEXT NOT NULL
+                REFERENCES beacon_threads(id) ON DELETE CASCADE,
+            worker_id TEXT NOT NULL,
+            endpoint TEXT NOT NULL,
+            model TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN (
+                'running', 'complete', 'failed', 'expired'
+            )),
+            claimed_at TEXT NOT NULL,
+            lease_expires_at TEXT NOT NULL,
+            completed_at TEXT,
+            error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_beacon_worker_runs_thread_state
+            ON beacon_worker_runs(thread_id, state, claimed_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_beacon_worker_runs_lease
+            ON beacon_worker_runs(state, lease_expires_at);
+        CREATE TABLE IF NOT EXISTS beacon_message_assets (
+            message_id TEXT NOT NULL
+                REFERENCES beacon_messages(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            rank INTEGER NOT NULL CHECK(rank >= 1),
+            match_reason TEXT NOT NULL,
+            matched_path TEXT,
+            PRIMARY KEY(message_id, asset_id),
+            UNIQUE(message_id, rank)
+        );
+        CREATE INDEX IF NOT EXISTS idx_beacon_message_assets_asset
+            ON beacon_message_assets(asset_id);
         CREATE TABLE IF NOT EXISTS beacon_policies (
             key TEXT PRIMARY KEY,
             value_json TEXT NOT NULL,

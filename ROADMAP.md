@@ -68,6 +68,29 @@
 - separate explicit resolution with no conversational file-operation authority
 - initial pilot blockers and optional enrichment questions kept distinct
 
+## Implemented on worker_build — grounded Beacon conversation worker
+
+- durable exactly-once thread leases and worker run history
+- loopback-only replaceable local-model adapter
+- automatic pause while catalog analysis uses the inference lane
+- bounded read-only catalog search with no generic filesystem tool
+- message-linked grounded asset cards with Library inspection
+- explicit native one-thread run and low-frequency foreground watch modes
+
+## Next — near-duplicate and capture-series intelligence
+
+- retain SHA-256 as the exact-duplicate authority
+- generate checksum-bound perceptual image fingerprints from verified
+  derivatives
+- use capture time, camera/lens metadata, dimensions, and folder adjacency to
+  propose burst/series candidate groups
+- compare only shortlisted neighbors with a local visual embedding or Qwen,
+  rather than asking the model to compare every image with the preceding file
+- store scored similarity edges and human-correctable series membership
+- let analysis reuse shared series context while preserving distinct originals
+- expose “representative,” “alternate angle,” and “near duplicate” as
+  suggestions, never automatic deletion or identity merging
+
 ## Completed — editable context and first managed move
 
 - revisioned, searchable, human-editable contextual metadata in native Library

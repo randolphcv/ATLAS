@@ -27,6 +27,7 @@ from .database import (
     list_backups,
     migrate,
 )
+from .conversation_worker import WorkerCycleResult, run_worker_once
 from .desk import (
     create_human_thread,
     desk_summary,
@@ -333,6 +334,34 @@ class _LocalAnalysisWorker(QRunnable):
             self.signals.failed.emit(str(error))
 
 
+class _ConversationWorkerSignals(QObject):
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+
+class _ConversationWorker(QRunnable):
+    def __init__(self, db_path: Path, endpoint: str, model: str) -> None:
+        super().__init__()
+        self.db_path = db_path
+        self.endpoint = endpoint
+        self.model = model
+        self.signals = _ConversationWorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            self.signals.succeeded.emit(
+                run_worker_once(
+                    self.db_path,
+                    endpoint=self.endpoint,
+                    model=self.model,
+                )
+            )
+        except Exception as error:
+            LOGGER.exception("Beacon conversation worker failed")
+            self.signals.failed.emit(str(error))
+
+
 class DesktopController(QObject):
     summaryChanged = Signal()
     databaseHealthChanged = Signal()
@@ -349,6 +378,7 @@ class DesktopController(QObject):
     selectedIntakeJobChanged = Signal()
     analysisReadinessChanged = Signal()
     localAnalysisRunningChanged = Signal()
+    conversationWorkerRunningChanged = Signal()
 
     def __init__(self, settings: DesktopSettings) -> None:
         super().__init__()
@@ -371,6 +401,7 @@ class DesktopController(QObject):
         self._selected_intake_job: dict[str, Any] = {}
         self._analysis_readiness: dict[str, Any] = {}
         self._active_local_analysis_job_id = ""
+        self._conversation_worker_running = False
         self._last_catalog_signature: tuple[int, int, int, int] | None = None
         self._workers: list[QRunnable] = []
         self._thread_pool = QThreadPool(self)
@@ -433,6 +464,7 @@ class DesktopController(QObject):
                 "authorLabel",
                 "body",
                 "timeLabel",
+                "resultCards",
             )
         )
         self._intake_jobs = DictListModel(
@@ -537,6 +569,10 @@ class DesktopController(QObject):
     @Property(bool, notify=localAnalysisRunningChanged)
     def localAnalysisRunning(self) -> bool:
         return bool(self._active_local_analysis_job_id)
+
+    @Property(bool, notify=conversationWorkerRunningChanged)
+    def conversationWorkerRunning(self) -> bool:
+        return self._conversation_worker_running
 
     @Property(str, notify=currentViewChanged)
     def currentView(self) -> str:
@@ -1326,6 +1362,23 @@ class DesktopController(QObject):
             "awaitingLabel": f"{summary['awaiting_human']:,}",
             "queuedLabel": f"{summary['queued_for_beacon']:,}",
             "connectionLabel": "SAVED LOCALLY",
+            "workerCanRun": bool(
+                summary["queued_for_beacon"] > 0
+                and not self.localAnalysisRunning
+                and not self._conversation_worker_running
+                and self._analysis_readiness.get("runtimeAvailable")
+            ),
+            "workerStateLabel": (
+                "PAUSED FOR ANALYSIS"
+                if self.localAnalysisRunning
+                else "WORKER RUNNING"
+                if self._conversation_worker_running
+                else "NO QUEUED THREADS"
+                if summary["queued_for_beacon"] == 0
+                else "READY FOR QUEUED THREADS"
+                if self._analysis_readiness.get("runtimeAvailable")
+                else "LOCAL MODEL OFFLINE"
+            ),
         }
         rows = [self._beacon_thread_row(thread) for thread in list_threads(
             self.settings.db_path
@@ -1368,6 +1421,88 @@ class DesktopController(QObject):
         }
 
     @Slot(str)
+    def runBeaconConversationWorker(self, model: str) -> None:
+        if self._conversation_worker_running:
+            return
+        if self.localAnalysisRunning:
+            self._set_status(
+                "Beacon conversation is paused while catalog analysis uses "
+                "the local inference lane.",
+                "working",
+            )
+            return
+        selected_model = (
+            model.strip()
+            or str(self._analysis_readiness.get("defaultModel") or "")
+        )
+        if not selected_model:
+            self._set_status(
+                "No local conversation model is available.", "error"
+            )
+            return
+        worker = _ConversationWorker(
+            self.settings.db_path,
+            "http://127.0.0.1:11434",
+            selected_model,
+        )
+        self._workers.append(worker)
+        self._conversation_worker_running = True
+        self.conversationWorkerRunningChanged.emit()
+        self._load_beacon_threads(preserve_selection=True)
+        worker.signals.succeeded.connect(
+            lambda result, current=worker: self._conversation_worker_finished(
+                current, result
+            )
+        )
+        worker.signals.failed.connect(
+            lambda message, current=worker: self._conversation_worker_failed(
+                current, message
+            )
+        )
+        self._thread_pool.start(worker)
+
+    def _conversation_worker_finished(
+        self,
+        worker: _ConversationWorker,
+        result: WorkerCycleResult,
+    ) -> None:
+        self._finish_worker(worker)
+        self._conversation_worker_running = False
+        self.conversationWorkerRunningChanged.emit()
+        self.refresh()
+        messages = {
+            "complete": (
+                f"Beacon answered locally with {result.result_count:,} "
+                "grounded catalog result"
+                + ("s." if result.result_count != 1 else ".")
+            ),
+            "idle": "Beacon has no queued conversation to answer.",
+            "analysis_running": (
+                "Beacon conversation remains paused for catalog analysis."
+            ),
+            "failed": (
+                f"Beacon could not answer this conversation: {result.error}"
+            ),
+        }
+        self._set_status(
+            messages.get(result.state, f"Beacon worker state: {result.state}"),
+            "success" if result.state == "complete" else "working",
+        )
+
+    def _conversation_worker_failed(
+        self,
+        worker: _ConversationWorker,
+        message: str,
+    ) -> None:
+        self._finish_worker(worker)
+        self._conversation_worker_running = False
+        self.conversationWorkerRunningChanged.emit()
+        self.refresh()
+        self._set_status(
+            f"Beacon conversation worker failed: {message}", "error"
+        )
+
+    @Slot(str)
     def selectBeaconThread(self, thread_id: str) -> None:
         self._select_beacon_thread(thread_id)
 
@@ -1407,6 +1542,27 @@ class DesktopController(QObject):
                     ),
                     "body": message["body"],
                     "timeLabel": format_timestamp(message.get("created_at")),
+                    "resultCards": [
+                        {
+                            "assetId": card["asset_id"],
+                            "filename": card["filename"],
+                            "displayTitle": card["display_title"],
+                            "path": card.get("current_path") or "Location unavailable",
+                            "atlasUri": card["atlas_uri"],
+                            "reason": card["match_reason"],
+                            "availabilityLabel": (
+                                "AVAILABLE LOCALLY"
+                                if card.get("available")
+                                else "LOCATION UNAVAILABLE"
+                            ),
+                            "available": bool(card.get("available")),
+                            "sizeLabel": format_bytes(card.get("size_bytes")),
+                            "thumbnailUrl": self._local_file_url(
+                                card.get("thumbnail_path")
+                            ),
+                        }
+                        for card in message.get("result_cards", [])
+                    ],
                 }
                 for message in messages
             )
@@ -1519,6 +1675,22 @@ class DesktopController(QObject):
     @Slot(str)
     def selectAsset(self, asset_id: str) -> None:
         self._select_asset(asset_id)
+
+    @Slot(str)
+    def inspectBeaconResult(self, asset_id: str) -> None:
+        if not asset_id:
+            return
+        self.setCurrentView("library")
+        self._select_asset(asset_id)
+        if self._selected_asset:
+            self._set_status(
+                "Opened the grounded Beacon result in Library.", "success"
+            )
+        else:
+            self._set_status(
+                "The grounded Beacon result is no longer in the catalog.",
+                "error",
+            )
 
     def _select_asset(self, asset_id: str) -> None:
         detail = asset_detail(self.settings.db_path, asset_id)

@@ -1,5 +1,26 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-24 Beacon 0.17.0 conversation-worker candidate
+
+Branch `worker_build`, created from local `main` commit `4180872`, adds the
+lean local Beacon conversation worker without changing the active production
+runtime. Schema 14 provides durable worker leases and message-linked grounded
+catalog result cards. The worker uses only a loopback model endpoint, bounded
+conversation history, and read-only catalog search; it has no generic
+filesystem or catalog-mutation tool.
+
+The current 500-item contextual-analysis job remains the activation gate.
+While any catalog-analysis job is running, the worker returns
+`analysis_running` before migration or inference. Do not launch the 0.17.0
+candidate against the live schema-13 catalog until that job is terminal.
+Then back up and verify the catalog, migrate it once, and run one bounded
+live Beacon question before treating this build as the production baseline.
+
+Grounded result cards resolve the current preferred path and can be inspected
+in Library. They do not copy, move, delete, or otherwise change source files.
+Near-duplicate and capture-series intelligence is recorded as the next
+analysis-efficiency milestone in `ROADMAP.md`.
+
 ## 2026-07-24 Beacon 0.16.0 responsive shell update
 
 The 180-RAW job `d1e28b5c-e63c-4c0b-83f6-e1318bcd1f16` is complete in the

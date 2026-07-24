@@ -54,6 +54,18 @@ operation directly.
 - Treat startup, idle CPU/RAM, database-query, or bundle-size regressions as
   release blockers.
 
+## Conversational worker
+
+Schema 14 adds a loopback-only worker that leases one queued Desk thread,
+performs bounded read-only catalog search, and appends a grounded response.
+The shell can run one queued conversation when catalog analysis is idle.
+Responses may include message-linked catalog cards whose only action is to
+inspect the asset in Library.
+
+The CLI also supports an explicitly launched low-frequency watch loop. It
+pauses while catalog analysis is running and does not infer while idle. See
+`BEACON_CONVERSATION_WORKER.md`.
+
 ## First implemented slice
 
 The native shell provides:
@@ -65,5 +77,5 @@ The native shell provides:
 - local-only runtime status;
 - new-conversation and saved-reply entry points backed by Beacon Desk.
 
-It does not yet provide autonomous responses, report generation, command
-routing, persisted unsent drafts, or background inference.
+It does not yet provide report generation, consequential command routing,
+persisted unsent drafts, file collection/export, or remote delivery.

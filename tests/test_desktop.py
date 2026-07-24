@@ -19,7 +19,7 @@ from beacon.desktop_controller import (
     DesktopSettings,
     analysis_stage_status,
 )
-from beacon.desk import seed_threads
+from beacon.desk import add_beacon_message, create_human_thread, seed_threads
 from beacon.text_preview import read_text_preview
 
 
@@ -260,6 +260,40 @@ class DesktopControllerTests(unittest.TestCase):
 
         self.controller.resolveBeaconThread()
         self.assertEqual(self.controller.beaconThreads.rowCount(), 1)
+
+    def test_grounded_beacon_result_card_opens_catalog_asset(self) -> None:
+        thread_id = create_human_thread(
+            self.db,
+            subject="Find the native signal",
+            body="Show me the matching catalog asset.",
+        )
+        add_beacon_message(
+            self.db,
+            thread_id,
+            "I found one grounded catalog result [1].",
+            result_cards=(
+                {
+                    "asset_id": self.cataloged.asset_id,
+                    "match_reason": "Matched catalog query “native signal”",
+                    "matched_path": str(self.source),
+                },
+            ),
+        )
+        self.controller.refresh()
+
+        message = self.controller.beaconMessages.get(1)
+        self.assertEqual(len(message["resultCards"]), 1)
+        card = message["resultCards"][0]
+        self.assertEqual(card["assetId"], self.cataloged.asset_id)
+        self.assertEqual(card["filename"], self.source.name)
+        self.assertTrue(card["available"])
+
+        self.controller.inspectBeaconResult(self.cataloged.asset_id)
+        self.assertEqual(self.controller.currentView, "library")
+        self.assertEqual(
+            self.controller.selectedAsset["id"],
+            self.cataloged.asset_id,
+        )
 
     def test_external_catalog_changes_refresh_automatically(self) -> None:
         second = self.source.parent / "second-signal.txt"

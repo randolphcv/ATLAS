@@ -193,13 +193,19 @@ def search_assets(
                WHERE editable.asset_id = a.id
                  AND editable.metadata_json LIKE ?
            )
+           OR EXISTS (
+               SELECT 1 FROM asset_transcripts transcript
+               WHERE transcript.asset_id = a.id
+                 AND transcript.text LIKE ?
+           )
     ) AND EXISTS (
         SELECT 1 FROM locations scoped
         WHERE scoped.asset_id=a.id AND lower(scoped.path) LIKE lower(?)
     )
     """ + extension_clause
     parameters = [
-        pattern, pattern, pattern, pattern, pattern, pattern, prefix_pattern,
+        pattern, pattern, pattern, pattern, pattern, pattern, pattern,
+        prefix_pattern,
         *extension_parameters,
     ]
     with connect(db_path) as connection:

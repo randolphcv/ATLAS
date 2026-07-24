@@ -1,6 +1,6 @@
 # ATLAS — Project Memory and Decision Ledger
 
-Updated: 2026-07-23  
+Updated: 2026-07-24
 Status: portable cross-machine handoff; verify live Windows state before treating recorded runtime details as current
 
 Use this file for durable, low-noise context. Do not store raw logs, secrets, personal media content, full transcripts, or speculative brainstorming here.
@@ -36,6 +36,24 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
   replaceable local adapters; do not add a browser engine or bundle model
   weights. Measure the app separately from optional models, derivatives,
   transcripts, and caches.
+
+### Beacon 0.17.0 conversation-worker candidate
+
+- Branch `worker_build` adds schema-14 durable exactly-once worker leases,
+  loopback model provenance, failure recovery/backoff, and message-linked
+  grounded asset cards.
+- The worker automatically pauses before migration or inference while catalog
+  analysis is running. It receives bounded history and read-only catalog
+  search only; it has no generic filesystem or mutation tool.
+- Grounded search covers filename/path, analyzed context, editable metadata,
+  and checksum-bound transcript text. Inspect opens the permanent asset in
+  Library without copying or changing the source.
+- Live activation remains blocked until the current 500-item analysis job is
+  terminal, schema 13 is backed up and verified, and one bounded worker question
+  passes against the migrated schema-14 live catalog.
+- Near-duplicate/series intelligence is the next analysis-efficiency milestone:
+  perceptual fingerprints and capture adjacency shortlist candidates before a
+  local visual model reviews relationships.
 
 ### Identity
 
@@ -374,9 +392,9 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-24 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, `main` at `2e3372a`
-- Current milestone: Beacon 0.16.0 truthful analysis status and persistent
-  shell-level Beacon conversation
+- Working branch/commit: `C:\Development\ATLAS`, `worker_build` from `main`
+  commit `4180872`
+- Current milestone: Beacon 0.17.0 grounded conversational-worker candidate
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
   242 unique identities were cataloged and the final one-item contextual retry
   completed. Beacon 0.14 adds independently scrollable Recents/Explorer Library
@@ -388,15 +406,20 @@ Next smallest step:
   contextual claims, and moves every unambiguous analyzed Inbox location.
   Beacon 0.16 adds schema-13 truthful durable pipeline stages and the
   persistent shell-level Beacon Desk conversation dock.
-- In progress: user inspection of Beacon 0.16 analysis status and shell dock
-- Blocked: no current blocker
-- Files changed: schema migration, durable local-analysis stages, desktop
-  controller/QML shell, tests, native validation images, versioning, and docs
-- Tests/live checks: 70 tests passed with two opt-in real-ffprobe tests
-  skipped; live schema 13 integrity and foreign keys clean; verified schema-12
-  online backup retained; packaged 0.16.0 isolated smoke exited 0; bundle audit
-  found no browser/web/API capability files. The release directory is
-  417,577,830 bytes and the ZIP is 160,907,464 bytes.
+- In progress: live 500-item analysis on packaged 0.16.0. A read-only
+  2026-07-24 snapshot showed 303 complete, 196 pending, and one running.
+  Isolated worker verification and packaging are complete on `worker_build`.
+- Blocked: live schema-14 activation waits for the analysis job to become
+  terminal
+- Files changed: schema-14 worker leases/result links, local conversation
+  worker, transcript-aware grounded search, desktop controller/QML cards,
+  tests, native validation image, versioning, and docs.
+- Tests/live checks: all 77 tests passed, including the real ffprobe
+  acceptance checks; live schema 13 integrity is `ok` with zero foreign-key errors;
+  verified schema-12 online backup retained. Packaged 0.17.0 isolated smoke
+  exited 0 and the canonical capability audit found no browser/web/API or
+  other blocked desktop capability files. The release directory is
+  417,601,229 bytes and the ZIP is 160,923,116 bytes.
 - Unverified assumptions: post-restart Windows hostname, physical SMART state,
   DrivePool duplication/parity, independent archive backup strategy, code
   signing, production chord/key accuracy, acceptable stem storage policy,
@@ -416,5 +439,5 @@ Next smallest step:
   Whisper. Corpus analysis does not copy source media to C:; sampled frames are
   temporary and cleaned. New live thumbnails route to
   `J:\Beacon\Thumbnails`; Demucs stems remain disabled by default.
-- Next smallest step: begin the next explicitly bounded intake session from
-  packaged Beacon 0.16.0 and monitor durable progress/failure state.
+- Next smallest step: when the 500-item job is terminal, verify health, back up
+  schema 13, migrate to schema 14, and run one bounded live worker question.

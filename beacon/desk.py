@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
@@ -176,6 +177,7 @@ def add_beacon_message(
     body: str,
     *,
     needs_human: bool = True,
+    result_cards: Iterable[Mapping[str, object]] = (),
 ) -> str:
     """Worker boundary for a future Beacon process; never performs file actions."""
     body = _required_text(body, label="Message", limit=MESSAGE_LIMIT)
@@ -208,7 +210,46 @@ def add_beacon_message(
                 thread_id,
             ),
         )
+        _insert_result_cards(connection, message_id, result_cards)
     return message_id
+
+
+def _insert_result_cards(
+    connection: Any,
+    message_id: str,
+    cards: Iterable[Mapping[str, object]],
+) -> None:
+    prepared = list(cards)
+    if len(prepared) > 12:
+        raise ValueError("Beacon messages may reference at most 12 assets.")
+    for rank, card in enumerate(prepared, start=1):
+        asset_id = _required_text(
+            str(card.get("asset_id") or ""),
+            label="Result asset ID",
+            limit=64,
+        )
+        reason = _required_text(
+            str(card.get("match_reason") or ""),
+            label="Result match reason",
+            limit=500,
+        )
+        matched_path = str(card.get("matched_path") or "").strip() or None
+        if matched_path and len(matched_path) > 2000:
+            raise ValueError("Result path must be 2,000 characters or fewer.")
+        exists = connection.execute(
+            "SELECT 1 FROM assets WHERE id=?",
+            (asset_id,),
+        ).fetchone()
+        if exists is None:
+            raise LookupError(f"Catalog result asset was not found: {asset_id}")
+        connection.execute(
+            """
+            INSERT INTO beacon_message_assets(
+                message_id,asset_id,rank,match_reason,matched_path
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (message_id, asset_id, rank, reason, matched_path),
+        )
 
 
 def resolve_thread(db_path: Path, thread_id: str) -> None:
@@ -300,7 +341,69 @@ def thread_detail(db_path: Path, thread_id: str) -> dict[str, Any] | None:
             """,
             (thread_id,),
         ).fetchall()
-    return {**dict(thread), "messages": [dict(row) for row in messages]}
+        cards = connection.execute(
+            """
+            SELECT
+                cards.message_id,cards.asset_id,cards.rank,
+                cards.match_reason,cards.matched_path,
+                assets.sha256,assets.size_bytes,
+                (
+                    SELECT preferred.path FROM locations preferred
+                    WHERE preferred.asset_id=cards.asset_id
+                    ORDER BY
+                        CASE
+                            WHEN lower(preferred.path) LIKE 'j:\\library\\%'
+                              OR lower(preferred.path) LIKE 'j:\\assets\\%'
+                              OR lower(preferred.path) LIKE 'j:\\projects\\%'
+                            THEN 0
+                            WHEN lower(preferred.path) LIKE 'j:\\inbox\\%'
+                            THEN 1
+                            ELSE 2
+                        END,
+                        preferred.observed_at DESC
+                    LIMIT 1
+                ) AS current_path,
+                (
+                    SELECT metadata_json FROM asset_metadata
+                    WHERE asset_id=cards.asset_id
+                ) AS metadata_json,
+                (
+                    SELECT path FROM derivatives
+                    WHERE asset_id=cards.asset_id
+                      AND kind='thumbnail' AND state='complete'
+                    ORDER BY verified_at DESC LIMIT 1
+                ) AS thumbnail_path
+            FROM beacon_message_assets cards
+            JOIN assets ON assets.id=cards.asset_id
+            WHERE cards.message_id IN (
+                SELECT id FROM beacon_messages WHERE thread_id=?
+            )
+            ORDER BY cards.message_id,cards.rank
+            """,
+            (thread_id,),
+        ).fetchall()
+    cards_by_message: dict[str, list[dict[str, Any]]] = {}
+    for row in cards:
+        card = dict(row)
+        try:
+            metadata = json.loads(card.pop("metadata_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            metadata = {}
+        current_path = str(card.get("current_path") or "")
+        filename = current_path.replace("/", "\\").rsplit("\\", 1)[-1]
+        card["filename"] = filename or f"Asset {card['asset_id'][:8]}"
+        card["display_title"] = (
+            metadata.get("display_title") or card["filename"]
+        )
+        card["atlas_uri"] = f"atlas://asset/{card['asset_id']}"
+        card["available"] = bool(current_path and Path(current_path).exists())
+        cards_by_message.setdefault(str(card["message_id"]), []).append(card)
+    message_rows = []
+    for row in messages:
+        message = dict(row)
+        message["result_cards"] = cards_by_message.get(message["id"], [])
+        message_rows.append(message)
+    return {**dict(thread), "messages": message_rows}
 
 
 def desk_summary(db_path: Path) -> dict[str, int]:

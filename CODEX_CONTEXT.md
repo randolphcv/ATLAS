@@ -183,7 +183,11 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ### Current Beacon baseline (2026-07-24)
 
-- Beacon 0.16.0 is the current packaged candidate on `main`.
+- Beacon 0.16.0 is the current live packaged baseline on `main`.
+- Beacon 0.17.0 is an isolated candidate on `worker_build`. It adds a
+  loopback-only durable conversation worker and grounded catalog result cards.
+  Do not launch it against the live schema-13 catalog until the active
+  500-item analysis job is terminal and the activation gate is completed.
 - The bounded 250-file production tranche completed intake and contextual
   analysis locally; the one malformed Qwen JSON response passed on a one-item
   retry.

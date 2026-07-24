@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added schema-14 durable conversational-worker leases and run history with a
+  hard pause while catalog analysis owns the local inference lane.
+- Added a loopback-only two-pass Qwen conversation adapter with bounded
+  history and read-only catalog search.
+- Added message-linked grounded catalog result cards whose only native action
+  is to inspect the permanent asset identity in Library.
 - Added schema-13 truthful durable catalog-analysis pipeline stages, including
   active checksum-bound filenames and accurate recovery/cancel/terminal state.
 - Added the compact application-shell Beacon conversation dock using the
