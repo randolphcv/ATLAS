@@ -341,10 +341,10 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-23 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, branch `feature/multimodal-analysis-v1`
+- Working branch/commit: `C:\Development\ATLAS`, branch `main`, commit `e176229`
 - Current milestone: Beacon 0.12 transcript persistence, transcript UI, and analysis-complete managed placement
 - Verified complete: both 30-asset local analysis jobs; schema-11 migration; 21 analyzed media files moved from `J:\Inbox\Anna King\2021 Naked Retreat` to the corresponding `J:\Projects` hierarchy with source and destination verification; four `.DS_Store` files intentionally ignored; database integrity and foreign keys clean
-- In progress: documentation synchronization and merge
+- In progress: none; Beacon 0.12 phase is complete
 - Blocked: no current blocker
 - Files changed: analysis, transcript persistence, managed placement, desktop controller/QML, tests, versioning, and operational documentation
 - Tests/live checks: all 63 tests pass with two opt-in real-ffprobe tests
@@ -355,5 +355,5 @@ Next smallest step:
   11 integrity and foreign keys clean; pre-change live backup
   `beacon-20260723T234922.245378Z.db` verified
 - Unverified assumptions: post-restart Windows hostname, physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, code signing, music-analysis stack, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
-- Next smallest step: synchronize durable documentation, then merge the feature
-  branch to main
+- Next smallest step: evaluate a bounded local music-intelligence prototype
+  before adding it to Beacon or MONO.
