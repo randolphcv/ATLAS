@@ -1858,7 +1858,9 @@ ApplicationWindow {
                                     id: intakeCard
                                     objectName: "intakeCard"
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: 472
+                                    Layout.preferredHeight:
+                                        backend.analysisReadiness.analysisHasJob === true
+                                        ? 540 : 472
                                     radius: 10
                                     color: root.panel
                                     border.color: root.line
@@ -2209,6 +2211,8 @@ ApplicationWindow {
                                                     Item { Layout.fillHeight: true }
                                                     RowLayout {
                                                         Layout.fillWidth: true
+                                                        Layout.minimumHeight: 38
+                                                        Layout.bottomMargin: 2
                                                         spacing: 8
                                                         PrimaryButton {
                                                             text: backend.selectedIntakeJob.state === "paused"

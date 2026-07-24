@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Expanded the catalog-operations card when analysis status is present so its
+  intake controls and snapshot identifier remain inside the card boundary.
 - Catalog analysis now continues after individual asset failures, and its
   durable Cancel and Retry controls operate on the latest analysis job.
 - Overview failure counts now report retryable failures in the latest intake
