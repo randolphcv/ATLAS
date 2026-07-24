@@ -183,10 +183,12 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ### Current Beacon baseline (2026-07-24)
 
-- Beacon 0.17.0 is the current live schema-14 baseline on `worker_build`.
+- Beacon 0.17.0 is the current live schema-14 baseline on `main`.
   The 500-item analysis job completed 500/500 before migration. A verified
   schema-13 online backup was created, one bounded live Qwen conversation
   returned a durable grounded result, and post-run integrity remained clean.
+- The verified 0.17.0 release executable is the running desktop app, and a
+  local foreground watch worker automatically consumes queued Desk replies.
 - Custom intake supports either exact multi-file selection or recursive
   selection of one approved folder, with the existing optional file limit.
 - The bounded 250-file production tranche completed intake and contextual

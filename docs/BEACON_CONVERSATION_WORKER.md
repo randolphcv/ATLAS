@@ -3,7 +3,8 @@
 Updated: 2026-07-24
 
 Status: live on schema 14. The 500-item activation-gate analysis completed
-500/500 before migration, and the first bounded grounded request passed.
+500/500 before migration, the first bounded grounded request passed, and the
+watch worker automatically answered a subsequent queued reply.
 
 ## Purpose
 

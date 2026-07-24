@@ -55,6 +55,10 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
 - The live schema-14 worker answered the bounded `IMG_0414.CR3` activation
   request in one durable run. The requested asset was grounded at rank one;
   post-run integrity remained `ok` with zero foreign-key errors.
+- The packaged 0.17.0 desktop replaced the running 0.16.0 process cleanly.
+  A local watch worker then detected and answered a queued follow-up without
+  manual invocation. Its runtime PID file is
+  `C:\ProgramData\ATLAS\Beacon\conversation-worker.pid`.
 - Custom intake now offers both exact multi-file selection and recursive
   selection of one approved folder with the existing optional item limit.
 - Near-duplicate/series intelligence is the next analysis-efficiency milestone:
@@ -398,8 +402,7 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-24 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, `worker_build` from `main`
-  commit `4180872`; worker implementation commit `579c73c`
+- Working branch/commit: `C:\Development\ATLAS`, `main` at `22fddbc`
 - Current milestone: Beacon 0.17.0 live grounded conversation worker
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
   242 unique identities were cataloged and the final one-item contextual retry
@@ -412,8 +415,8 @@ Next smallest step:
   contextual claims, and moves every unambiguous analyzed Inbox location.
   Beacon 0.16 adds schema-13 truthful durable pipeline stages and the
   persistent shell-level Beacon Desk conversation dock.
-- In progress: final package rebuild and 0.16→0.17 desktop-process promotion
-  after the successful live schema-14 activation.
+- In progress: no bounded release work; Beacon 0.17.0 and its local watch
+  worker are running.
 - Blocked: none for the current bounded release.
 - Files changed: schema-14 worker leases/result links, local conversation
   worker, transcript-aware grounded search, desktop controller/QML cards,
