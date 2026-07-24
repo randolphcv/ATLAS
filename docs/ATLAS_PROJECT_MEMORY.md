@@ -374,8 +374,7 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-24 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, branch
-  `ops/overnight-250-tranche`
+- Working branch/commit: `C:\Development\ATLAS`, `main` at `2e3372a`
 - Current milestone: Beacon 0.16.0 truthful analysis status and persistent
   shell-level Beacon conversation
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
@@ -417,5 +416,5 @@ Next smallest step:
   Whisper. Corpus analysis does not copy source media to C:; sampled frames are
   temporary and cleaned. New live thumbnails route to
   `J:\Beacon\Thumbnails`; Demucs stems remain disabled by default.
-- Next smallest step: Connor reviews Beacon 0.16 stage wording and persistent
-  dock interaction before the branch merges to `main`.
+- Next smallest step: begin the next explicitly bounded intake session from
+  packaged Beacon 0.16.0 and monitor durable progress/failure state.

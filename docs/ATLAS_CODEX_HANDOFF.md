@@ -77,8 +77,8 @@ Connor intends to rename it to `Ultron`, effective only after a later restart.
 
 ## Immediate Next Task
 
-Review Beacon 0.16 analysis-stage wording and the persistent conversation dock,
-then merge the branch after Connor accepts the native interaction.
+Beacon 0.16 is merged to local `main`. Begin the next explicitly bounded intake
+session and monitor durable progress, failures, and available storage.
 
 ---
 
