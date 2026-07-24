@@ -19,7 +19,9 @@ from .media import probe
 LOGGER = logging.getLogger("beacon.thumbnails")
 GENERATOR = "beacon-ffmpeg-thumbnail-v1"
 RAW_GENERATOR = "beacon-rawpy-thumbnail-v1"
+HEIF_GENERATOR = "beacon-pillow-heif-thumbnail-v1"
 THUMBNAIL_SIZE = (640, 360)
+HEIF_EXTENSIONS = {".heic", ".heif"}
 RAW_EXTENSIONS = {
     ".3fr", ".arw", ".cr2", ".cr3", ".dng", ".erf", ".fff", ".iiq",
     ".kdc", ".mef", ".mos", ".mrw", ".nef", ".nrw", ".orf", ".pef",
@@ -61,7 +63,9 @@ def _media_kind(
     metadata: dict[str, Any] | None,
     source: Path | None = None,
 ) -> str | None:
-    if source is not None and source.suffix.lower() in RAW_EXTENSIONS:
+    if source is not None and source.suffix.lower() in (
+        RAW_EXTENSIONS | HEIF_EXTENSIONS
+    ):
         return "image"
     if not metadata or metadata.get("error"):
         return None
@@ -99,6 +103,23 @@ def _render_raw_thumbnail(source: Path, temporary: Path) -> None:
         image,
         ((THUMBNAIL_SIZE[0] - image.width) // 2,
          (THUMBNAIL_SIZE[1] - image.height) // 2),
+    )
+    canvas.save(temporary, format="PNG", optimize=True)
+
+
+def _render_heif_thumbnail(source: Path, temporary: Path) -> None:
+    from PIL import Image
+    from pillow_heif import open_heif
+
+    image = open_heif(source).to_pillow().convert("RGB")
+    image.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", THUMBNAIL_SIZE, "#0B1015")
+    canvas.paste(
+        image,
+        (
+            (THUMBNAIL_SIZE[0] - image.width) // 2,
+            (THUMBNAIL_SIZE[1] - image.height) // 2,
+        ),
     )
     canvas.save(temporary, format="PNG", optimize=True)
 
@@ -191,8 +212,9 @@ def ensure_thumbnail(
     if kind is None:
         return None
     is_raw = source.suffix.lower() in RAW_EXTENSIONS
+    is_heif = source.suffix.lower() in HEIF_EXTENSIONS
     executable = os.environ.get("BEACON_FFMPEG") or shutil.which("ffmpeg")
-    if executable is None and not is_raw:
+    if executable is None and not (is_raw or is_heif):
         LOGGER.warning("thumbnail skipped because ffmpeg is unavailable")
         return None
 
@@ -211,9 +233,17 @@ def ensure_thumbnail(
     destination = thumbnail_dir / f"{asset_id}.png"
     temporary = thumbnail_dir / f".{asset_id}.{uuid.uuid4().hex}.partial.png"
     try:
-        generator = RAW_GENERATOR if is_raw else GENERATOR
+        generator = (
+            RAW_GENERATOR
+            if is_raw
+            else HEIF_GENERATOR
+            if is_heif
+            else GENERATOR
+        )
         if is_raw:
             _render_raw_thumbnail(source, temporary)
+        elif is_heif:
+            _render_heif_thumbnail(source, temporary)
         else:
             completed = subprocess.run(
                 _ffmpeg_command(str(executable), source, temporary, kind),
@@ -309,7 +339,13 @@ def ensure_thumbnail(
             generator=generator,
             created=True,
         )
-    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+    except (
+        ImportError,
+        OSError,
+        RuntimeError,
+        ValueError,
+        subprocess.TimeoutExpired,
+    ) as error:
         temporary.unlink(missing_ok=True)
         LOGGER.exception("thumbnail generation failed asset_id=%s", asset_id)
         with connect(db_path) as connection:
@@ -325,6 +361,8 @@ def ensure_thumbnail(
                     "generator": (
                         RAW_GENERATOR
                         if source.suffix.lower() in RAW_EXTENSIONS
+                        else HEIF_GENERATOR
+                        if source.suffix.lower() in HEIF_EXTENSIONS
                         else GENERATOR
                     ),
                     "source_sha256": source_sha256,

@@ -35,10 +35,19 @@ def _media_summary(value: str | None) -> dict[str, Any]:
             "duration_seconds": None,
             "dimensions": None,
             "probe_error": None,
+            "media_metadata": None,
         }
     metadata = json.loads(value)
     streams = metadata.get("streams") or []
-    stream = streams[0] if streams else {}
+    stream = next(
+        (
+            candidate
+            for preferred_kind in ("video", "image", "audio")
+            for candidate in streams
+            if candidate.get("codec_type") == preferred_kind
+        ),
+        streams[0] if streams else {},
+    )
     codec_type = metadata.get("beacon_kind") or stream.get("codec_type")
     width = stream.get("width")
     height = stream.get("height")
@@ -55,6 +64,7 @@ def _media_summary(value: str | None) -> dict[str, Any]:
         "duration_seconds": duration_seconds,
         "dimensions": f"{width} × {height}" if width and height else None,
         "probe_error": metadata.get("error"),
+        "media_metadata": metadata,
     }
 
 
@@ -78,6 +88,11 @@ def _asset_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "filename": Path(path).name if path else "Unknown asset",
         "location_count": row["location_count"],
         "thumbnail_path": row["thumbnail_path"],
+        "preview_video_path": (
+            row["preview_video_path"]
+            if "preview_video_path" in row.keys()
+            else None
+        ),
         "editable_metadata": editable_metadata,
         "analyzed": bool(row["analyzed"]) if "analyzed" in row.keys() else False,
         **media,
@@ -251,6 +266,13 @@ def search_assets(
                       AND d.state = 'complete'
                     ORDER BY d.verified_at DESC LIMIT 1
                 ) AS thumbnail_path
+                ,(
+                    SELECT d.path FROM derivatives d
+                    WHERE d.asset_id = a.id
+                      AND d.kind = 'preview_video'
+                      AND d.state = 'complete'
+                    ORDER BY d.verified_at DESC LIMIT 1
+                ) AS preview_video_path
                 ,(
                     SELECT editable.metadata_json
                     FROM asset_metadata editable

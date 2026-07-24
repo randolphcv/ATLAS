@@ -23,6 +23,8 @@ AUDIO_VIDEO_EXTENSIONS = {
 IMAGE_EXTENSIONS = {
     ".bmp",
     ".gif",
+    ".heic",
+    ".heif",
     ".jpeg",
     ".jpg",
     ".png",
@@ -41,6 +43,28 @@ def should_probe(path: Path) -> bool:
 def probe(path: Path) -> dict[str, Any] | None:
     if not should_probe(path):
         return None
+    if path.suffix.lower() in {".heic", ".heif"}:
+        try:
+            from pillow_heif import open_heif
+
+            image = open_heif(path)
+            return {
+                "beacon_kind": "image",
+                "format": {
+                    "format_name": "heif",
+                    "format_long_name": "High Efficiency Image File Format",
+                },
+                "streams": [
+                    {
+                        "codec_name": "hevc",
+                        "codec_type": "image",
+                        "height": int(image.size[1]),
+                        "width": int(image.size[0]),
+                    }
+                ],
+            }
+        except (ImportError, OSError, ValueError) as error:
+            return {"error": str(error), "returncode": None}
     executable = os.environ.get("BEACON_FFPROBE") or shutil.which("ffprobe")
     if executable is None:
         return None

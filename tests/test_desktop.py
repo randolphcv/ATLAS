@@ -6,11 +6,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer, QUrl
+from PIL import Image
+from pillow_heif import from_pillow
 
 from beacon.catalog import catalog_file
 from beacon.desktop import DEFAULT_RUNTIME, _catalog_label
@@ -141,6 +144,38 @@ class DesktopControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.assets.rowCount(), 0)
         self.controller.setLibraryFileType("all")
         self.assertEqual(self.controller.assets.rowCount(), 1)
+
+    def test_heic_preview_is_prepared_in_background(self) -> None:
+        source = self.root / "fixtures" / "portrait.heic"
+        from_pillow(Image.new("RGB", (64, 40), "#4A8C91")).save(source)
+        cataloged = catalog_file(
+            source,
+            self.db,
+            stability_seconds=0,
+            include_thumbnail_generation=False,
+        )
+        self.controller.refresh()
+        self.controller.selectAsset(cataloged.asset_id)
+        self.assertEqual(self.controller.selectedAsset["previewKind"], "image")
+        self.assertTrue(
+            self.controller.selectedAsset["previewRequiresPreparation"]
+        )
+        self.assertFalse(self.controller.selectedAsset["previewAvailable"])
+
+        with patch.dict(
+            os.environ,
+            {"BEACON_THUMBNAIL_ROOT": str(self.root / "heic-previews")},
+        ):
+            self.controller.prepareSelectedPreview()
+            self.assertTrue(self.controller.selectedAsset["previewPreparing"])
+            self.controller._thread_pool.waitForDone(10_000)
+            QCoreApplication.processEvents()
+
+        self.assertFalse(self.controller.selectedAsset["previewPreparing"])
+        self.assertTrue(self.controller.selectedAsset["previewAvailable"])
+        self.assertTrue(
+            self.controller.selectedAsset["previewUrl"].startswith("file:")
+        )
 
     def test_catalog_context_is_explicit(self) -> None:
         self.assertEqual(
@@ -577,8 +612,10 @@ if not engine.rootObjects():
     raise SystemExit(10)
 window = engine.rootObjects()[0]
 button = window.findChild(QObject, "detailPreviewButton")
-if button is None:
+preview = window.findChild(QObject, "previewWindow")
+if button is None or preview is None:
     raise SystemExit(11)
+initial_geometry = {}
 
 def press_with_button_focused():
     QMetaObject.invokeMethod(button, "forceActiveFocus")
@@ -592,11 +629,42 @@ def verify_open():
     if not window.property("previewOpen"):
         app.exit(13)
         return
+    initial_geometry["x"] = preview.property("x")
+    initial_geometry["y"] = preview.property("y")
+    initial_geometry["width"] = preview.property("width")
+    initial_geometry["height"] = preview.property("height")
+    preview.setProperty("x", initial_geometry["x"] + 80)
+    preview.setProperty("y", initial_geometry["y"] + 60)
+    preview.setProperty("width", initial_geometry["width"] - 120)
+    preview.setProperty("height", initial_geometry["height"] - 80)
     QTest.keyClick(window, Qt.Key.Key_Space)
     QTimer.singleShot(150, verify_closed)
 
 def verify_closed():
-    app.exit(14 if window.property("previewOpen") else 0)
+    if window.property("previewOpen"):
+        app.exit(14)
+        return
+    QTest.keyClick(window, Qt.Key.Key_Space)
+    QTimer.singleShot(150, verify_reset)
+
+def verify_reset():
+    if not window.property("previewOpen"):
+        app.exit(15)
+        return
+    geometry = (
+        preview.property("x"),
+        preview.property("y"),
+        preview.property("width"),
+        preview.property("height"),
+    )
+    expected = (
+        initial_geometry["x"],
+        initial_geometry["y"],
+        initial_geometry["width"],
+        initial_geometry["height"],
+    )
+    preview.close()
+    app.exit(0 if geometry == expected else 16)
 
 QTimer.singleShot(250, press_with_button_focused)
 raise SystemExit(app.exec())

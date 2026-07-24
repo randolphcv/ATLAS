@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtMultimedia
 import QtQuick.Dialogs
+import QtQuick.Window
 
 ApplicationWindow {
     id: root
@@ -41,7 +42,11 @@ ApplicationWindow {
     function openSelectedPreview() {
         if (backend.selectedAsset.id === undefined)
             return
-        previewDialog.open()
+        backend.prepareSelectedPreview()
+        previewDialog.resetGeometry()
+        previewDialog.show()
+        previewDialog.raise()
+        previewDialog.requestActivate()
     }
 
     function currentBeaconContext() {
@@ -1374,36 +1379,70 @@ ApplicationWindow {
         }
     }
 
-    Dialog {
+    Window {
         id: previewDialog
-        modal: true
-        anchors.centerIn: Overlay.overlay
-        width: Math.min(root.width - 72, 1080)
-        height: Math.min(root.height - 64, 720)
-        padding: 0
-        closePolicy: Popup.CloseOnEscape
+        objectName: "previewWindow"
+        transientParent: root
+        modality: Qt.NonModal
+        flags: Qt.Dialog
+               | Qt.WindowTitleHint
+               | Qt.WindowSystemMenuHint
+               | Qt.WindowMinMaxButtonsHint
+               | Qt.WindowCloseButtonHint
+        visible: false
+        title: backend.selectedAsset.filename
+               ? "Preview · " + backend.selectedAsset.filename
+               : "ATLAS Beacon Preview"
+        color: root.panel
+        minimumWidth: 640
+        minimumHeight: 440
 
         property string previewKind: backend.selectedAsset.previewKind || "file"
         property bool playable: previewKind === "audio" || previewKind === "video"
+        readonly property int defaultPreviewWidth: Math.min(
+            Math.max(640, root.width - 72), 1080
+        )
+        readonly property int defaultPreviewHeight: Math.min(
+            Math.max(440, root.height - 64), 720
+        )
 
-        onOpened: {
-            if (playable && backend.selectedAsset.previewAvailable) {
-                previewPlayer.source = backend.selectedAsset.previewUrl
-                previewPlayer.play()
+        function resetGeometry() {
+            width = defaultPreviewWidth
+            height = defaultPreviewHeight
+            x = root.x + Math.round((root.width - width) / 2)
+            y = root.y + Math.round((root.height - height) / 2)
+        }
+
+        onVisibleChanged: {
+            if (visible) {
+                if (playable && backend.selectedAsset.previewAvailable) {
+                    previewPlayer.source = backend.selectedAsset.previewUrl
+                    previewPlayer.play()
+                }
+            } else {
+                previewPlayer.stop()
+                previewPlayer.source = ""
+                if (backend.currentView === "library")
+                    libraryAssetList.forceActiveFocus()
             }
         }
-        onClosed: {
-            previewPlayer.stop()
-            previewPlayer.source = ""
-            previewVideo.clearOutput()
-            if (backend.currentView === "library")
-                libraryAssetList.forceActiveFocus()
+
+        Shortcut {
+            sequence: "Escape"
+            context: Qt.WindowShortcut
+            onActivated: previewDialog.close()
         }
 
-        background: Rectangle {
-            radius: 12
-            color: root.panel
-            border.color: root.line
+        Connections {
+            target: backend
+            function onSelectedAssetChanged() {
+                if (previewDialog.visible
+                        && previewDialog.playable
+                        && backend.selectedAsset.previewAvailable) {
+                    previewPlayer.source = backend.selectedAsset.previewUrl
+                    previewPlayer.play()
+                }
+            }
         }
 
         MediaPlayer {
@@ -1415,7 +1454,8 @@ ApplicationWindow {
             videoOutput: previewVideo
         }
 
-        contentItem: ColumnLayout {
+        ColumnLayout {
+            anchors.fill: parent
             spacing: 0
 
             Rectangle {
@@ -1643,15 +1683,27 @@ ApplicationWindow {
                     visible: !backend.selectedAsset.previewAvailable
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: "Preview unavailable"
+                        text: backend.selectedAsset.previewPreparing
+                              ? "Preparing compatible preview"
+                              : "Preview unavailable"
                         color: root.bone
                         font.family: "Georgia"
                         font.pixelSize: 22
                     }
+                    BusyIndicator {
+                        Layout.alignment: Qt.AlignHCenter
+                        running: backend.selectedAsset.previewPreparing || false
+                        visible: running
+                    }
                     Text {
-                        text: "Beacon can no longer read the observed location."
+                        text: backend.selectedAsset.previewError
+                              || backend.selectedAsset.previewNote
+                              || "Beacon can no longer read the observed location."
                         color: root.muted
                         font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.maximumWidth: 520
                     }
                 }
             }

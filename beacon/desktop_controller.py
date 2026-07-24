@@ -70,8 +70,13 @@ from .repository import (
     recent_events,
     search_assets,
 )
+from .preview_derivatives import (
+    VideoPreviewResult,
+    ensure_video_preview,
+    needs_video_compatibility_preview,
+)
 from .text_preview import read_text_preview
-from .thumbnails import ensure_thumbnail
+from .thumbnails import HEIF_EXTENSIONS, ThumbnailResult, ensure_thumbnail
 
 LOGGER = logging.getLogger("beacon.desktop")
 
@@ -359,6 +364,58 @@ class _ConversationWorker(QRunnable):
             )
         except Exception as error:
             LOGGER.exception("Beacon conversation worker failed")
+            self.signals.failed.emit(str(error))
+
+
+class _PreviewSignals(QObject):
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+
+class _PreviewWorker(QRunnable):
+    def __init__(
+        self,
+        db_path: Path,
+        asset_id: str,
+        source_path: Path,
+        source_sha256: str,
+        media_metadata: dict[str, Any] | None,
+        preview_kind: str,
+    ) -> None:
+        super().__init__()
+        self.db_path = db_path
+        self.asset_id = asset_id
+        self.source_path = source_path
+        self.source_sha256 = source_sha256
+        self.media_metadata = media_metadata
+        self.preview_kind = preview_kind
+        self.signals = _PreviewSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            if self.preview_kind == "image":
+                result = ensure_thumbnail(
+                    self.source_path,
+                    self.db_path,
+                    asset_id=self.asset_id,
+                    source_sha256=self.source_sha256,
+                    media_metadata=self.media_metadata,
+                )
+                if result is None:
+                    raise RuntimeError("HEIC preview could not be decoded")
+            else:
+                result = ensure_video_preview(
+                    self.source_path,
+                    self.db_path,
+                    asset_id=self.asset_id,
+                    source_sha256=self.source_sha256,
+                )
+            self.signals.succeeded.emit(result)
+        except Exception as error:
+            LOGGER.exception(
+                "compatible preview failed asset_id=%s", self.asset_id
+            )
             self.signals.failed.emit(str(error))
 
 
@@ -1711,6 +1768,7 @@ class DesktopController(QObject):
         else:
             primary_path = Path(str(detail.get("primary_path") or ""))
             is_raw_photo = primary_path.suffix.lower() in RAW_PHOTO_EXTENSIONS
+            is_heif_photo = primary_path.suffix.lower() in HEIF_EXTENSIONS
             if (
                 is_raw_photo
                 and primary_path.is_file()
@@ -1746,6 +1804,8 @@ class DesktopController(QObject):
                 detail.get("thumbnail_path")
             )
             preview_kind = str(detail.get("kind") or "file")
+            if is_heif_photo:
+                preview_kind = "image"
             if is_raw_photo and detail.get("thumbnailUrl"):
                 preview_kind = "image"
             if preview_kind not in {"image", "video", "audio"}:
@@ -1775,8 +1835,46 @@ class DesktopController(QObject):
             detail["previewUrl"] = self._local_file_url(
                 detail.get("primary_path")
             )
-            if is_raw_photo and detail.get("thumbnailUrl"):
+            if (is_raw_photo or is_heif_photo) and detail.get("thumbnailUrl"):
                 detail["previewUrl"] = detail["thumbnailUrl"]
+            requires_video_proxy = needs_video_compatibility_preview(
+                primary_path,
+                detail.get("media_metadata"),
+            )
+            compatible_video_path = Path(
+                str(detail.get("preview_video_path") or "")
+            )
+            if (
+                requires_video_proxy
+                and compatible_video_path.is_file()
+            ):
+                detail["previewUrl"] = self._local_file_url(
+                    compatible_video_path
+                )
+            requires_preparation = (
+                is_heif_photo and not detail.get("thumbnailUrl")
+            ) or (
+                requires_video_proxy
+                and not compatible_video_path.is_file()
+            )
+            if requires_preparation:
+                detail["previewUrl"] = ""
+            detail["previewRequiresPreparation"] = requires_preparation
+            detail["previewPreparing"] = False
+            detail["previewError"] = ""
+            detail["previewNote"] = (
+                "Preparing a local HEIC preview."
+                if is_heif_photo and requires_preparation
+                else (
+                    "Preparing a stable local preview for this QuickTime video."
+                    if requires_video_proxy and requires_preparation
+                    else (
+                        "Playing a stable local preview; the original is unchanged."
+                        if requires_video_proxy
+                        else ""
+                    )
+                )
+            )
             detail["previewAvailable"] = bool(detail["previewUrl"])
             transcript = detail.get("transcript") or {}
             detail["transcript"] = {
@@ -1920,6 +2018,90 @@ class DesktopController(QObject):
             else:
                 detail["analysisCandidate"] = {}
             self._selected_asset = detail
+        self.selectedAssetChanged.emit()
+
+    @Slot()
+    def prepareSelectedPreview(self) -> None:
+        detail = self._selected_asset
+        if (
+            not detail.get("previewRequiresPreparation")
+            or detail.get("previewPreparing")
+        ):
+            return
+        asset_id = str(detail.get("id") or "")
+        source_path = Path(str(detail.get("primary_path") or ""))
+        source_sha256 = str(detail.get("sha256") or "")
+        if not asset_id or not source_sha256 or not source_path.is_file():
+            updated = dict(detail)
+            updated["previewRequiresPreparation"] = False
+            updated["previewError"] = "The observed source is unavailable."
+            self._selected_asset = updated
+            self.selectedAssetChanged.emit()
+            return
+
+        updated = dict(detail)
+        updated["previewPreparing"] = True
+        updated["previewError"] = ""
+        self._selected_asset = updated
+        self.selectedAssetChanged.emit()
+        worker = _PreviewWorker(
+            self.settings.db_path,
+            asset_id,
+            source_path,
+            source_sha256,
+            detail.get("media_metadata"),
+            str(detail.get("previewKind") or "file"),
+        )
+        self._workers.append(worker)
+        worker.signals.succeeded.connect(
+            lambda result, current=worker: self._preview_succeeded(
+                current, result
+            )
+        )
+        worker.signals.failed.connect(
+            lambda message, current=worker: self._preview_failed(
+                current, message
+            )
+        )
+        self._thread_pool.start(worker)
+
+    def _preview_succeeded(
+        self,
+        worker: _PreviewWorker,
+        result: ThumbnailResult | VideoPreviewResult,
+    ) -> None:
+        if worker in self._workers:
+            self._workers.remove(worker)
+        if str(self._selected_asset.get("id") or "") != worker.asset_id:
+            return
+        updated = dict(self._selected_asset)
+        preview_url = self._local_file_url(result.path)
+        updated["previewUrl"] = preview_url
+        updated["previewAvailable"] = bool(preview_url)
+        updated["previewRequiresPreparation"] = False
+        updated["previewPreparing"] = False
+        updated["previewError"] = ""
+        updated["previewNote"] = (
+            "Local HEIC preview ready; the original is unchanged."
+            if worker.preview_kind == "image"
+            else "Stable local video preview ready; the original is unchanged."
+        )
+        if worker.preview_kind == "image":
+            updated["thumbnailUrl"] = preview_url
+        self._selected_asset = updated
+        self.selectedAssetChanged.emit()
+
+    def _preview_failed(self, worker: _PreviewWorker, message: str) -> None:
+        if worker in self._workers:
+            self._workers.remove(worker)
+        if str(self._selected_asset.get("id") or "") != worker.asset_id:
+            return
+        updated = dict(self._selected_asset)
+        updated["previewRequiresPreparation"] = False
+        updated["previewPreparing"] = False
+        updated["previewError"] = message
+        updated["previewNote"] = ""
+        self._selected_asset = updated
         self.selectedAssetChanged.emit()
 
     @Slot("QVariantMap")
