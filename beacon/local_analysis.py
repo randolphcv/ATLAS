@@ -710,6 +710,7 @@ def run_local_analysis_job(
     *,
     analyzer: Callable[[str, str, dict[str, Any]], dict[str, Any]] = _default_analyzer,
     progress_callback: Callable[[], None] | None = None,
+    stop_on_item_error: bool = False,
 ) -> LocalAnalysisRunResult:
     recover_local_analysis_jobs(db_path)
     with connect(db_path) as connection:
@@ -834,6 +835,18 @@ def run_local_analysis_job(
                     "UPDATE local_analysis_items SET state='failed',error=?,completed_at=? WHERE id=?",
                     (str(error)[:2000], _utc_now(), item["id"]),
                 )
+                if stop_on_item_error:
+                    connection.execute(
+                        """
+                        UPDATE local_analysis_jobs
+                        SET state='failed',error=?,current_asset_id=NULL,
+                            worker_pid=NULL,updated_at=?
+                        WHERE id=?
+                        """,
+                        (str(error)[:2000], _utc_now(), job_id),
+                    )
+            if stop_on_item_error:
+                raise
         if progress_callback:
             progress_callback()
 
