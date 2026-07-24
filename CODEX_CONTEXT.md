@@ -160,6 +160,25 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 - Put destructive actions behind explicit confirmation with a concrete target and consequence.
 - Preserve audit history as a first-class user-facing feature, not only a developer log.
 
+## Responsive Beacon direction
+
+- Beacon should feel alive because it reports real, current work promptly—not
+  through decorative or fabricated “thinking” messages.
+- Analysis UI should expose a compact durable pipeline-stage line beneath its
+  progress bar, including a display-safe current filename.
+- Beacon conversation belongs to the application shell and must persist across
+  page navigation. Page context may be attached explicitly, but a page must
+  not own or silently reset the conversation.
+- Reuse Beacon Desk threads/messages, Qt/QML, SQLite, and replaceable local
+  model adapters. Do not add a browser engine or bundle model weights into the
+  desktop application.
+- Operations will eventually merge into System. Navigation position 03 will
+  become Reports, with multiple catalog data views and the shell-level Beacon
+  composer available while those views are inspected.
+- Keep startup, idle resource use, package footprint, and interaction latency
+  visible release concerns. Optional local models and derivatives are separate
+  storage tiers, not part of the Beacon application footprint.
+
 ## Engineering Preferences
 
 ### Current Beacon baseline (2026-07-24)

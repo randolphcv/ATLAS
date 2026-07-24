@@ -18,6 +18,24 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
   jobs. Historical failed audit events remain available in the ledger but do
   not inflate the actionable count.
 
+### Planned responsive interface pass
+
+- After the current 180-RAW analysis job is terminal, add a truthful durable
+  pipeline-stage status line beneath analysis progress. It should name actual
+  work such as RAW preview preparation, visual observation, transcription,
+  music analysis, metadata writing, or managed placement.
+- Beacon’s future text interface is a persistent application-shell surface,
+  not a page-specific chat. It should retain the active Beacon Desk thread and
+  draft while navigating, accept explicit page/selection context, and remain
+  lightweight when collapsed or idle.
+- Operations will eventually merge into System. Navigation position 03 will
+  become Reports, providing multiple catalog data views alongside the
+  persistent Beacon conversation surface.
+- Performance policy: reuse Qt/QML, SQLite, existing Beacon Desk storage, and
+  replaceable local adapters; do not add a browser engine or bundle model
+  weights. Measure the app separately from optional models, derivatives,
+  transcripts, and caches.
+
 ### Identity
 
 - Project: **ATLAS — Adaptive Topological Library & Archive System**

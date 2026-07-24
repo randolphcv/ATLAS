@@ -9,6 +9,11 @@ app process, and Retry resets only failed items in that same job. The Overview
 reports current retryable intake/analysis failures rather than lifetime failed
 audit-event history.
 
+The next responsive-interface phase is specified in
+`docs/BEACON_RESPONSIVE_UI_HANDOFF.md`: finish the current 180-RAW job, add
+truthful durable pipeline-stage status, and establish a lightweight
+application-shell Beacon conversation surface that persists across pages.
+
 ## Project Identity
 
 **ATLAS**  
