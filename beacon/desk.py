@@ -56,14 +56,15 @@ def _insert_thread(
     author: str,
     requires_approval: bool,
     seed_key: str | None = None,
+    asset_id: str | None = None,
 ) -> None:
     timestamp = _utc_now()
     connection.execute(
         """
         INSERT INTO beacon_threads(
             id, subject, kind, priority, state, origin,
-            requires_approval, seed_key, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            requires_approval, asset_id, seed_key, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             thread_id,
@@ -73,6 +74,7 @@ def _insert_thread(
             state,
             origin,
             int(requires_approval),
+            asset_id,
             seed_key,
             timestamp,
             timestamp,
@@ -365,6 +367,9 @@ def seed_threads(
                 author="beacon",
                 requires_approval=bool(seed.get("requires_approval", False)),
                 seed_key=seed_key,
+                asset_id=(
+                    str(seed["asset_id"]) if seed.get("asset_id") else None
+                ),
             )
             inserted.append(thread_id)
     return inserted

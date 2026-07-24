@@ -58,8 +58,9 @@ in an editor.
 
 Beacon analysis appears separately from technical facts and is visibly labeled
 `CANDIDATE`. The card records confidence and whether inference ran locally or
-externally. Candidate organization paths remain suggestions until an editable
-organization directory and managed-move policy authorize a separate operation.
+externally. Successful local analysis commits an Inbox file when its established
+hierarchy gives Beacon an unambiguous final home. Beacon asks a focused
+clarification only when placement logic is genuinely unclear.
 
 The Overview includes **Beacon Desk**. Questions, approval requests, blockers,
 clarifications, and human-started requests persist in the live SQLite catalog.
@@ -91,13 +92,14 @@ intended. Intake is catalog-only and does not invoke managed moves.
 ## Editable metadata and managed moves
 
 Library exposes revisioned contextual fields for title, description, category,
-tags, people, date, place, client, project, rights, notes, and approved
+tags, people, date, place, client, project, rights, notes, and final
 organization directory. These fields are searchable and editable; saving never
 writes into the media file. SHA-256, byte size, codec, duration, dimensions, and
 other verified facts remain locked evidence.
 
-**Move file** is enabled after an approved organization directory is recorded.
-The operation:
+**Move file** remains available for intentional manual placement. Successful
+local analysis can invoke the same guarded operation automatically when the
+existing Inbox hierarchy makes the destination unambiguous. The operation:
 
 1. requires the exact selected asset and observed source path;
 2. checks the recorded managed-moves policy;
@@ -125,23 +127,27 @@ authorization note. Re-importing the same manifest returns the existing run.
 
 ## Local catalog analysis
 
-Beacon 0.11.0 provides **Analyze catalog** in the Catalog Operations header. The
+Beacon 0.12.0 provides **Analyze catalog** in the Catalog Operations header. The
 dialog checks `http://127.0.0.1:11434` for a local Ollama-compatible runtime
 and lists installed models. Start remains disabled when the endpoint or models
 are unavailable; Beacon never falls back to a cloud service.
 
 The default scope is assets without an existing contextual-metadata candidate.
 The dialog reports visual, audio, and other asset counts before starting.
-Local jobs persist at schema 10, record live worker ownership, attach the UI
+Local jobs persist at schema 11, record live worker ownership, attach the UI
 to an active worker across window restarts, and recover genuinely interrupted
 items as pending.
 Results use the existing checksum-bound candidate import and never overwrite
-verified facts or execute a move.
+verified facts. Analysis-complete placement re-hashes the source, stays within
+approved roots, rejects reparse traversal and collisions, verifies destination
+bytes, and rolls back when a post-move check fails.
 
 The local model receives bounded path context and verified technical metadata.
 Video analysis samples six points across the timeline for detailed stock and
-B-roll context. Audio analysis combines local speech transcription with a
-full-file spectrogram. Analysis fills AI-owned editable metadata; once a human
+B-roll context. Audio analysis combines a persistent checksum-bound full speech
+transcript with a full-file spectrogram. The preview shows both waveform and
+transcript, and the scrollable asset record includes the complete transcript
+below Observed Locations. Analysis fills AI-owned editable metadata; once a human
 changes a field, later reanalysis preserves that field.
 
 Local structured output is validated before atomic candidate import. Models

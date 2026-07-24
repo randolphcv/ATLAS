@@ -1302,6 +1302,19 @@ class DesktopController(QObject):
                 detail.get("primary_path")
             )
             detail["previewAvailable"] = bool(detail["previewUrl"])
+            transcript = detail.get("transcript") or {}
+            detail["transcript"] = {
+                **transcript,
+                "text": str(transcript.get("text") or ""),
+                "languageLabel": str(
+                    transcript.get("language") or "Unknown language"
+                ).upper(),
+                "generatorLabel": str(transcript.get("generator") or ""),
+                "verifiedLabel": (
+                    format_timestamp(transcript.get("verified_at"))
+                    if transcript.get("verified_at") else ""
+                ),
+            }
             editable = empty_metadata()
             editable.update(detail.get("editable_metadata") or {})
             detail["catalogMetadata"] = {

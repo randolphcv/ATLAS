@@ -319,6 +319,17 @@ def asset_detail(db_path: Path, asset_id: str) -> dict[str, Any] | None:
             item["provenance"] = json.loads(item.pop("provenance_json"))
             item["external_inference"] = bool(item["external_inference"])
             result["analysis"].append(item)
+        transcript = connection.execute(
+            """
+            SELECT id,text,text_sha256,language,language_probability,
+                   generator,created_at,verified_at
+            FROM asset_transcripts
+            WHERE asset_id=? AND source_sha256=?
+            ORDER BY verified_at DESC LIMIT 1
+            """,
+            (asset_id, result["sha256"]),
+        ).fetchone()
+        result["transcript"] = dict(transcript) if transcript else {}
         editable = connection.execute(
             """
             SELECT metadata_json, revision, updated_by, updated_at

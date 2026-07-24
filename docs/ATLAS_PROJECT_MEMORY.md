@@ -137,7 +137,9 @@ These are stable unless Connor explicitly changes them:
 7. Reliability precedes intelligence.
 8. Core operation is local-first.
 9. Source, runtime state, derivatives, metadata, backups, and originals remain distinguishable.
-10. Existing user files are not reorganized without explicit approval.
+10. Successful analysis authorizes an audited move from Inbox when Beacon can
+    infer an unambiguous final home from established hierarchy. Ambiguous files
+    remain in place pending a focused clarification.
 
 ## Current Phase
 
@@ -206,7 +208,7 @@ The first implementation target is a read-only vertical slice against synthetic 
 | AI output lives separately from verified asset facts | Decided in Beacon 0.6.0 | Preserve provenance and prevent probabilistic output from silently becoming canonical technical metadata |
 | Analysis imports are checksum-bound, atomic, and idempotent | Decided in Beacon 0.6.0 | Reject stale or partial result sets and attach intelligence to asset identity rather than filename/location |
 | Every AI result begins as a reviewable candidate | Decided in Beacon 0.6.0 | Keep human judgment over titles, tags, privacy, rights, and archive meaning |
-| Organization suggestions never execute file operations | Decided in Beacon 0.6.0 | Separate librarian advice from approval-based managed intake |
+| Analysis completion commits unambiguous Inbox placement | Supersedes the Beacon 0.6.0 suggestion-only rule in Beacon 0.12.0 | Remove routine approval friction while retaining checksum, collision, root, reparse, audit, and rollback safeguards |
 | External inference requires explicit recorded authorization and execution labeling | Decided in Beacon 0.6.0 | Keep local/cloud boundaries visible and auditable |
 | Beacon questions and human replies persist as ordered SQLite conversations | Decided in Beacon 0.7.0 | Make blockers and context durable across app restarts and analysis sessions |
 | Human replies queue a conversation but do not resolve it automatically | Decided in Beacon 0.7.0 | Preserve an explicit handshake between supplied context and Beacon review |
@@ -339,12 +341,19 @@ Next smallest step:
 ## Current Handoff
 
 - Last verified: 2026-07-23 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, branch `feature/multimodal-analysis-v1`; verified feature history includes `7ab00c2`
-- Current milestone: Beacon 0.11 local multimodal reanalysis of the existing 30-asset catalog is running under a durable process-owned worker
-- Verified complete: bounded 25-file live Inbox reliability pilot; local Ollama/Qwen visual analysis; local faster-whisper transcription and spectrogram context; schema-10 durable jobs, retry-in-place, worker ownership, human-field protection, and native intake plus analysis progress bars
-- In progress: job `92b51ab9-51d4-4ab6-a0ae-c0ee595e89bf` is reanalyzing the same 30 catalog assets; 18 were reported complete by Connor during the latest exchange
-- Blocked: no current blocker; long audio transcription is expected to dominate first-pass elapsed time
-- Files changed: source under `C:\Development\ATLAS`; packaged build under `C:\Development\ATLAS\dist\releases\0.11.0\ATLAS Beacon`; local Whisper model under `C:\ProgramData\ATLAS\Beacon\models\whisper`
-- Tests/live checks: 59-test full suite passed before schema-10 worker ownership; subsequent focused local-analysis and desktop suites passed 21 tests; packaged native UI screenshot verified a visible running analysis bar; live SQLite integrity and foreign keys remained clean
-- Unverified assumptions: post-restart Windows hostname, physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, code signing, ideal Whisper CPU/GPU staging, transcript derivative retention, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
-- Next smallest step: let the current 30-asset job finish, reconcile results and failures, then design persistent transcript derivatives so unchanged audio is not retranscribed during later metadata-only reanalysis
+- Working branch/commit: `C:\Development\ATLAS`, branch `feature/multimodal-analysis-v1`
+- Current milestone: Beacon 0.12 transcript persistence, transcript UI, and analysis-complete managed placement
+- Verified complete: both 30-asset local analysis jobs; schema-11 migration; 21 analyzed media files moved from `J:\Inbox\Anna King\2021 Naked Retreat` to the corresponding `J:\Projects` hierarchy with source and destination verification; four `.DS_Store` files intentionally ignored; database integrity and foreign keys clean
+- In progress: documentation synchronization and merge
+- Blocked: no current blocker
+- Files changed: analysis, transcript persistence, managed placement, desktop controller/QML, tests, versioning, and operational documentation
+- Tests/live checks: all 63 tests pass with two opt-in real-ffprobe tests
+  skipped; all 21 moved sources (10,436,235,075 bytes) re-hash to their catalog
+  identities; 12 audio-only assets have persistent full transcripts totaling
+  143,277 characters with verified text hashes and source bindings; native
+  transcript preview and final packaged 0.12 live screenshot captured; schema
+  11 integrity and foreign keys clean; pre-change live backup
+  `beacon-20260723T234922.245378Z.db` verified
+- Unverified assumptions: post-restart Windows hostname, physical SMART state, current DrivePool duplication/parity state, independent archive backup strategy, code signing, music-analysis stack, face-analysis policy, rights taxonomy, and canonical sidecar-versus-SQLite metadata policy
+- Next smallest step: synchronize durable documentation, then merge the feature
+  branch to main

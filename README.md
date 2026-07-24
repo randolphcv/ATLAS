@@ -5,7 +5,7 @@ observes and catalogs files without owning or changing originals.
 
 ## Current application
 
-Beacon 0.11.0 is a native Windows desktop application. It includes:
+Beacon 0.12.0 is a native Windows desktop application. It includes:
 
 - the verified Phase 1 read-only catalog;
 - a branded Qt Quick desktop shell with no embedded browser;
@@ -16,11 +16,10 @@ Beacon 0.11.0 is a native Windows desktop application. It includes:
 - a persistent application-level Space shortcut and a larger selected-asset
   thumbnail in the detail header;
 - checksum-bound Beacon analysis candidates with explicit confidence,
-  provenance, privacy flags, execution location, and approval-only organization
-  suggestions;
+  provenance, privacy flags, and execution location;
 - catalog search across candidate titles, descriptions, and tags without
   merging AI output into verified technical facts;
-- a local-only **Analyze catalog** dialog with durable schema-10 jobs, explicit
+- a local-only **Analyze catalog** dialog with durable schema-11 jobs, explicit
   runtime/model readiness, and no silent cloud fallback;
 - a durable **Beacon Desk** on Overview for questions, approval requests,
   blockers, clarifications, plain-English replies, and new human requests;
@@ -29,8 +28,8 @@ Beacon 0.11.0 is a native Windows desktop application. It includes:
   interrupted-session recovery;
 - bounded representative intake scopes by default, with an explicit blank
   limit required to snapshot every discovered file;
-- explicit local queue states that never treat a conversational reply as
-  permission to move or alter a file;
+- analysis-complete placement for files whose existing Inbox hierarchy gives
+  Beacon an unambiguous final home;
 - revisioned editable titles, descriptions, categories, tags, people, dates,
   places, client/project context, rights, notes, and organization directories;
 - checksum-verified managed moves bounded to approved ATLAS roots, with

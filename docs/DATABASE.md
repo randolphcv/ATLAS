@@ -1,6 +1,6 @@
 # Database
 
-Schema version 8 separates content, locations, derivatives, audit events,
+Schema version 11 separates content, locations, derivatives, audit events,
 AI-generated candidates, durable Beacon conversations, editable context, and
 managed file operations:
 
@@ -30,6 +30,8 @@ managed file operations:
   lifecycle, progress, cancellation, and the resulting candidate run.
 - `local_analysis_items`: one restartable item per asset, with source checksum,
   attempts, validated candidate JSON, and failure evidence.
+- `asset_transcripts`: full local transcript text, text SHA-256, source
+  checksum, language, generator, and verification timestamps.
 - `schema_version`: applied schema versions.
 
 SHA-256 is unique in `assets`; paths are unique in `locations`. This recognizes
@@ -38,8 +40,9 @@ byte-identical duplicates while preserving every observed location.
 AI results do not modify `assets.media_metadata_json`. Verified technical facts
 and model output remain separate. An imported analysis manifest is atomic and
 idempotent: every source checksum must still match the asset record, and the
-manifest SHA-256 prevents duplicate runs. Results begin in `candidate` state;
-organization suggestions do not execute file operations.
+manifest SHA-256 prevents duplicate runs. Results begin in `candidate` state.
+After successful local analysis, an unambiguous Inbox hierarchy may trigger the
+separate verified managed-move operation.
 
 Beacon Desk threads use four explicit states: `awaiting_human`,
 `queued_for_beacon`, `resolved`, and `closed`. A human reply appends a message
@@ -59,6 +62,8 @@ pause, retry, app shutdown, and crash recovery.
 Local analysis jobs freeze asset IDs and catalog checksums before execution.
 Interrupted running items recover as pending. Completed results pass through
 the same atomic checksum-bound candidate import used by explicit manifests.
+Full transcripts are cached against the asset and source SHA-256 so later
+metadata-only analysis does not repeat unchanged speech transcription.
 
 Connections use WAL mode, normal synchronous durability, foreign keys, and a
 30-second busy timeout. Health checks run SQLite integrity and foreign-key

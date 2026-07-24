@@ -18,6 +18,8 @@ from beacon.local_analysis import (
     run_local_analysis_job,
     _process_is_alive,
 )
+from beacon.repository import asset_detail
+from beacon.transcripts import get_asset_transcript, save_asset_transcript
 
 
 class LocalAnalysisJobTests(unittest.TestCase):
@@ -47,6 +49,34 @@ class LocalAnalysisJobTests(unittest.TestCase):
     def test_worker_liveness_detects_current_and_missing_processes(self) -> None:
         self.assertTrue(_process_is_alive(os.getpid()))
         self.assertFalse(_process_is_alive(2_147_483_647))
+
+    def test_transcript_is_checksum_bound_and_visible_in_asset_detail(self) -> None:
+        connection = sqlite3.connect(self.db)
+        try:
+            asset_id, source_sha256 = connection.execute(
+                "SELECT id,sha256 FROM assets ORDER BY id LIMIT 1"
+            ).fetchone()
+        finally:
+            connection.close()
+        saved = save_asset_transcript(
+            self.db,
+            asset_id=asset_id,
+            source_sha256=source_sha256,
+            text="A complete local transcript fixture.",
+            language="en",
+            language_probability=0.99,
+        )
+        self.assertEqual(saved["text"], "A complete local transcript fixture.")
+        cached = get_asset_transcript(
+            self.db, asset_id, source_sha256=source_sha256
+        )
+        self.assertIsNotNone(cached)
+        detail = asset_detail(self.db, asset_id)
+        assert detail is not None
+        self.assertEqual(
+            detail["transcript"]["text"],
+            "A complete local transcript fixture.",
+        )
 
     @staticmethod
     def _analyzer(endpoint: str, model: str, asset: dict[str, object]) -> dict:
@@ -99,6 +129,20 @@ class LocalAnalysisJobTests(unittest.TestCase):
             connection.close()
         self.assertEqual(analysis_scope_preview(self.db)["assets"], 0)
         self.assertEqual(database_integrity(self.db)["schema_version"], SCHEMA_VERSION)
+        resumed = run_local_analysis_job(
+            self.db, job_id, analyzer=self._analyzer
+        )
+        self.assertEqual(resumed.analysis_run_id, result.analysis_run_id)
+        connection = sqlite3.connect(self.db)
+        try:
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM analysis_results"
+                ).fetchone()[0],
+                2,
+            )
+        finally:
+            connection.close()
 
     def test_percentage_confidence_is_normalized_with_provenance(self) -> None:
         def percentage_analyzer(

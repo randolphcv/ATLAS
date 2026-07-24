@@ -17,7 +17,7 @@ closes.
 
 The selected-asset detail now presents checksum-bound Beacon analysis separately
 from technical facts. Candidate title, description, tags, confidence, privacy
-flags, execution location, and approval-only organization suggestions remain
+flags, execution location, and organization suggestions remain
 visibly labeled as AI output.
 
 The Overview now contains Beacon Desk, a persistent native master-detail

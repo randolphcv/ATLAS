@@ -19,21 +19,20 @@ ATLAS is a modular, long-term media storage and intelligence platform designed t
 The Windows hostname was still `DESKTOP-8B4OJIR` when verified on 2026-07-23.
 Connor intends to rename it to `Ultron`, effective only after a later restart.
 
-> Current implementation note (2026-07-23): Beacon 0.11.0 is a packaged native
-> Windows app, not a browser-first dashboard. Schema 10 adds explicit recursive
+> Current implementation note (2026-07-23): Beacon 0.12.0 is a packaged native
+> Windows app, not a browser-first dashboard. Schema 11 adds persistent,
+> checksum-bound full transcripts to the existing recursive
 > Archive Intake snapshots, durable item-level progress, cancel-between-files,
 > resume, retry-only-failures, and interrupted-session recovery. Intake remains
-> catalog-only and never triggers a managed move. Beacon Desk, revisioned
-> editable context, candidate analysis, and checksum-verified managed moves
-> remain separate authority boundaries. See
+> catalog-only. Successful contextual analysis triggers checksum-verified
+> placement when the Inbox hierarchy provides an unambiguous final home; only
+> unclear placement produces a clarification. See
 > `ATLAS_PROJECT_MEMORY.md` for the current verified runtime and release state.
 
 ## Immediate Next Task
 
-Let the active bounded 30-asset local reanalysis finish, reconcile candidates
-and editable metadata, and preserve the durable job. The next performance
-improvement is a verified transcript derivative/cache so unchanged audio is
-not retranscribed on later metadata-only passes.
+Finish the one-time transcript backfill, verify the 0.12 native package against
+the live catalog, then merge the feature branch to main.
 
 ---
 
@@ -222,7 +221,9 @@ J:\
     └── Backups\
 ```
 
-This structure is provisional. Codex should not reorganize existing user files without explicit approval.
+This structure is provisional. Successful analysis authorizes placement only
+when established hierarchy makes the final home unambiguous; otherwise Beacon
+must ask a focused clarification.
 
 ---
 

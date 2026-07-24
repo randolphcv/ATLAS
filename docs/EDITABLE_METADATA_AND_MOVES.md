@@ -20,7 +20,7 @@ The native Library editor currently supports:
 - client and project;
 - rights and restrictions;
 - freeform notes;
-- approved organization directory.
+- final organization directory.
 
 Every save creates an immutable revision record. Search includes the current
 editable metadata. Context attaches to the asset UUID, so it survives location
@@ -32,8 +32,10 @@ format-specific, backup-aware design.
 
 ## Managed moves
 
-Managed moves are enabled only by recorded policy and remain separate from AI
-suggestions. A move requires an exact cataloged location and an approved
+Managed moves are enabled only by recorded policy. Successful local analysis
+authorizes a move when established Inbox hierarchy makes placement
+unambiguous; otherwise Beacon asks a focused clarification. A move requires an
+exact cataloged location and a final
 directory under:
 
 - `J:\Library`

@@ -6,9 +6,13 @@
 - The Windows hostname is currently `DESKTOP-8B4OJIR`. Connor has requested
   `Ultron`, but do not treat that OS rename as active until it is verified
   after a Windows restart.
-- Treat `J:\` as protected managed storage. Never modify originals or DrivePool configuration.
+- Treat `J:\` as protected managed storage. Beacon may perform audited,
+  checksum-verified, same-volume moves into approved archive roots after
+  successful analysis when the existing hierarchy makes placement unambiguous.
+  Never edit or delete originals or change DrivePool configuration.
 - Develop and test on the NVMe with synthetic fixtures unless Connor approves an exact production path.
-- Beacon cataloging is read-only: never rename, move, edit, or delete observed files.
+- Catalog observation is read-only. Managed placement is a separate, audited
+  analysis-commit operation; ambiguous placement requires clarification.
 - Keep source, runtime data, derivatives, backups, and originals in separate locations.
 - Make jobs restartable and idempotent. Verify source bytes before declaring work complete.
 - Store secrets outside Git. Core catalog behavior must work without cloud access.

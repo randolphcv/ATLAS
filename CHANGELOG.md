@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added schema-11 checksum-bound full transcripts, cached across later
+  metadata analysis passes.
+- Added waveform plus transcript audio previews and a full transcript section
+  in the scrollable asset record.
+- Successful local analysis now commits files with unambiguous Inbox hierarchy
+  through the existing verified managed-move boundary; only unclear placement
+  creates a clarification, and operating-system metadata is ignored.
 - Expanded local visual analysis to six timeline samples and detailed
   stock/B-roll metadata.
 - Added local faster-whisper speech transcription and full-file spectrogram

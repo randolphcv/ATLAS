@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 @dataclass(frozen=True)
@@ -329,6 +329,21 @@ def migrate(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_local_analysis_items_job_state
             ON local_analysis_items(job_id, state, asset_id);
+        CREATE TABLE IF NOT EXISTS asset_transcripts (
+            id TEXT PRIMARY KEY,
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            source_sha256 TEXT NOT NULL,
+            text TEXT NOT NULL,
+            text_sha256 TEXT NOT NULL,
+            language TEXT,
+            language_probability REAL,
+            generator TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            verified_at TEXT NOT NULL,
+            UNIQUE(asset_id, source_sha256, generator)
+        );
+        CREATE INDEX IF NOT EXISTS idx_asset_transcripts_asset
+            ON asset_transcripts(asset_id, verified_at DESC);
         """
     )
     columns = {

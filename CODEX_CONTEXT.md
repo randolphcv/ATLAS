@@ -178,7 +178,10 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 - An installed connector or available model is not automatic permission to send data to it.
 - Do not persist secrets or direct personal/private content in documentation or memory.
 - Index content only after the intended scope and exclusions are explicit.
-- Future write/move features must be approval-based, audited, checksummed, and tested against non-production fixtures first.
+- Managed moves must be audited, checksummed, collision-safe, bounded to
+  approved roots, and tested against non-production fixtures first. Successful
+  analysis is standing authorization for an unambiguous final placement;
+  Beacon asks only when placement logic is genuinely unclear.
 
 ## Communication and Handoff
 

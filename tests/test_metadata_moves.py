@@ -6,9 +6,14 @@ from pathlib import Path
 
 from beacon.catalog import catalog_file, sha256_file
 from beacon.database import SCHEMA_VERSION, connect, database_integrity
-from beacon.managed_moves import move_cataloged_file
+from beacon.managed_moves import (
+    analysis_placement_for,
+    move_cataloged_file,
+    placement_needs_clarification,
+)
 from beacon.metadata import (
     apply_analysis_metadata,
+    apply_analysis_organization_path,
     get_asset_metadata,
     get_policy,
     save_asset_metadata,
@@ -151,8 +156,51 @@ class EditableMetadataTests(unittest.TestCase):
         self.assertEqual(refreshed["tags"], ["keeper"])
         self.assertEqual(refreshed["description"], "Richer AI description")
 
+    def test_analysis_move_preserves_human_organization_path(self) -> None:
+        current = get_asset_metadata(self.db, self.asset.asset_id)
+        editable = {
+            key: value
+            for key, value in current.items()
+            if key not in {"revision", "updated_at", "updated_by"}
+        }
+        editable["organization_path"] = str(self.root / "human-home")
+        save_asset_metadata(
+            self.db,
+            self.asset.asset_id,
+            editable,
+            updated_by="human",
+            source="native-editor",
+        )
+        result = apply_analysis_organization_path(
+            self.db,
+            self.asset.asset_id,
+            self.root / "beacon-home",
+            run_id="analysis-run",
+        )
+        self.assertEqual(
+            result["organization_path"],
+            str(self.root / "human-home"),
+        )
+
 
 class ManagedMoveTests(unittest.TestCase):
+    def test_analysis_placement_preserves_project_hierarchy(self) -> None:
+        decision = analysis_placement_for(
+            Path(r"J:\Inbox\Anna King\2021 Naked Retreat\AUDIO\take.wav")
+        )
+        self.assertEqual(
+            decision.destination_directory,
+            Path(r"J:\Projects\Anna King\2021 Naked Retreat\AUDIO"),
+        )
+        ambiguous = analysis_placement_for(Path(r"J:\Inbox\loose.wav"))
+        self.assertIsNone(ambiguous.destination_directory)
+        self.assertTrue(
+            placement_needs_clarification(Path(r"J:\Inbox\loose.wav"))
+        )
+        self.assertFalse(
+            placement_needs_clarification(Path(r"J:\Inbox\.DS_Store"))
+        )
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

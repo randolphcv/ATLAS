@@ -1062,7 +1062,7 @@ ApplicationWindow {
                     EditorField {
                         id: metadataOrganization
                         Layout.fillWidth: true
-                        label: "Approved organization directory"
+                        label: "Final organization directory"
                         placeholder: "J:\\Library\\…, J:\\Assets\\…, or J:\\Projects\\…"
                     }
                     Rectangle {
@@ -1325,27 +1325,65 @@ ApplicationWindow {
                     fillMode: VideoOutput.PreserveAspectFit
                 }
 
-                ColumnLayout {
-                    anchors.centerIn: parent
-                    width: Math.min(parent.width - 80, 720)
-                    spacing: 18
+                ScrollView {
+                    id: audioPreviewScroll
+                    anchors.fill: parent
+                    anchors.margins: 18
                     visible: previewDialog.previewKind === "audio"
-                    Image {
-                        Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: Math.min(640, parent.width)
-                        Layout.preferredHeight: 260
-                        source: backend.selectedAsset.thumbnailUrl || ""
-                        fillMode: Image.PreserveAspectFit
-                        asynchronous: true
-                        cache: false
-                    }
-                    Text {
-                        Layout.alignment: Qt.AlignHCenter
-                        text: "AUDIO PREVIEW"
-                        color: root.brass
-                        font.pixelSize: 10
-                        font.weight: Font.DemiBold
-                        font.letterSpacing: 1.7
+                    clip: true
+                    contentWidth: availableWidth
+                    ColumnLayout {
+                        width: audioPreviewScroll.availableWidth
+                        spacing: 14
+                        Image {
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.fillWidth: true
+                            Layout.maximumWidth: 760
+                            Layout.preferredHeight: 240
+                            source: backend.selectedAsset.thumbnailUrl || ""
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                            cache: false
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                Layout.fillWidth: true
+                                text: "AUDIO WAVEFORM & TRANSCRIPT"
+                                color: root.brass
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 1.4
+                            }
+                            Text {
+                                text: (backend.selectedAsset.transcript || {}).languageLabel || ""
+                                color: root.muted
+                                font.pixelSize: 9
+                            }
+                        }
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: Math.max(
+                                180, previewTranscript.implicitHeight + 28
+                            )
+                            radius: 8
+                            color: root.shell
+                            border.color: root.line
+                            Text {
+                                id: previewTranscript
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 14
+                                text: (backend.selectedAsset.transcript || {}).text
+                                      || "No stored transcript is available yet."
+                                color: root.bone
+                                font.pixelSize: 12
+                                lineHeight: 1.45
+                                wrapMode: Text.WordWrap
+                                textFormat: Text.PlainText
+                            }
+                        }
                     }
                 }
 
@@ -3083,7 +3121,7 @@ ApplicationWindow {
                                                 DetailLine {
                                                     Layout.fillWidth: true
                                                     label: "Destination"
-                                                    value: (backend.selectedAsset.catalogMetadata || {}).organization_path || "Not approved yet"
+                                                    value: (backend.selectedAsset.catalogMetadata || {}).organization_path || "Beacon will place after confident analysis"
                                                     mono: true
                                                 }
                                                 DetailLine {
@@ -3295,6 +3333,58 @@ ApplicationWindow {
                                                             }
                                                         }
                                                     }
+                                                }
+                                            }
+                                            Rectangle { Layout.fillWidth: true; height: 1; color: root.line }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 10
+                                                visible: ((backend.selectedAsset.transcript || {}).text || "").length > 0
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: "FULL TRANSCRIPTION"
+                                                        color: root.brass
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                        font.letterSpacing: 1.4
+                                                    }
+                                                    Text {
+                                                        text: (backend.selectedAsset.transcript || {}).languageLabel || ""
+                                                        color: root.muted
+                                                        font.pixelSize: 8
+                                                    }
+                                                }
+                                                Rectangle {
+                                                    Layout.fillWidth: true
+                                                    Layout.preferredHeight: detailTranscript.implicitHeight + 28
+                                                    radius: 7
+                                                    color: root.shell
+                                                    border.color: root.line
+                                                    Text {
+                                                        id: detailTranscript
+                                                        anchors.left: parent.left
+                                                        anchors.right: parent.right
+                                                        anchors.top: parent.top
+                                                        anchors.margins: 14
+                                                        text: (backend.selectedAsset.transcript || {}).text || ""
+                                                        color: root.bone
+                                                        font.pixelSize: 11
+                                                        lineHeight: 1.45
+                                                        wrapMode: Text.WordWrap
+                                                        textFormat: Text.PlainText
+                                                    }
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: ((backend.selectedAsset.transcript || {}).generatorLabel || "")
+                                                          + "  ·  Verified "
+                                                          + ((backend.selectedAsset.transcript || {}).verifiedLabel || "")
+                                                    color: root.muted
+                                                    font.family: "Cascadia Mono"
+                                                    font.pixelSize: 8
+                                                    wrapMode: Text.WrapAnywhere
                                                 }
                                             }
                                         }

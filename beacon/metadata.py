@@ -288,6 +288,36 @@ def apply_analysis_metadata(
     )
 
 
+def apply_analysis_organization_path(
+    db_path: Path,
+    asset_id: str,
+    destination_directory: Path,
+    *,
+    run_id: str,
+) -> dict[str, Any]:
+    """Record the committed final directory unless a human owns that field."""
+    current = get_asset_metadata(db_path, asset_id)
+    with connect(db_path) as connection:
+        authority = connection.execute(
+            """
+            SELECT authority FROM asset_metadata_field_authority
+            WHERE asset_id=? AND field='organization_path'
+            """,
+            (asset_id,),
+        ).fetchone()
+    if authority is not None and authority["authority"] == "human":
+        return current
+    editable = {key: current[key] for key in METADATA_FIELDS}
+    editable["organization_path"] = str(destination_directory)
+    return save_asset_metadata(
+        db_path,
+        asset_id,
+        editable,
+        updated_by="Beacon local analyzer",
+        source=f"analysis_move:{run_id}",
+    )
+
+
 def set_policy(
     db_path: Path,
     key: str,

@@ -15,6 +15,8 @@ APPROVED_DESTINATION_ROOTS = (
     Path(r"J:\Assets"),
     Path(r"J:\Projects"),
 )
+INBOX_ROOT = Path(r"J:\Inbox")
+PROJECTS_ROOT = Path(r"J:\Projects")
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,76 @@ class MoveResult:
     destination_path: str
     sha256: str
     state: str
+
+
+@dataclass(frozen=True)
+class PlacementDecision:
+    destination_directory: Path | None
+    reason: str
+
+
+def analysis_placement_for(source_path: Path) -> PlacementDecision:
+    """Choose a conservative final home from an established Inbox hierarchy."""
+    source = Path(os.path.abspath(source_path))
+    inbox = Path(os.path.abspath(INBOX_ROOT))
+    if not _is_within(source, inbox):
+        return PlacementDecision(None, "Source is outside the managed Inbox.")
+    relative = source.relative_to(inbox)
+    if source.name.startswith(".") or source.name.casefold() in {
+        "desktop.ini", "thumbs.db",
+    }:
+        return PlacementDecision(
+            None,
+            "Ignored operating-system metadata is not committed to the archive.",
+        )
+    if len(relative.parts) < 3:
+        return PlacementDecision(
+            None,
+            "The Inbox path does not contain enough reliable project context.",
+        )
+    return PlacementDecision(
+        PROJECTS_ROOT / relative.parent,
+        "Preserved the established client/project Inbox hierarchy under Projects.",
+    )
+
+
+def placement_needs_clarification(source_path: Path) -> bool:
+    decision = analysis_placement_for(source_path)
+    return (
+        decision.destination_directory is None
+        and not decision.reason.startswith("Ignored ")
+        and _is_within(
+            Path(os.path.abspath(source_path)),
+            Path(os.path.abspath(INBOX_ROOT)),
+        )
+    )
+
+
+def commit_analyzed_file(
+    db_path: Path,
+    *,
+    asset_id: str,
+    source_path: Path,
+    confidence: float,
+    analysis_run_id: str,
+) -> tuple[MoveResult | None, str]:
+    """Commit a confidently analyzed Inbox file or explain why it needs review."""
+    decision = analysis_placement_for(source_path)
+    if decision.destination_directory is None:
+        return None, decision.reason
+    result = move_cataloged_file(
+        db_path,
+        asset_id=asset_id,
+        source_path=source_path,
+        destination_directory=decision.destination_directory,
+        requested_by="Beacon local analyzer",
+        authorization=(
+            "Successful local analysis authorizes confident final placement; "
+            f"analysis_run={analysis_run_id}; descriptive_confidence={confidence:.3f}. "
+            f"{decision.reason}"
+        ),
+    )
+    return result, decision.reason
 
 
 def _utc_now() -> str:
@@ -103,6 +175,13 @@ def move_cataloged_file(
     source = source_path.resolve(strict=True)
     if not source.is_file():
         raise ValueError("Managed move source must be a regular non-symlink file.")
+    for candidate in (source.parent, *source.parents):
+        if candidate.is_symlink() or bool(
+            getattr(os.path, "isjunction", lambda _: False)(candidate)
+        ):
+            raise ValueError(
+                f"Managed move source traverses a reparse point: {candidate}"
+            )
     destination_directory = _validated_destination(
         destination_directory / source.name,
         approved_roots,

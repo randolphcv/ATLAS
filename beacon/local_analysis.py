@@ -20,7 +20,10 @@ from typing import Any
 from .analysis import import_analysis_manifest
 from .catalog import sha256_file
 from .database import connect, migrate, record_event
-from .metadata import apply_analysis_metadata
+from .desk import seed_threads
+from .managed_moves import commit_analyzed_file, placement_needs_clarification
+from .metadata import apply_analysis_metadata, apply_analysis_organization_path
+from .transcripts import get_asset_transcript, save_asset_transcript
 
 DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
 POLICY_VERSION = "beacon-local-multimodal-v2"
@@ -477,8 +480,43 @@ def _duration_seconds(metadata: dict[str, Any]) -> float:
         return 0.0
 
 
-def _transcribe_audio(source: Path) -> dict[str, Any]:
+def _analysis_excerpt(text: str, limit: int = 8000) -> tuple[str, bool]:
+    if len(text) <= limit:
+        return text, False
+    third = (limit - 80) // 3
+    middle = max(0, (len(text) - third) // 2)
+    return (
+        text[:third]
+        + "\n[...middle excerpt...]\n"
+        + text[middle:middle + third]
+        + "\n[...ending excerpt...]\n"
+        + text[-third:],
+        True,
+    )
+
+
+def _transcribe_audio(
+    source: Path,
+    *,
+    db_path: Path | None = None,
+    asset_id: str = "",
+    source_sha256: str = "",
+) -> dict[str, Any]:
     global _WHISPER_MODEL
+    if db_path and asset_id and source_sha256:
+        cached = get_asset_transcript(
+            db_path, asset_id, source_sha256=source_sha256
+        )
+        if cached:
+            excerpt, excerpted = _analysis_excerpt(str(cached["text"]))
+            return {
+                "status": "cached",
+                "language": cached.get("language") or "",
+                "language_probability": cached.get("language_probability"),
+                "transcript": str(cached["text"]),
+                "analysis_excerpt": excerpt,
+                "excerpted": excerpted,
+            }
     try:
         from faster_whisper import WhisperModel
     except ImportError:
@@ -499,24 +537,73 @@ def _transcribe_audio(source: Path) -> dict[str, Any]:
     segments, info = _WHISPER_MODEL.transcribe(
         str(source), beam_size=5, vad_filter=True, word_timestamps=False
     )
-    text = " ".join(segment.text.strip() for segment in segments if segment.text.strip())
-    if len(text) > 8000:
-        third = 2600
-        middle = max(0, (len(text) - third) // 2)
-        text = (
-            text[:third]
-            + "\n[...middle excerpt...]\n"
-            + text[middle:middle + third]
-            + "\n[...ending excerpt...]\n"
-            + text[-third:]
+    text = " ".join(
+        segment.text.strip() for segment in segments if segment.text.strip()
+    ).strip()
+    language = str(getattr(info, "language", "") or "")
+    probability = getattr(info, "language_probability", None)
+    if not text:
+        return {
+            "status": "complete",
+            "language": language,
+            "language_probability": probability,
+            "transcript": "",
+            "analysis_excerpt": "",
+            "excerpted": False,
+        }
+    if db_path and asset_id and source_sha256:
+        if sha256_file(source) != source_sha256:
+            raise ValueError("source bytes changed during transcription")
+        save_asset_transcript(
+            db_path,
+            asset_id=asset_id,
+            source_sha256=source_sha256,
+            text=text,
+            language=language,
+            language_probability=probability,
         )
+    excerpt, excerpted = _analysis_excerpt(text)
     return {
         "status": "complete",
-        "language": getattr(info, "language", ""),
-        "language_probability": getattr(info, "language_probability", None),
+        "language": language,
+        "language_probability": probability,
         "transcript": text,
-        "excerpted": "[...middle excerpt...]" in text,
+        "analysis_excerpt": excerpt,
+        "excerpted": excerpted,
     }
+
+
+def ensure_asset_transcript(db_path: Path, asset_id: str) -> dict[str, Any]:
+    """Create or reuse the full checksum-bound transcript for one audio asset."""
+    with connect(db_path) as connection:
+        migrate(connection)
+        row = connection.execute(
+            """
+            SELECT a.sha256,a.media_metadata_json,MIN(l.path) AS source_path
+            FROM assets a JOIN locations l ON l.asset_id=a.id
+            WHERE a.id=? GROUP BY a.id
+            """,
+            (asset_id,),
+        ).fetchone()
+    if row is None:
+        raise LookupError("Catalog asset was not found.")
+    metadata = json.loads(row["media_metadata_json"] or "{}")
+    kinds = {
+        str(stream.get("codec_type") or "")
+        for stream in metadata.get("streams", [])
+        if isinstance(stream, dict)
+    }
+    if "audio" not in kinds or "video" in kinds:
+        raise ValueError("Full speech transcripts are generated for audio-only assets.")
+    source = Path(row["source_path"])
+    if sha256_file(source) != row["sha256"]:
+        raise ValueError("source bytes changed since cataloging")
+    return _transcribe_audio(
+        source,
+        db_path=db_path,
+        asset_id=asset_id,
+        source_sha256=row["sha256"],
+    )
 
 
 def _prepare_media_context(
@@ -573,7 +660,20 @@ def _prepare_media_context(
         if completed.returncode == 0 and spectrum.is_file():
             images.append(spectrum)
             context["spectrogram"] = "full-file local frequency/time visualization"
-        context["speech_analysis"] = _transcribe_audio(source)
+        speech = _transcribe_audio(
+            source,
+            db_path=Path(str(asset["db_path"])) if asset.get("db_path") else None,
+            asset_id=str(asset.get("asset_id") or ""),
+            source_sha256=str(asset.get("source_sha256") or ""),
+        )
+        context["speech_analysis"] = {
+            key: value
+            for key, value in speech.items()
+            if key not in {"transcript", "analysis_excerpt"}
+        }
+        context["speech_analysis"]["transcript"] = speech.get(
+            "analysis_excerpt", ""
+        )
     return context, images, temp_root
 
 
@@ -658,6 +758,7 @@ def run_local_analysis_job(
                 job["model"],
                 {
                     **item,
+                    "db_path": str(db_path),
                     "size_bytes": int(asset["size_bytes"]),
                     "media_metadata": json.loads(asset["media_metadata_json"] or "{}"),
                     "thumbnail_path": asset["thumbnail_path"],
@@ -715,26 +816,29 @@ def run_local_analysis_job(
         ).fetchone())
         completed_rows = connection.execute(
             """
-            SELECT id,asset_id,result_json FROM local_analysis_items
+            SELECT id,asset_id,source_path,result_json FROM local_analysis_items
             WHERE job_id=? AND state='complete' ORDER BY asset_id
             """,
             (job_id,),
         ).fetchall()
-        already_imported = {
-            row["asset_id"]
-            for row in connection.execute(
+        imported_rows = connection.execute(
                 """
-                SELECT results.asset_id,runs.scope_json
+                SELECT results.asset_id,runs.id AS run_id,runs.scope_json
                 FROM analysis_results results
                 JOIN analysis_runs runs ON runs.id=results.run_id
                 """
-            )
+            ).fetchall()
+        matching_imports = [
+            row for row in imported_rows
             if json.loads(row["scope_json"] or "{}").get("job_id") == job_id
-        }
+        ]
+        already_imported = {row["asset_id"] for row in matching_imports}
+        existing_run_id = (
+            matching_imports[0]["run_id"] if matching_imports else None
+        )
         results = []
+        candidates = []
         for row in completed_rows:
-            if row["asset_id"] in already_imported:
-                continue
             candidate = json.loads(row["result_json"])
             confidence, normalization_note = _normalize_confidence(
                 candidate.get("confidence")
@@ -760,9 +864,11 @@ def run_local_analysis_job(
                     """,
                     (_canonical_json(candidate), row["id"]),
                 )
-            results.append(candidate)
+            candidates.append(candidate)
+            if row["asset_id"] not in already_imported:
+                results.append(candidate)
         counts = _counts(connection, job_id)
-    run_id = None
+    run_id = existing_run_id
     if results:
         imported = import_analysis_manifest(
             db_path,
@@ -778,13 +884,76 @@ def run_local_analysis_job(
             },
         )
         run_id = imported.run_id
-        for candidate in results:
+    if run_id:
+        for candidate in candidates:
             apply_analysis_metadata(
                 db_path,
                 candidate["asset_id"],
                 candidate["payload"],
                 run_id=run_id,
             )
+            with connect(db_path) as connection:
+                location = connection.execute(
+                    """
+                    SELECT path AS source_path FROM locations
+                    WHERE asset_id=?
+                    ORDER BY
+                      CASE WHEN path=? THEN 0
+                           WHEN path LIKE ? THEN 1
+                           ELSE 2 END,
+                      path COLLATE NOCASE
+                    LIMIT 1
+                    """,
+                    (
+                        candidate["asset_id"],
+                        next(
+                            row["source_path"]
+                            for row in completed_rows
+                            if row["asset_id"] == candidate["asset_id"]
+                        ),
+                        r"J:\Inbox\%",
+                    ),
+                ).fetchone()
+            if location is None:
+                raise RuntimeError("Analyzed source location could not be recovered.")
+            moved, placement_reason = commit_analyzed_file(
+                db_path,
+                asset_id=candidate["asset_id"],
+                source_path=Path(location["source_path"]),
+                confidence=float(candidate["confidence"]),
+                analysis_run_id=run_id,
+            )
+            if moved is None and placement_needs_clarification(
+                Path(location["source_path"])
+            ):
+                seed_threads(
+                    db_path,
+                    [
+                        {
+                            "seed_key": (
+                                f"analysis-placement:{run_id}:"
+                                f"{candidate['asset_id']}"
+                            ),
+                            "subject": "Where should this analyzed file live?",
+                            "body": (
+                                f"Beacon completed analysis but could not infer a "
+                                f"reliable final home for {location['source_path']}. "
+                                f"{placement_reason}"
+                            ),
+                            "kind": "clarification",
+                            "priority": "normal",
+                            "requires_approval": False,
+                            "asset_id": candidate["asset_id"],
+                        }
+                    ],
+                )
+            elif moved is not None:
+                apply_analysis_organization_path(
+                    db_path,
+                    candidate["asset_id"],
+                    Path(moved.destination_path).parent,
+                    run_id=run_id,
+                )
     state = "complete" if counts["failed"] == 0 else ("partial" if counts["complete"] else "failed")
     with connect(db_path) as connection:
         connection.execute(
