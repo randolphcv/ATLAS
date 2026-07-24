@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from beacon.catalog import CatalogResult, catalog_file
 from beacon.intake import (
@@ -72,6 +73,23 @@ class IntakeJobTests(unittest.TestCase):
             ]
         connection.close()
         self.assertEqual(paths, ["nested/a-first.txt", "nested/b-first.txt"])
+
+    def test_finder_metadata_is_recycled_before_snapshot(self) -> None:
+        metadata = self._write(".DS_Store", b"finder metadata")
+        self._write("keep.txt", b"keep")
+
+        def recycle(value: str) -> None:
+            Path(value).unlink()
+
+        with patch("beacon.intake.send2trash", side_effect=recycle) as recycled:
+            job_id = self._create(limit=25)
+        detail = intake_job_detail(self.db, job_id)
+
+        self.assertFalse(metadata.exists())
+        recycled.assert_called_once_with(str(metadata.resolve()))
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertEqual(detail["total_items"], 1)
 
     def test_selected_file_snapshot_contains_only_explicit_choices(self) -> None:
         first = self._write("first.txt", b"first")

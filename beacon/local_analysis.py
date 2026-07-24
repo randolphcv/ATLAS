@@ -130,7 +130,14 @@ def local_runtime_status(endpoint: str = DEFAULT_ENDPOINT) -> LocalRuntimeStatus
         return LocalRuntimeStatus(False, "", (), str(error))
 
 
-def analysis_scope_preview(db_path: Path, *, include_analyzed: bool = False) -> dict[str, Any]:
+def analysis_scope_preview(
+    db_path: Path,
+    *,
+    include_analyzed: bool = False,
+    scope_kind: str = "all",
+) -> dict[str, Any]:
+    if scope_kind not in {"all", "raw"}:
+        raise ValueError("unsupported analysis scope")
     with connect(db_path) as connection:
         migrate(connection)
         where = """
@@ -147,6 +154,14 @@ def analysis_scope_preview(db_path: Path, *, include_analyzed: bool = False) -> 
                   AND result.review_state IN ('candidate', 'approved')
             )
             """
+        parameters: list[str] = []
+        if scope_kind == "raw":
+            where += " AND (" + " OR ".join(
+                "lower(locations.path) LIKE ?" for _ in RAW_EXTENSIONS
+            ) + ")"
+            parameters.extend(
+                f"%{suffix}" for suffix in sorted(RAW_EXTENSIONS)
+            )
         rows = connection.execute(
             f"""
             SELECT assets.id, assets.sha256, assets.size_bytes,
@@ -156,7 +171,8 @@ def analysis_scope_preview(db_path: Path, *, include_analyzed: bool = False) -> 
             {where}
             GROUP BY assets.id
             ORDER BY source_path COLLATE NOCASE
-            """
+            """,
+            parameters,
         ).fetchall()
     visual = audio = other = 0
     for row in rows:
@@ -195,17 +211,33 @@ def create_local_analysis_job(
     model: str,
     endpoint: str = DEFAULT_ENDPOINT,
     include_analyzed: bool = False,
+    scope_kind: str = "all",
     requested_by: str = "human",
 ) -> str:
     model = model.strip()
     if not model:
         raise ValueError("choose a local model")
-    preview = analysis_scope_preview(db_path, include_analyzed=include_analyzed)
+    preview = analysis_scope_preview(
+        db_path,
+        include_analyzed=include_analyzed,
+        scope_kind=scope_kind,
+    )
     job_id = str(uuid.uuid4())
     now = _utc_now()
     with connect(db_path) as connection:
+        scope_clause = ""
+        scope_parameters: list[object] = [int(include_analyzed)]
+        if scope_kind == "raw":
+            scope_clause = " AND (" + " OR ".join(
+                "lower(locations.path) LIKE ?" for _ in RAW_EXTENSIONS
+            ) + ")"
+            scope_parameters.extend(
+                f"%{suffix}" for suffix in sorted(RAW_EXTENSIONS)
+            )
+        elif scope_kind != "all":
+            raise ValueError("unsupported analysis scope")
         rows = connection.execute(
-            """
+            f"""
             SELECT assets.id, assets.sha256, MIN(locations.path) AS source_path
             FROM assets JOIN locations ON locations.asset_id = assets.id
             WHERE lower(locations.path) NOT LIKE '%.ds_store'
@@ -217,9 +249,10 @@ def create_local_analysis_job(
                   AND result.analysis_kind = 'contextual_metadata'
                   AND result.review_state IN ('candidate', 'approved')
               ))
+              {scope_clause}
             GROUP BY assets.id ORDER BY source_path COLLATE NOCASE
             """,
-            (int(include_analyzed),),
+            scope_parameters,
         ).fetchall()
         connection.execute(
             """
@@ -255,6 +288,7 @@ def create_local_analysis_job(
             details={
                 "job_id": job_id, "model": model, "endpoint": endpoint,
                 "scope_sha256": preview["scope_sha256"],
+                "scope_kind": scope_kind,
             },
         )
     return job_id

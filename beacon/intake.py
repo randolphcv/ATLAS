@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from send2trash import send2trash
+
 from .catalog import CatalogResult, catalog_file
 from .database import connect, migrate, record_event
 
@@ -127,6 +129,28 @@ def _discover(
     )
 
 
+def _recycle_finder_metadata(source_root: Path) -> list[str]:
+    recycled: list[str] = []
+    for current, directories, filenames in os.walk(
+        source_root, topdown=True, followlinks=False
+    ):
+        current_path = Path(current)
+        directories[:] = [
+            name
+            for name in directories
+            if not _is_reparse_point(current_path / name)
+        ]
+        for name in filenames:
+            if name.casefold() != ".ds_store":
+                continue
+            candidate = current_path / name
+            if _is_reparse_point(candidate) or not candidate.is_file():
+                continue
+            send2trash(str(candidate))
+            recycled.append(str(candidate))
+    return recycled
+
+
 def create_intake_job(
     db_path: Path,
     *,
@@ -136,6 +160,7 @@ def create_intake_job(
     requested_by: str = "human",
 ) -> str:
     source = _resolve_source_root(source_root, allowed_roots)
+    recycled_metadata = _recycle_finder_metadata(source)
     items, snapshot = _discover(source, item_limit)
     job_id = str(uuid.uuid4())
     now = _utc_now()
@@ -200,8 +225,24 @@ def create_intake_job(
                 "total_bytes": snapshot.total_bytes,
                 "item_limit": item_limit,
                 "mode": "catalog_only",
+                "recycled_finder_metadata": recycled_metadata,
             },
         )
+        if recycled_metadata:
+            record_event(
+                connection,
+                kind="intake_cleanup",
+                state="complete",
+                message=(
+                    f"Recycled {len(recycled_metadata):,} Finder .DS_Store file"
+                    + ("s" if len(recycled_metadata) != 1 else "")
+                ),
+                details={
+                    "job_id": job_id,
+                    "paths": recycled_metadata,
+                    "disposition": "Windows Recycle Bin",
+                },
+            )
     return job_id
 
 
@@ -219,6 +260,9 @@ def create_selected_intake_job(
     selected: dict[str, Path] = {}
     for value in selected_paths:
         path = Path(value).resolve(strict=True)
+        if path.name.casefold() == ".ds_store":
+            send2trash(str(path))
+            continue
         if not path.is_file() or _is_reparse_point(path):
             raise ValueError(f"selected intake item must be a regular file: {path}")
         matching = [root for root in allowed if _same_or_descendant(path, root)]

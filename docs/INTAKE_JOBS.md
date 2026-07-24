@@ -13,6 +13,9 @@ deleting a source file.
 - Beacon 0.15 also offers **Choose files…** for an exact human-curated batch.
   Every selected file must be a regular non-reparse file beneath the approved
   Inbox root. Its selected count is stored as the explicit item limit.
+- Finder `.DS_Store` files are sent to the Windows Recycle Bin before snapshot
+  discovery and are recorded in an `intake_cleanup` audit event. They never
+  become intake items.
 - Leaving the file limit blank is the explicit action that snapshots every
   discovered regular file.
 - A snapshot records each relative path, byte size, modified time, total byte

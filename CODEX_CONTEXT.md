@@ -164,7 +164,7 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ### Current Beacon baseline (2026-07-24)
 
-- Beacon 0.15.1 is the current packaged candidate on branch
+- Beacon 0.15.2 is the current packaged candidate on branch
   `ops/overnight-250-tranche`.
 - The bounded 250-file production tranche completed intake and contextual
   analysis locally; the one malformed Qwen JSON response passed on a one-item
@@ -176,6 +176,8 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
   originals are never decoded in place or rewritten.
 - Contextual analysis may describe a RAW photo only when the verified local
   derivative is supplied to the model. Missing visual evidence is a hard stop.
+- Finder `.DS_Store` files are explicitly disposable metadata. Beacon recycles
+  them before intake snapshots and audits the disposition.
 - Future thumbnail derivatives live under `J:\Beacon\Thumbnails` for the live
   catalog; C: remains the fast runtime/model/temp tier.
 

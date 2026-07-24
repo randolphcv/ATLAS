@@ -346,7 +346,7 @@ Next smallest step:
 - Last verified: 2026-07-24 on the Windows ATLAS host
 - Working branch/commit: `C:\Development\ATLAS`, branch
   `ops/overnight-250-tranche`
-- Current milestone: Beacon 0.15.1 selected intake, evidence-gated RAW analysis,
+- Current milestone: Beacon 0.15.2 selected intake, evidence-gated RAW analysis,
   and complete analyzed-Inbox placement
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
   242 unique identities were cataloged and the final one-item contextual retry
@@ -375,6 +375,11 @@ Next smallest step:
   non-media OS metadata; the eight remaining analyzed duplicate video
   locations were checksum-verified and moved from Inbox into their preserved
   `J:\Projects\...\C3` hierarchy. No analyzed locations remain in Inbox.
+- Finder metadata policy: `.DS_Store` is irrelevant, explicitly disposable
+  metadata. Beacon sends encountered copies to the Windows Recycle Bin before
+  freezing a new intake snapshot and records an audit event. The seven prior
+  live copies and their obsolete catalog identities were removed on 2026-07-24
+  after a verified database backup.
 - Storage: C: had 52.4 GB free. Fixed consumers were approximately 7.8 GB music
   runtime, 9.0 GB Ollama models/runtime, 4.7 GB release builds, and 1.0 GB
   Whisper. Corpus analysis does not copy source media to C:; sampled frames are
