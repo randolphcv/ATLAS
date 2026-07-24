@@ -1845,9 +1845,11 @@ ApplicationWindow {
                                     }
                                     MetricCard {
                                         Layout.fillWidth: true
-                                        eyebrow: "Failed operations"
+                                        eyebrow: "Current failures"
                                         value: backend.summary.failuresLabel || "0"
-                                        note: backend.summary.failures > 0 ? "Review the operation ledger" : "No recorded failures"
+                                        note: backend.summary.failures > 0
+                                              ? "Latest intake and analysis jobs"
+                                              : "No retryable failures"
                                         accentColor: backend.summary.failures > 0 ? root.ember : root.jade
                                     }
                                 }
@@ -1893,8 +1895,8 @@ ApplicationWindow {
                                                 objectName: "cancelAnalysisButton"
                                                 text: "Cancel analysis"
                                                 quiet: true
-                                                visible: backend.localAnalysisRunning
-                                                enabled: backend.localAnalysisRunning
+                                                visible: backend.analysisReadiness.analysisCanCancel === true
+                                                enabled: backend.analysisReadiness.analysisCanCancel === true
                                                 onClicked: backend.cancelLocalCatalogAnalysis()
                                             }
                                             PrimaryButton {
@@ -2138,6 +2140,28 @@ ApplicationWindow {
                                                             font.pixelSize: 14
                                                             font.weight: Font.DemiBold
                                                         }
+                                                    }
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        visible: backend.analysisReadiness.analysisHasJob === true
+                                                                 && (backend.analysisReadiness.analysisCanCancel === true
+                                                                     || backend.analysisReadiness.analysisCanRetry === true)
+                                                        PrimaryButton {
+                                                            text: "Cancel analysis"
+                                                            quiet: true
+                                                            visible: backend.analysisReadiness.analysisCanCancel === true
+                                                            enabled: visible
+                                                            onClicked: backend.cancelLocalCatalogAnalysis()
+                                                        }
+                                                        PrimaryButton {
+                                                            objectName: "retryAnalysisFailuresButton"
+                                                            text: "Retry analysis failures"
+                                                            quiet: true
+                                                            visible: backend.analysisReadiness.analysisCanRetry === true
+                                                            enabled: visible && !backend.busy
+                                                            onClicked: backend.retryLocalCatalogAnalysisFailures()
+                                                        }
+                                                        Item { Layout.fillWidth: true }
                                                     }
                                                     IntakeProgress {
                                                         Layout.fillWidth: true

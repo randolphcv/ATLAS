@@ -106,7 +106,25 @@ def catalog_summary(db_path: Path) -> dict[str, Any]:
             )
             """
         ).fetchone()[0]
-        failures = connection.execute(
+        analysis_failures = connection.execute(
+            """
+            SELECT COUNT(*) FROM local_analysis_items
+            WHERE state='failed' AND job_id=(
+                SELECT id FROM local_analysis_jobs
+                ORDER BY updated_at DESC LIMIT 1
+            )
+            """
+        ).fetchone()[0]
+        intake_failures = connection.execute(
+            """
+            SELECT COUNT(*) FROM intake_items
+            WHERE state='failed' AND job_id=(
+                SELECT id FROM intake_jobs ORDER BY updated_at DESC LIMIT 1
+            )
+            """
+        ).fetchone()[0]
+        failures = int(analysis_failures) + int(intake_failures)
+        recorded_failures = connection.execute(
             "SELECT COUNT(*) FROM system_events WHERE state = 'failed'"
         ).fetchone()[0]
         last_activity = connection.execute(
@@ -118,6 +136,7 @@ def catalog_summary(db_path: Path) -> dict[str, Any]:
         "duplicate_groups": duplicates,
         "total_bytes": counts["total_bytes"],
         "failures": failures,
+        "recorded_failures": recorded_failures,
         "last_activity_at": last_activity,
     }
 

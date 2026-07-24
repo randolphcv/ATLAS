@@ -7,6 +7,17 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
 
 ## Current Verified/Reported Baseline
 
+### Beacon 0.15.3 analysis reliability
+
+- Beacon 0.15.3 packages durable catalog-analysis Cancel and Retry controls.
+  Retry operates on the same job and resets only failed items.
+- Analysis runners continue after individual asset failures. The live
+  180-asset RAW job `d1e28b5c-e63c-4c0b-83f6-e1318bcd1f16` proved this on
+  2026-07-24 by advancing beyond a later failed item instead of terminating.
+- Overview current-failure counts now reconcile the latest intake and analysis
+  jobs. Historical failed audit events remain available in the ledger but do
+  not inflate the actionable count.
+
 ### Identity
 
 - Project: **ATLAS — Adaptive Topological Library & Archive System**

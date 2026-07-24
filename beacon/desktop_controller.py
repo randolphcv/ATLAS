@@ -58,6 +58,7 @@ from .local_analysis import (
     local_runtime_status,
     recover_local_analysis_jobs,
     request_local_analysis_cancel,
+    retry_local_analysis_failures,
     run_local_analysis_job,
 )
 from .repository import (
@@ -1083,6 +1084,9 @@ class DesktopController(QObject):
             "allAudioLabel": f"{full_scope['audio']:,}",
             "allOtherLabel": f"{full_scope['other']:,}",
             "analysisHasJob": bool(latest_job),
+            "analysisJobId": (
+                str(latest_job.get("id") or "") if latest_job else ""
+            ),
             "analysisJobState": (
                 str(latest_job.get("state") or "") if latest_job else ""
             ),
@@ -1096,6 +1100,14 @@ class DesktopController(QObject):
                 f"{analysis_complete:,} complete / {analysis_total:,} assets"
             ),
             "analysisFailedLabel": f"{analysis_failed:,} failed",
+            "analysisCanCancel": bool(
+                latest_job and latest_job.get("state") == "running"
+            ),
+            "analysisCanRetry": bool(
+                latest_job
+                and analysis_failed > 0
+                and latest_job.get("state") != "running"
+            ),
             "runtimeAvailable": runtime.available,
             "runtimeLabel": (
                 f"Local runtime {runtime.version}"
@@ -1193,15 +1205,67 @@ class DesktopController(QObject):
 
     @Slot()
     def cancelLocalCatalogAnalysis(self) -> None:
-        if not self._active_local_analysis_job_id:
+        job_id = self._active_local_analysis_job_id
+        if not job_id:
+            jobs = list_local_analysis_jobs(self.settings.db_path, limit=1)
+            latest = jobs[0] if jobs else None
+            if latest and latest.get("state") == "running":
+                job_id = str(latest["id"])
+        if not job_id:
+            self._set_status("No running catalog analysis to cancel.", "working")
             return
-        request_local_analysis_cancel(
-            self.settings.db_path, self._active_local_analysis_job_id
-        )
+        request_local_analysis_cancel(self.settings.db_path, job_id)
         self._set_status(
             "Local analysis cancellation requested; Beacon will stop between assets.",
             "working",
         )
+
+    @Slot()
+    def retryLocalCatalogAnalysisFailures(self) -> None:
+        if self._busy:
+            return
+        jobs = list_local_analysis_jobs(self.settings.db_path, limit=1)
+        latest = jobs[0] if jobs else None
+        if not latest:
+            self._set_status("No catalog analysis job is available to retry.", "error")
+            return
+        job_id = str(latest["id"])
+        try:
+            retry_count = retry_local_analysis_failures(
+                self.settings.db_path, job_id
+            )
+        except (LookupError, ValueError) as error:
+            self._set_status(str(error), "error")
+            self.refreshAnalysisReadiness()
+            return
+        if retry_count == 0:
+            self._set_status("This analysis job has no failed assets to retry.", "working")
+            self.refreshAnalysisReadiness()
+            return
+        self._busy = True
+        self._active_local_analysis_job_id = job_id
+        self.localAnalysisRunningChanged.emit()
+        self.busyChanged.emit()
+        self._set_status(
+            f"Retrying {retry_count:,} failed asset"
+            + ("" if retry_count == 1 else "s")
+            + " in the same catalog analysis job.",
+            "working",
+        )
+        worker = _LocalAnalysisWorker(self.settings.db_path, job_id)
+        self._workers.append(worker)
+        worker.signals.progressed.connect(self.refresh)
+        worker.signals.succeeded.connect(
+            lambda result, current=worker: self._local_analysis_succeeded(
+                current, result
+            )
+        )
+        worker.signals.failed.connect(
+            lambda message, current=worker: self._local_analysis_failed(
+                current, message
+            )
+        )
+        self._thread_pool.start(worker)
 
     def _load_beacon_threads(self, *, preserve_selection: bool) -> None:
         current_id = (

@@ -36,7 +36,6 @@ def main() -> int:
         result = run_local_analysis_job(
             args.db,
             args.job,
-            stop_on_item_error=True,
         )
         health = database_integrity(args.db)
         emit(

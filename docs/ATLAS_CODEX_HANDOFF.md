@@ -1,5 +1,14 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-24 Beacon 0.15.3 reliability update
+
+Catalog analysis is no longer fail-fast. Individual failures remain retryable
+while the durable job continues through pending assets. Native Cancel resolves
+the latest running analysis job even when it was started outside the current
+app process, and Retry resets only failed items in that same job. The Overview
+reports current retryable intake/analysis failures rather than lifetime failed
+audit-event history.
+
 ## Project Identity
 
 **ATLAS**  

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Catalog analysis now continues after individual asset failures, and its
+  durable Cancel and Retry controls operate on the latest analysis job.
+- Overview failure counts now report retryable failures in the latest intake
+  and analysis jobs instead of mixing them with lifetime audit history.
 - Added an isolated Python 3.11 music runtime with CUDA-enabled Demucs,
   ONNX-backed Basic Pitch, and librosa tonal/rhythm analysis.
 - Added schema-12 checksum-bound music results and verified MIDI/stem

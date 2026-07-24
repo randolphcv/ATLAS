@@ -164,7 +164,7 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ### Current Beacon baseline (2026-07-24)
 
-- Beacon 0.15.2 is the current packaged candidate on branch
+- Beacon 0.15.3 is the current packaged candidate on branch
   `ops/overnight-250-tranche`.
 - The bounded 250-file production tranche completed intake and contextual
   analysis locally; the one malformed Qwen JSON response passed on a one-item
@@ -178,6 +178,12 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
   derivative is supplied to the model. Missing visual evidence is a hard stop.
 - Finder `.DS_Store` files are explicitly disposable metadata. Beacon recycles
   them before intake snapshots and audits the disposition.
+- Contextual-analysis jobs continue after individual asset failures. Cancel
+  targets the latest running durable analysis job, and Retry resets only its
+  failed assets without replacing the job or repeating completed assets.
+- Overview “Current failures” counts retryable items in the latest intake and
+  analysis jobs; lifetime failed audit events remain in the operation ledger
+  and are not presented as current work.
 - Future thumbnail derivatives live under `J:\Beacon\Thumbnails` for the live
   catalog; C: remains the fast runtime/model/temp tier.
 
