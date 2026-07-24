@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 
 @dataclass(frozen=True)
@@ -306,7 +306,9 @@ def migrate(connection: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL,
             completed_at TEXT,
             analysis_run_id TEXT REFERENCES analysis_runs(id) ON DELETE SET NULL,
-            error TEXT
+            error TEXT,
+            current_stage TEXT,
+            current_stage_updated_at TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_local_analysis_jobs_state_updated
             ON local_analysis_jobs(state, updated_at DESC);
@@ -366,6 +368,17 @@ def migrate(connection: sqlite3.Connection) -> None:
     if "worker_pid" not in columns:
         connection.execute(
             "ALTER TABLE local_analysis_jobs ADD COLUMN worker_pid INTEGER"
+        )
+    if "current_stage" not in columns:
+        connection.execute(
+            "ALTER TABLE local_analysis_jobs ADD COLUMN current_stage TEXT"
+        )
+    if "current_stage_updated_at" not in columns:
+        connection.execute(
+            """
+            ALTER TABLE local_analysis_jobs
+            ADD COLUMN current_stage_updated_at TEXT
+            """
         )
     if existing_version < 9:
         now = _utc_now()

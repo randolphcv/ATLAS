@@ -1,6 +1,6 @@
 # Database
 
-Schema version 12 separates content, locations, derivatives, audit events,
+Schema version 13 separates content, locations, derivatives, audit events,
 AI-generated candidates, durable Beacon conversations, editable context, and
 managed file operations:
 
@@ -27,7 +27,8 @@ managed file operations:
 - `intake_items`: per-job source stat evidence, attempt count, progress state,
   cataloged asset identity, error, and completion timestamps.
 - `local_analysis_jobs`: local endpoint/model, frozen checksum scope, durable
-  lifecycle, progress, cancellation, and the resulting candidate run.
+  lifecycle, progress, cancellation, current truthful pipeline stage, and the
+  resulting candidate run.
 - `local_analysis_items`: one restartable item per asset, with source checksum,
   attempts, validated candidate JSON, and failure evidence.
 - `asset_transcripts`: full local transcript text, text SHA-256, source
@@ -66,6 +67,12 @@ Interrupted running items recover as pending. Completed results pass through
 the same atomic checksum-bound candidate import used by explicit manifests.
 Full transcripts are cached against the asset and source SHA-256 so later
 metadata-only analysis does not repeat unchanged speech transcription.
+
+Schema 13 adds nullable `current_stage` and `current_stage_updated_at` to
+`local_analysis_jobs`. The current filename is derived from
+`current_asset_id` and the checksum-bound analysis item rather than duplicated
+on the job. Recovery, cancellation, retry, and terminal completion clear the
+active stage and asset while preserving the time of that boundary.
 
 Connections use WAL mode, normal synchronous durability, foreign keys, and a
 30-second busy timeout. Health checks run SQLite integrity and foreign-key

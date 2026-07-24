@@ -18,16 +18,17 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
   jobs. Historical failed audit events remain available in the ledger but do
   not inflate the actionable count.
 
-### Planned responsive interface pass
+### Beacon 0.16.0 responsive interface
 
-- After the current 180-RAW analysis job is terminal, add a truthful durable
-  pipeline-stage status line beneath analysis progress. It should name actual
-  work such as RAW preview preparation, visual observation, transcription,
-  music analysis, metadata writing, or managed placement.
-- Beacon’s future text interface is a persistent application-shell surface,
-  not a page-specific chat. It should retain the active Beacon Desk thread and
-  draft while navigating, accept explicit page/selection context, and remain
-  lightweight when collapsed or idle.
+- The 180-RAW job `d1e28b5c-e63c-4c0b-83f6-e1318bcd1f16` completed all 180
+  items in the same durable job after failure-only retry.
+- Schema 13 persists truthful analysis pipeline stages and stage-boundary
+  timestamps. The filename is derived from the active checksum-bound item.
+  Cancel, recovery, retry, and terminal completion clear active state.
+- Beacon conversation is now a persistent application-shell surface backed by
+  the existing Beacon Desk authority. The active thread, draft, and message
+  scroll position survive navigation. Page or asset context attaches only
+  through an explicit human action.
 - Operations will eventually merge into System. Navigation position 03 will
   become Reports, providing multiple catalog data views alongside the
   persistent Beacon conversation surface.
@@ -375,8 +376,8 @@ Next smallest step:
 - Last verified: 2026-07-24 on the Windows ATLAS host
 - Working branch/commit: `C:\Development\ATLAS`, branch
   `ops/overnight-250-tranche`
-- Current milestone: Beacon 0.15.2 selected intake, evidence-gated RAW analysis,
-  and complete analyzed-Inbox placement
+- Current milestone: Beacon 0.16.0 truthful analysis status and persistent
+  shell-level Beacon conversation
 - Verified complete: the exact 250-file, 98.72-GB production intake completed;
   242 unique identities were cataloged and the final one-item contextual retry
   completed. Beacon 0.14 adds independently scrollable Recents/Explorer Library
@@ -386,15 +387,17 @@ Next smallest step:
   uses an explicit vertical Flickable for Library detail scrolling, adds exact
   multi-file Inbox selection, requires a RAW visual derivative before
   contextual claims, and moves every unambiguous analyzed Inbox location.
-- In progress: user inspection of production metadata and Beacon 0.15 UI
+  Beacon 0.16 adds schema-13 truthful durable pipeline stages and the
+  persistent shell-level Beacon Desk conversation dock.
+- In progress: user inspection of Beacon 0.16 analysis status and shell dock
 - Blocked: no current blocker
-- Files changed: Library repository/controller/QML, intake snapshots, local
-  analysis/placement, RAW derivative routing, tests, versioning, and docs
-- Tests/live checks: all 64 pre-Library tests passed and the focused 28-test
-  catalog/desktop suite passed with two opt-in real-ffprobe tests skipped; a
-  live CR3 produced a verified PNG derivative without changing source size,
-  timestamp, or SHA-256; packaged Beacon 0.14 generated the same RAW derivative
-  against an isolated database copy; schema 12 integrity and foreign keys clean
+- Files changed: schema migration, durable local-analysis stages, desktop
+  controller/QML shell, tests, native validation images, versioning, and docs
+- Tests/live checks: 70 tests passed with two opt-in real-ffprobe tests
+  skipped; live schema 13 integrity and foreign keys clean; verified schema-12
+  online backup retained; packaged 0.16.0 isolated smoke exited 0; bundle audit
+  found no browser/web/API capability files. The release directory is
+  417,577,830 bytes and the ZIP is 160,907,464 bytes.
 - Unverified assumptions: post-restart Windows hostname, physical SMART state,
   DrivePool duplication/parity, independent archive backup strategy, code
   signing, production chord/key accuracy, acceptable stem storage policy,
@@ -414,5 +417,5 @@ Next smallest step:
   Whisper. Corpus analysis does not copy source media to C:; sampled frames are
   temporary and cleaned. New live thumbnails route to
   `J:\Beacon\Thumbnails`; Demucs stems remain disabled by default.
-- Next smallest step: Connor reviews Beacon 0.15 Library behavior and performs
-  a targeted RAW reanalysis before the branch merges to `main`.
+- Next smallest step: Connor reviews Beacon 0.16 stage wording and persistent
+  dock interaction before the branch merges to `main`.

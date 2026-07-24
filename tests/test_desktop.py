@@ -14,7 +14,11 @@ from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
 
 from beacon.catalog import catalog_file
 from beacon.desktop import DEFAULT_RUNTIME, _catalog_label
-from beacon.desktop_controller import DesktopController, DesktopSettings
+from beacon.desktop_controller import (
+    DesktopController,
+    DesktopSettings,
+    analysis_stage_status,
+)
 from beacon.desk import seed_threads
 from beacon.text_preview import read_text_preview
 
@@ -148,6 +152,32 @@ class DesktopControllerTests(unittest.TestCase):
                 self.root / "use-tests" / "UseTest-01" / "beacon.db"
             ),
             "Isolated use test",
+        )
+
+    def test_analysis_stage_status_is_truthful_and_display_safe(self) -> None:
+        self.assertEqual(
+            analysis_stage_status(
+                {
+                    "state": "running",
+                    "current_stage": "preparing_raw_preview",
+                    "current_source_path": "J:\\Inbox\\IMG_4821.CR3",
+                }
+            ),
+            "PREPARING RAW PREVIEW · IMG_4821.CR3",
+        )
+        self.assertEqual(
+            analysis_stage_status(
+                {
+                    "state": "running",
+                    "current_stage": "visually_observing",
+                    "current_source_path": "J:\\Inbox\\unsafe\nname.CR3",
+                }
+            ),
+            "VISUALLY OBSERVING · unsafe�name.CR3",
+        )
+        self.assertEqual(
+            analysis_stage_status({"state": "complete"}),
+            "ANALYSIS COMPLETE",
         )
 
     def test_editable_metadata_updates_detail_and_library_title(self) -> None:
@@ -325,6 +355,102 @@ class NativeQmlSmokeTests(unittest.TestCase):
                     "--log-file",
                     str(root / "desktop.log"),
                     "--smoke-test",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+            )
+
+    def test_shell_conversation_draft_survives_page_navigation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "shell-draft.txt"
+            source.write_text("Persistent shell fixture.", encoding="utf-8")
+            catalog_file(
+                source,
+                root / "beacon.db",
+                stability_seconds=0,
+                include_media_probe=False,
+            )
+            environment = os.environ.copy()
+            environment["QT_QPA_PLATFORM"] = "offscreen"
+            environment["QT_QUICK_BACKEND"] = "software"
+            script = r"""
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QObject, QTimer, QUrl
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuickControls2 import QQuickStyle
+from PySide6.QtWidgets import QApplication
+
+from beacon.desk import seed_threads
+from beacon.desktop_controller import DesktopController, DesktopSettings
+
+db = Path(sys.argv[1])
+seed_threads(
+    db,
+    ({
+        "seed_key": "desktop:shell-draft",
+        "subject": "Persistent shell thread",
+        "kind": "question",
+        "priority": "normal",
+        "body": "Keep this conversation available across pages.",
+    },),
+)
+QQuickStyle.setStyle("Fusion")
+app = QApplication(["beacon-shell-draft-test"])
+controller = DesktopController(DesktopSettings(db, Path(sys.argv[2])))
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("backend", controller)
+engine.rootContext().setContextProperty("previewMuted", True)
+engine.load(QUrl.fromLocalFile(str(Path.cwd() / "beacon" / "qml" / "Main.qml")))
+if not engine.rootObjects():
+    raise SystemExit(30)
+window = engine.rootObjects()[0]
+composer = window.findChild(QObject, "shellBeaconComposer")
+dock = window.findChild(QObject, "beaconShellDock")
+stage = window.findChild(QObject, "analysisStageLine")
+if composer is None or dock is None or stage is None:
+    raise SystemExit(31)
+
+def navigate():
+    window.setProperty("beaconDockExpanded", True)
+    composer.setProperty("text", "Draft survives navigation.")
+    controller.setCurrentView("library")
+    controller.setCurrentView("operations")
+    controller.setCurrentView("system")
+    QTimer.singleShot(100, verify)
+
+def verify():
+    if composer.property("text") != "Draft survives navigation.":
+        app.exit(32)
+        return
+    if not window.property("beaconDockExpanded"):
+        app.exit(33)
+        return
+    if controller.selectedBeaconThread.get("subject") != "Persistent shell thread":
+        app.exit(34)
+        return
+    app.exit(0)
+
+QTimer.singleShot(250, navigate)
+raise SystemExit(app.exec())
+"""
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    script,
+                    str(root / "beacon.db"),
+                    str(root / "backups"),
                 ],
                 cwd=Path(__file__).resolve().parents[1],
                 env=environment,

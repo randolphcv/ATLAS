@@ -27,6 +27,7 @@ ApplicationWindow {
     property color jade: "#6BAA82"
     property color ember: "#C5665A"
     property bool previewOpen: previewDialog.visible
+    property bool beaconDockExpanded: false
 
     font.family: "Segoe UI"
 
@@ -41,6 +42,20 @@ ApplicationWindow {
         if (backend.selectedAsset.id === undefined)
             return
         previewDialog.open()
+    }
+
+    function currentBeaconContext() {
+        var viewLabel = backend.currentView === "overview" ? "Overview"
+                      : backend.currentView === "library" ? "Library"
+                      : backend.currentView === "operations" ? "Operations"
+                      : "System"
+        if (backend.currentView === "library"
+                && backend.selectedAsset.id !== undefined) {
+            return viewLabel + " · "
+                    + (backend.selectedAsset.filename || "selected asset")
+                    + " · " + (backend.selectedAsset.atlas_uri || "")
+        }
+        return viewLabel
     }
 
     component NavButton: Button {
@@ -327,6 +342,7 @@ ApplicationWindow {
                  || (backend.selectedAsset.id !== undefined
                      && !searchField.activeFocus
                      && !beaconReplyField.activeFocus
+                     && !shellBeaconComposer.activeFocus
                      && !newRequestSubject.activeFocus
                      && !newRequestBody.activeFocus
                      && !newIntakeRoot.activeFocus
@@ -2170,6 +2186,20 @@ ApplicationWindow {
                                                         visible: backend.analysisReadiness.analysisHasJob === true
                                                         value: backend.analysisReadiness.analysisProgress || 0
                                                     }
+                                                    Text {
+                                                        objectName: "analysisStageLine"
+                                                        Layout.fillWidth: true
+                                                        visible: backend.analysisReadiness.analysisHasJob === true
+                                                        text: backend.analysisReadiness.analysisStageLabel
+                                                              || "ANALYSIS NOT STARTED"
+                                                        color: backend.analysisReadiness.analysisStageActive
+                                                               ? root.atlasBright : root.muted
+                                                        font.family: "Cascadia Mono"
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.DemiBold
+                                                        font.letterSpacing: 0.7
+                                                        elide: Text.ElideMiddle
+                                                    }
                                                     RowLayout {
                                                         Layout.fillWidth: true
                                                         visible: backend.analysisReadiness.analysisHasJob === true
@@ -3995,6 +4025,247 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        id: beaconShellDock
+        objectName: "beaconShellDock"
+        z: 20
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: 246
+        anchors.rightMargin: 16
+        anchors.bottomMargin: 14
+        height: root.beaconDockExpanded ? Math.min(310, root.height * 0.38) : 58
+        radius: 11
+        color: root.panelRaised
+        border.color: root.beaconDockExpanded ? root.atlas : root.line
+        clip: true
+
+        Behavior on height {
+            NumberAnimation { duration: 130; easing.type: Easing.OutCubic }
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 10
+            spacing: 8
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 38
+                spacing: 10
+                Image {
+                    source: "assets/beacon.svg"
+                    sourceSize.width: 28
+                    sourceSize.height: 28
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+                    Text {
+                        Layout.fillWidth: true
+                        text: backend.selectedBeaconThread.subject
+                              || "Beacon conversation"
+                        color: root.bone
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: (backend.beaconDeskSummary.connectionLabel
+                               || "SAVED LOCALLY")
+                              + "  ·  "
+                              + (backend.selectedBeaconThread.stateLabel
+                                 || "NO OPEN THREAD")
+                        color: root.muted
+                        font.family: "Cascadia Mono"
+                        font.pixelSize: 8
+                        font.letterSpacing: 0.7
+                        elide: Text.ElideRight
+                    }
+                }
+                Text {
+                    visible: root.beaconDockExpanded
+                    text: backend.analysisReadiness.runtimeAvailable
+                          ? "LOCAL MODEL READY" : "LOCAL MODEL OFFLINE"
+                    color: backend.analysisReadiness.runtimeAvailable
+                           ? root.jade : root.brass
+                    font.family: "Cascadia Mono"
+                    font.pixelSize: 8
+                    font.weight: Font.DemiBold
+                }
+                PrimaryButton {
+                    visible: root.beaconDockExpanded
+                    text: "New conversation"
+                    quiet: true
+                    onClicked: newRequestDialog.open()
+                }
+                PrimaryButton {
+                    text: root.beaconDockExpanded ? "Collapse" : "Open Beacon"
+                    quiet: true
+                    onClicked: root.beaconDockExpanded = !root.beaconDockExpanded
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: root.beaconDockExpanded
+                spacing: 10
+
+                Rectangle {
+                    Layout.preferredWidth: beaconShellDock.width * 0.56
+                    Layout.minimumWidth: 300
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 7
+                    color: root.ink
+                    border.color: root.line
+                    ListView {
+                        id: shellBeaconMessages
+                        objectName: "shellBeaconMessages"
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        clip: true
+                        spacing: 6
+                        model: backend.beaconMessages
+                        delegate: ColumnLayout {
+                            required property string author
+                            required property string authorLabel
+                            required property string body
+                            required property string timeLabel
+                            width: ListView.view.width
+                            spacing: 2
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text {
+                                    text: authorLabel
+                                    color: author === "human"
+                                           ? root.atlasBright : root.brass
+                                    font.pixelSize: 8
+                                    font.weight: Font.DemiBold
+                                }
+                                Item { Layout.fillWidth: true }
+                                Text {
+                                    text: timeLabel
+                                    color: root.muted
+                                    font.pixelSize: 7
+                                }
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: body
+                                color: root.bone
+                                font.pixelSize: 10
+                                lineHeight: 1.25
+                                wrapMode: Text.WordWrap
+                            }
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 3
+                                height: 1
+                                color: root.line
+                            }
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            visible: parent.count === 0
+                            text: "Start a local conversation with Beacon."
+                            color: root.muted
+                            font.pixelSize: 10
+                        }
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.preferredWidth: Math.min(430, beaconShellDock.width * 0.4)
+                    Layout.minimumWidth: 300
+                    Layout.fillHeight: true
+                    spacing: 7
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            text: "CONTEXT  ·  " + root.currentBeaconContext()
+                            color: root.muted
+                            font.family: "Cascadia Mono"
+                            font.pixelSize: 8
+                            elide: Text.ElideMiddle
+                        }
+                        PrimaryButton {
+                            text: "Attach"
+                            quiet: true
+                            enabled: backend.selectedBeaconThread.id !== undefined
+                            onClicked: {
+                                var insertion = "[Context attached explicitly: "
+                                                + root.currentBeaconContext()
+                                                + "]\n"
+                                shellBeaconComposer.insert(
+                                    shellBeaconComposer.cursorPosition,
+                                    insertion
+                                )
+                                shellBeaconComposer.forceActiveFocus()
+                            }
+                        }
+                    }
+                    ScrollView {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        TextArea {
+                            id: shellBeaconComposer
+                            objectName: "shellBeaconComposer"
+                            enabled: backend.selectedBeaconThread.id !== undefined
+                            placeholderText: backend.selectedBeaconThread.id !== undefined
+                                             ? "Reply in this saved local conversation…"
+                                             : "Create a conversation to begin"
+                            color: root.bone
+                            placeholderTextColor: root.muted
+                            selectionColor: root.atlas
+                            selectByMouse: true
+                            wrapMode: TextEdit.Wrap
+                            leftPadding: 10
+                            rightPadding: 10
+                            topPadding: 9
+                            bottomPadding: 9
+                            background: Rectangle {
+                                radius: 7
+                                color: root.shell
+                                border.color: shellBeaconComposer.activeFocus
+                                              ? root.atlasBright : root.line
+                            }
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Replies queue for Beacon; no file action is implied."
+                            color: root.muted
+                            font.pixelSize: 8
+                            elide: Text.ElideRight
+                        }
+                        PrimaryButton {
+                            text: "Save reply"
+                            enabled: backend.selectedBeaconThread.id !== undefined
+                                     && shellBeaconComposer.text.trim().length > 0
+                                     && shellBeaconComposer.text.length <= 8000
+                            onClicked: {
+                                backend.replyToBeaconThread(
+                                    shellBeaconComposer.text
+                                )
+                                shellBeaconComposer.text = ""
                             }
                         }
                     }

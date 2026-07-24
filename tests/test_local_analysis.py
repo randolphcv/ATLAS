@@ -144,6 +144,42 @@ class LocalAnalysisJobTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_pipeline_stage_is_durable_and_clears_at_completion(self) -> None:
+        observed: list[tuple[str, str | None]] = []
+
+        def stage_aware_analyzer(
+            endpoint: str, model: str, asset: dict[str, object]
+        ) -> dict:
+            [job] = list_local_analysis_jobs(self.db)
+            observed.append(
+                (str(job["current_stage"]), job["current_source_path"])
+            )
+            callback = asset["stage_callback"]
+            assert callable(callback)
+            callback("transcribing_audio")
+            [job] = list_local_analysis_jobs(self.db)
+            observed.append(
+                (str(job["current_stage"]), job["current_source_path"])
+            )
+            return self._analyzer(endpoint, model, asset)
+
+        job_id = create_local_analysis_job(self.db, model="fixture-model")
+        result = run_local_analysis_job(
+            self.db, job_id, analyzer=stage_aware_analyzer
+        )
+
+        self.assertEqual(result.state, "complete")
+        self.assertTrue(
+            all(path and Path(path).name in {"one.txt", "two.txt"}
+                for _, path in observed)
+        )
+        self.assertIn("verifying_source", {stage for stage, _ in observed})
+        self.assertIn("transcribing_audio", {stage for stage, _ in observed})
+        [job] = list_local_analysis_jobs(self.db)
+        self.assertIsNone(job["current_stage"])
+        self.assertIsNone(job["current_asset_id"])
+        self.assertIsNotNone(job["current_stage_updated_at"])
+
     def test_percentage_confidence_is_normalized_with_provenance(self) -> None:
         def percentage_analyzer(
             endpoint: str, model: str, asset: dict[str, object]
@@ -199,7 +235,12 @@ class LocalAnalysisJobTests(unittest.TestCase):
         connection = sqlite3.connect(self.db)
         try:
             connection.execute(
-                "UPDATE local_analysis_jobs SET state='running' WHERE id=?",
+                """
+                UPDATE local_analysis_jobs
+                SET state='running',current_stage='visually_observing',
+                    current_stage_updated_at='fixture'
+                WHERE id=?
+                """,
                 (job_id,),
             )
             connection.execute(
@@ -218,9 +259,23 @@ class LocalAnalysisJobTests(unittest.TestCase):
         try:
             self.assertEqual(
                 connection.execute(
-                    "SELECT state FROM local_analysis_jobs WHERE id=?", (job_id,)
+                    """
+                    SELECT state,current_stage,current_asset_id
+                    FROM local_analysis_jobs WHERE id=?
+                    """,
+                    (job_id,),
                 ).fetchone()[0],
                 "paused",
+            )
+            self.assertEqual(
+                connection.execute(
+                    """
+                    SELECT current_stage,current_asset_id
+                    FROM local_analysis_jobs WHERE id=?
+                    """,
+                    (job_id,),
+                ).fetchone(),
+                (None, None),
             )
             self.assertEqual(
                 connection.execute(
@@ -260,6 +315,16 @@ class LocalAnalysisJobTests(unittest.TestCase):
                     (job_id,),
                 ).fetchone()[0],
                 1,
+            )
+            self.assertEqual(
+                connection.execute(
+                    """
+                    SELECT current_stage,current_asset_id
+                    FROM local_analysis_jobs WHERE id=?
+                    """,
+                    (job_id,),
+                ).fetchone(),
+                (None, None),
             )
         finally:
             connection.close()

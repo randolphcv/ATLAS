@@ -134,7 +134,8 @@ are unavailable; Beacon never falls back to a cloud service.
 
 The default scope is assets without an existing contextual-metadata candidate.
 The dialog reports visual, audio, and other asset counts before starting.
-Local jobs persist at schema 12, record live worker ownership, attach the UI
+Local jobs persist at schema 13, record live worker ownership and truthful
+pipeline stages, attach the UI
 to an active worker across window restarts, and recover genuinely interrupted
 items as pending.
 Results use the existing checksum-bound candidate import and never overwrite

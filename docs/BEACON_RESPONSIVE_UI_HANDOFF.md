@@ -2,6 +2,22 @@
 
 Updated: 2026-07-24
 
+## Completion update
+
+Beacon 0.16.0 completes the bounded work in this handoff:
+
+- the referenced RAW job is 180/180 complete in the same job;
+- schema 13 persists real analysis stages and boundary timestamps;
+- Overview derives and displays the current filename from the durable item;
+- recovery, cancellation, retry, and terminal paths clear active stage state;
+- the root Qt/QML shell now provides a persistent Beacon Desk conversation
+  dock with explicit context attachment;
+- 70 tests pass with two opt-in real-FFprobe tests skipped;
+- native visual validation covers collapsed analysis status and the expanded
+  shell conversation;
+- the packaged bundle contains no blocked browser/web/API capability and adds
+  no model weights.
+
 ## Fresh-thread objective
 
 Continue ATLAS from `C:\Development\ATLAS` on branch
@@ -22,18 +38,18 @@ Stay local. Do not upload catalog media or introduce a cloud requirement.
 
 - Branch: `ops/overnight-250-tranche`
 - Working tree was clean when this handoff was written.
-- Current packaged release: Beacon 0.15.4
+- Current packaged release: Beacon 0.16.0
 - Latest commits:
   - `c6480f3` — keep catalog controls inside operation card
   - `52b1b30` — make catalog analysis failures resumable
   - `b238d9e` — add RAW reanalysis scope and Finder metadata cleanup
 - Release executable:
-  `C:\Development\ATLAS\dist\releases\0.15.4\ATLAS Beacon\ATLAS Beacon.exe`
+  `C:\Development\ATLAS\dist\releases\0.16.0\ATLAS Beacon\ATLAS Beacon.exe`
 - Release directory size: 417,563,170 bytes
 - ZIP size: 160,903,695 bytes
 - Live database:
   `C:\ProgramData\ATLAS\Beacon\beacon.db`
-- Live database was healthy at schema 12, WAL mode, with SQLite integrity
+- Live database is healthy at schema 13, WAL mode, with SQLite integrity
   `ok` and zero foreign-key errors.
 
 ### Live RAW job at handoff

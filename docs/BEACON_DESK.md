@@ -1,8 +1,10 @@
 # Beacon Desk
 
 Beacon Desk is the durable conversation surface between the human archivist and
-Beacon. It lives on the native Overview page and persists in the same local
-SQLite catalog as the rest of Beacon's operational state.
+Beacon. Its detailed management surface lives on the native Overview page, and
+its compact conversation dock lives in the application shell. Both persist
+messages in the same local SQLite catalog as the rest of Beacon's operational
+state.
 
 ## What belongs here
 
@@ -38,6 +40,11 @@ Beacon Desk is currently a local handoff queue. It does not claim that an AI
 worker is always online. The UI labels messages `SAVED LOCALLY`; a deliberate
 Beacon analysis session can consume queued threads and append Beacon messages
 through the repository boundary.
+
+The compact shell dock is a second view of this same durable authority. It
+keeps the selected thread, draft, and message scroll position alive while page
+content changes. Page or selected-asset context is added only through the
+explicit **Attach** action. See `BEACON_SHELL_CONVERSATION.md`.
 
 ## Initial pilot conversations
 

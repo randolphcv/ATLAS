@@ -314,7 +314,10 @@ def list_local_analysis_jobs(db_path: Path, limit: int = 20) -> list[dict[str, A
               SUM(CASE WHEN items.state='complete' THEN 1 ELSE 0 END) completed_count,
               SUM(CASE WHEN items.state='failed' THEN 1 ELSE 0 END) failed_count,
               SUM(CASE WHEN items.state='pending' THEN 1 ELSE 0 END) pending_count,
-              SUM(CASE WHEN items.state='running' THEN 1 ELSE 0 END) running_count
+              SUM(CASE WHEN items.state='running' THEN 1 ELSE 0 END) running_count,
+              MAX(CASE
+                WHEN items.asset_id=jobs.current_asset_id THEN items.source_path
+              END) current_source_path
             FROM local_analysis_jobs jobs
             LEFT JOIN local_analysis_items items ON items.job_id=jobs.id
             GROUP BY jobs.id ORDER BY jobs.updated_at DESC LIMIT ?
@@ -355,8 +358,13 @@ def recover_local_analysis_jobs(db_path: Path) -> int:
                 (row["id"],),
             )
             connection.execute(
-                "UPDATE local_analysis_jobs SET state='paused',current_asset_id=NULL,worker_pid=NULL,updated_at=? WHERE id=?",
-                (_utc_now(), row["id"]),
+                """
+                UPDATE local_analysis_jobs
+                SET state='paused',current_asset_id=NULL,current_stage=NULL,
+                    current_stage_updated_at=?,worker_pid=NULL,updated_at=?
+                WHERE id=?
+                """,
+                (_utc_now(), _utc_now(), row["id"]),
             )
         return len(abandoned)
 
@@ -415,12 +423,27 @@ def retry_local_analysis_failures(db_path: Path, job_id: str) -> int:
             """
             UPDATE local_analysis_jobs
             SET state='paused',cancel_requested=0,current_asset_id=NULL,
+                current_stage=NULL,current_stage_updated_at=?,
                 completed_at=NULL,updated_at=?,error=NULL
             WHERE id=?
             """,
-            (_utc_now(), job_id),
+            (_utc_now(), _utc_now(), job_id),
         )
         return int(cursor.rowcount)
+
+
+def _set_job_stage(db_path: Path, job_id: str, stage: str) -> None:
+    """Persist a meaningful pipeline boundary for the active durable job."""
+    now = _utc_now()
+    with connect(db_path) as connection:
+        connection.execute(
+            """
+            UPDATE local_analysis_jobs
+            SET current_stage=?,current_stage_updated_at=?,updated_at=?
+            WHERE id=?
+            """,
+            (stage, now, now, job_id),
+        )
 
 
 def _default_analyzer(
@@ -484,6 +507,11 @@ def _default_analyzer(
         ],
     }
     media_context, image_paths, temporary_root = _prepare_media_context(asset)
+    stage_callback = asset.get("stage_callback")
+    if callable(stage_callback):
+        stage_callback(
+            "visually_observing" if image_paths else "analyzing_context"
+        )
     media_context["visual_evidence_supplied"] = bool(image_paths)
     content = _canonical_json(
         {
@@ -674,8 +702,11 @@ def _prepare_media_context(
         images.append(thumbnail)
     context: dict[str, Any] = {"sampling": "verified local derivatives only"}
     executable = os.environ.get("BEACON_FFMPEG") or shutil.which("ffmpeg")
+    stage_callback = asset.get("stage_callback")
     temp_root = Path(tempfile.mkdtemp(prefix="beacon-analysis-"))
     if executable and "video" in kinds:
+        if callable(stage_callback):
+            stage_callback("preparing_visual_context")
         images.clear()
         duration = _duration_seconds(metadata)
         times = (
@@ -699,6 +730,8 @@ def _prepare_media_context(
                 sampled.append(round(second, 3))
         context["video_sample_seconds"] = sampled
     elif executable and "audio" in kinds:
+        if callable(stage_callback):
+            stage_callback("preparing_audio_context")
         spectrum = temp_root / "audio-spectrum.png"
         completed = subprocess.run(
             [
@@ -712,6 +745,8 @@ def _prepare_media_context(
         if completed.returncode == 0 and spectrum.is_file():
             images.append(spectrum)
             context["spectrogram"] = "full-file local frequency/time visualization"
+        if callable(stage_callback):
+            stage_callback("transcribing_audio")
         speech = _transcribe_audio(
             source,
             db_path=Path(str(asset["db_path"])) if asset.get("db_path") else None,
@@ -728,6 +763,8 @@ def _prepare_media_context(
         )
         if asset.get("db_path") and asset.get("asset_id"):
             try:
+                if callable(stage_callback):
+                    stage_callback("analyzing_music")
                 music = analyze_asset_music(
                     Path(str(asset["db_path"])),
                     asset_id=str(asset["asset_id"]),
@@ -778,9 +815,10 @@ def run_local_analysis_job(
             """
             UPDATE local_analysis_jobs SET state='running',cancel_requested=0,
               started_at=COALESCE(started_at,?),updated_at=?,error=NULL,
-              worker_pid=? WHERE id=?
+              worker_pid=?,current_stage=NULL,current_stage_updated_at=?
+              WHERE id=?
             """,
-            (_utc_now(), _utc_now(), os.getpid(), job_id),
+            (_utc_now(), _utc_now(), os.getpid(), _utc_now(), job_id),
         )
 
     while True:
@@ -790,8 +828,14 @@ def run_local_analysis_job(
             ).fetchone())
             if job["cancel_requested"]:
                 connection.execute(
-                    "UPDATE local_analysis_jobs SET state='cancelled',current_asset_id=NULL,worker_pid=NULL,updated_at=? WHERE id=?",
-                    (_utc_now(), job_id),
+                    """
+                    UPDATE local_analysis_jobs
+                    SET state='cancelled',current_asset_id=NULL,
+                        current_stage=NULL,current_stage_updated_at=?,
+                        worker_pid=NULL,updated_at=?
+                    WHERE id=?
+                    """,
+                    (_utc_now(), _utc_now(), job_id),
                 )
                 counts = _counts(connection, job_id)
                 return LocalAnalysisRunResult(job_id, "cancelled", counts["complete"], counts["failed"], counts["pending"], None)
@@ -824,8 +868,13 @@ def run_local_analysis_job(
                 (_utc_now(), item["id"]),
             )
             connection.execute(
-                "UPDATE local_analysis_jobs SET current_asset_id=?,updated_at=? WHERE id=?",
-                (item["asset_id"], _utc_now(), job_id),
+                """
+                UPDATE local_analysis_jobs
+                SET current_asset_id=?,current_stage='verifying_source',
+                    current_stage_updated_at=?,updated_at=?
+                WHERE id=?
+                """,
+                (item["asset_id"], _utc_now(), _utc_now(), job_id),
             )
         try:
             source = Path(item["source_path"])
@@ -837,6 +886,7 @@ def run_local_analysis_job(
                 source.suffix.lower() in RAW_EXTENSIONS
                 and not asset.get("thumbnail_path")
             ):
+                _set_job_stage(db_path, job_id, "preparing_raw_preview")
                 generated = ensure_thumbnail(
                     source,
                     db_path,
@@ -862,6 +912,9 @@ def run_local_analysis_job(
                     "size_bytes": int(asset["size_bytes"]),
                     "media_metadata": json.loads(asset["media_metadata_json"] or "{}"),
                     "thumbnail_path": asset["thumbnail_path"],
+                    "stage_callback": (
+                        lambda stage: _set_job_stage(db_path, job_id, stage)
+                    ),
                 },
             )
             provenance_inputs = [
@@ -912,10 +965,16 @@ def run_local_analysis_job(
                         """
                         UPDATE local_analysis_jobs
                         SET state='failed',error=?,current_asset_id=NULL,
+                            current_stage=NULL,current_stage_updated_at=?,
                             worker_pid=NULL,updated_at=?
                         WHERE id=?
                         """,
-                        (str(error)[:2000], _utc_now(), job_id),
+                        (
+                            str(error)[:2000],
+                            _utc_now(),
+                            _utc_now(),
+                            job_id,
+                        ),
                     )
             if stop_on_item_error:
                 raise
@@ -998,6 +1057,17 @@ def run_local_analysis_job(
         run_id = imported.run_id
     if run_id:
         for candidate in candidates:
+            with connect(db_path) as connection:
+                now = _utc_now()
+                connection.execute(
+                    """
+                    UPDATE local_analysis_jobs
+                    SET current_asset_id=?,current_stage='writing_metadata',
+                        current_stage_updated_at=?,updated_at=?
+                    WHERE id=?
+                    """,
+                    (candidate["asset_id"], now, now, job_id),
+                )
             apply_analysis_metadata(
                 db_path,
                 candidate["asset_id"],
@@ -1025,6 +1095,7 @@ def run_local_analysis_job(
                 source_path = Path(location["source_path"])
                 if not str(source_path).lower().startswith("j:\\inbox\\"):
                     continue
+                _set_job_stage(db_path, job_id, "moving_to_archive")
                 moved, placement_reason = commit_analyzed_file(
                     db_path,
                     asset_id=candidate["asset_id"],
@@ -1068,11 +1139,12 @@ def run_local_analysis_job(
         connection.execute(
             """
             UPDATE local_analysis_jobs SET state=?,current_asset_id=NULL,
+              current_stage=NULL,current_stage_updated_at=?,
               completed_at=?,updated_at=?,analysis_run_id=?,error=?,
               worker_pid=NULL WHERE id=?
             """,
             (
-                state, _utc_now(), _utc_now(), run_id,
+                state, _utc_now(), _utc_now(), _utc_now(), run_id,
                 None if state == "complete" else f"{counts['failed']} item(s) failed",
                 job_id,
             ),

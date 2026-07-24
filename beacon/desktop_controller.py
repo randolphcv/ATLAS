@@ -74,6 +74,46 @@ from .thumbnails import ensure_thumbnail
 
 LOGGER = logging.getLogger("beacon.desktop")
 
+ANALYSIS_STAGE_LABELS = {
+    "verifying_source": "VERIFYING SOURCE",
+    "preparing_raw_preview": "PREPARING RAW PREVIEW",
+    "preparing_visual_context": "PREPARING VISUAL CONTEXT",
+    "preparing_audio_context": "PREPARING AUDIO CONTEXT",
+    "transcribing_audio": "TRANSCRIBING AUDIO",
+    "analyzing_music": "ANALYZING MUSIC",
+    "visually_observing": "VISUALLY OBSERVING",
+    "analyzing_context": "ANALYZING CONTEXT",
+    "writing_metadata": "WRITING METADATA",
+    "moving_to_archive": "MOVING TO ARCHIVE",
+}
+
+
+def analysis_stage_status(job: dict[str, Any] | None) -> str:
+    if not job:
+        return "ANALYSIS NOT STARTED"
+    stage = str(job.get("current_stage") or "")
+    if stage:
+        label = ANALYSIS_STAGE_LABELS.get(
+            stage, stage.replace("_", " ").upper()
+        )
+        source = str(job.get("current_source_path") or "")
+        filename = source.replace("/", "\\").rsplit("\\", 1)[-1]
+        filename = "".join(
+            character if character.isprintable() else "�"
+            for character in filename
+        ).strip()
+        return f"{label} · {filename}" if filename else label
+    state = str(job.get("state") or "queued")
+    return {
+        "queued": "WAITING TO START",
+        "running": "STARTING NEXT ASSET",
+        "paused": "ANALYSIS PAUSED",
+        "complete": "ANALYSIS COMPLETE",
+        "partial": "ANALYSIS PARTIAL · RETRY AVAILABLE",
+        "failed": "ANALYSIS FAILED",
+        "cancelled": "ANALYSIS CANCELLED",
+    }.get(state, state.replace("_", " ").upper())
+
 
 @dataclass(frozen=True)
 class DesktopSettings:
@@ -1100,6 +1140,14 @@ class DesktopController(QObject):
                 f"{analysis_complete:,} complete / {analysis_total:,} assets"
             ),
             "analysisFailedLabel": f"{analysis_failed:,} failed",
+            "analysisStageLabel": analysis_stage_status(latest_job),
+            "analysisStageUpdatedAt": (
+                str(latest_job.get("current_stage_updated_at") or "")
+                if latest_job else ""
+            ),
+            "analysisStageActive": bool(
+                latest_job and latest_job.get("current_stage")
+            ),
             "analysisCanCancel": bool(
                 latest_job and latest_job.get("state") == "running"
             ),

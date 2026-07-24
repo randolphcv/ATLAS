@@ -1,5 +1,24 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-24 Beacon 0.16.0 responsive shell update
+
+The 180-RAW job `d1e28b5c-e63c-4c0b-83f6-e1318bcd1f16` is complete in the
+same durable job: all 180 items completed, including the prior malformed Qwen
+response on its failure-only retry. The live catalog migrated from schema 12
+to schema 13 after a verified online backup and remains healthy in WAL mode
+with SQLite integrity `ok` and zero foreign-key errors.
+
+Schema 13 adds truthful durable analysis-stage boundaries and derives the
+display-safe current filename from the active checksum-bound job item. The
+native Overview shows the stage immediately beneath analysis progress.
+
+Beacon 0.16.0 also adds a compact application-shell conversation dock backed
+by the existing Beacon Desk tables and controller models. The active thread,
+draft, and message scroll state survive page navigation. Context attachment is
+explicit and inspectable; conversation still cannot directly execute a file
+operation. No cloud, browser engine, second chat database, or bundled model was
+added.
+
 ## 2026-07-24 Beacon 0.15.3 reliability update
 
 Catalog analysis is no longer fail-fast. Individual failures remain retryable
@@ -33,7 +52,7 @@ ATLAS is a modular, long-term media storage and intelligence platform designed t
 The Windows hostname was still `DESKTOP-8B4OJIR` when verified on 2026-07-23.
 Connor intends to rename it to `Ultron`, effective only after a later restart.
 
-> Current implementation note (2026-07-24): Beacon 0.15.2 is a packaged native
+> Current implementation note (2026-07-24): Beacon 0.16.0 is a packaged native
 > Windows app, not a browser-first dashboard. Schema 12 adds persistent,
 > checksum-bound full transcripts to the existing recursive
 > Archive Intake snapshots, durable item-level progress, cancel-between-files,
@@ -58,8 +77,8 @@ Connor intends to rename it to `Ultron`, effective only after a later restart.
 
 ## Immediate Next Task
 
-Review and merge Beacon 0.15 after verifying right-panel scrolling, status
-rails, selected-file intake, and a targeted RAW reanalysis.
+Review Beacon 0.16 analysis-stage wording and the persistent conversation dock,
+then merge the branch after Connor accepts the native interaction.
 
 ---
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added schema-13 truthful durable catalog-analysis pipeline stages, including
+  active checksum-bound filenames and accurate recovery/cancel/terminal state.
+- Added the compact application-shell Beacon conversation dock using the
+  existing local Beacon Desk threads and messages. Its draft and scroll state
+  survive page navigation, and page/asset context attaches only explicitly.
 - Expanded the catalog-operations card when analysis status is present so its
   intake controls and snapshot identifier remain inside the card boundary.
 - Catalog analysis now continues after individual asset failures, and its

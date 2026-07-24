@@ -183,7 +183,7 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ### Current Beacon baseline (2026-07-24)
 
-- Beacon 0.15.4 is the current packaged candidate on branch
+- Beacon 0.16.0 is the current packaged candidate on branch
   `ops/overnight-250-tranche`.
 - The bounded 250-file production tranche completed intake and contextual
   analysis locally; the one malformed Qwen JSON response passed on a one-item
@@ -203,6 +203,12 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 - Overview “Current failures” counts retryable items in the latest intake and
   analysis jobs; lifetime failed audit events remain in the operation ledger
   and are not presented as current work.
+- Catalog analysis exposes its real durable pipeline stage and current
+  checksum-bound filename beneath the progress bar. Recovery, cancellation,
+  retry, and terminal completion clear active state truthfully.
+- Beacon conversation now has a compact application-shell dock backed by the
+  existing local Beacon Desk authority. Its draft and active thread survive
+  page navigation; page or asset context is attached only explicitly.
 - Future thumbnail derivatives live under `J:\Beacon\Thumbnails` for the live
   catalog; C: remains the fast runtime/model/temp tier.
 
