@@ -2,8 +2,10 @@
 from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
 
 speech_datas, speech_binaries, speech_hiddenimports = collect_all("faster_whisper")
+raw_datas, raw_binaries, raw_hiddenimports = collect_all("rawpy")
 for package in ("ctranslate2", "onnxruntime", "av"):
     speech_binaries += collect_dynamic_libs(package)
+raw_binaries += collect_dynamic_libs("rawpy")
 speech_hiddenimports += [
     "ctranslate2",
     "tokenizers",
@@ -14,12 +16,12 @@ speech_hiddenimports += [
 a = Analysis(
     ["beacon_app.py"],
     pathex=[".."],
-    binaries=speech_binaries,
-    datas=speech_datas + [
+    binaries=speech_binaries + raw_binaries,
+    datas=speech_datas + raw_datas + [
         ("../beacon/qml", "beacon/qml"),
         ("README_APP.txt", "."),
     ],
-    hiddenimports=speech_hiddenimports,
+    hiddenimports=speech_hiddenimports + raw_hiddenimports + ["PIL.Image"],
     hookspath=["hooks"],
     hooksconfig={},
     runtime_hooks=[],

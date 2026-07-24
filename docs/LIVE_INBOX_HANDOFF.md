@@ -1,5 +1,16 @@
 # Live Inbox Pilot Handoff
 
+> Superseded by verified production state on 2026-07-24. The original 25-file
+> reliability pilot completed earlier. A later immutable 250-file snapshot
+> (`9c0580cc-d630-4894-bc9f-a7c8aab33486`,
+> SHA-256 `7b344ce167f87e5e42cf9f68f6b46c16b578702966057d0284dd5ac6faef51b9`)
+> cataloged all 250 files (98,723,731,896 bytes) with zero intake failures.
+> Those rows resolved to 242 unique assets; eight were duplicate identities.
+> Contextual analysis covered 238 assets because four `.DS_Store` identities
+> already had results. The one truncated-Qwen-JSON failure passed on a bounded
+> one-item retry. The live schema-12 database remained healthy. Do not rerun
+> the obsolete procedure below; it remains only as historical evidence.
+
 ## Paste into a fresh Codex task
 
 ```text

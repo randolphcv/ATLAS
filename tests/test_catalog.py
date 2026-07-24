@@ -276,6 +276,46 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(derivative["state"], "complete")
         self.assertEqual(complete_events, 1)
 
+    def test_raw_thumbnail_uses_local_decoder_without_changing_source(self) -> None:
+        source = self._write("portrait.CR3", b"synthetic raw source bytes")
+        source_hash = sha256_file(source)
+        cataloged = catalog_file(
+            source,
+            self.db,
+            0,
+            include_media_probe=False,
+        )
+        before = (source.stat().st_size, source.stat().st_mtime_ns)
+        thumbnail_probe = {
+            "beacon_kind": "image",
+            "streams": [{"codec_type": "video", "width": 640, "height": 360}],
+        }
+
+        def fake_render(_: Path, destination: Path) -> None:
+            destination.write_bytes(b"synthetic raw preview")
+
+        with patch(
+            "beacon.thumbnails._render_raw_thumbnail",
+            side_effect=fake_render,
+        ):
+            with patch("beacon.thumbnails.probe", return_value=thumbnail_probe):
+                result = ensure_thumbnail(
+                    source,
+                    self.db,
+                    asset_id=cataloged.asset_id,
+                    source_sha256=source_hash,
+                    media_metadata=None,
+                )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.generator, "beacon-rawpy-thumbnail-v1")
+        self.assertEqual(
+            (source.stat().st_size, source.stat().st_mtime_ns),
+            before,
+        )
+        self.assertEqual(sha256_file(source), source_hash)
+
     @unittest.skipUnless(
         os.environ.get("BEACON_FFPROBE"),
         "set BEACON_FFPROBE to run the real media probe acceptance tests",

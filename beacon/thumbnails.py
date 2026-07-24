@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 import logging
 import os
 import shutil
@@ -17,7 +18,13 @@ from .media import probe
 
 LOGGER = logging.getLogger("beacon.thumbnails")
 GENERATOR = "beacon-ffmpeg-thumbnail-v1"
+RAW_GENERATOR = "beacon-rawpy-thumbnail-v1"
 THUMBNAIL_SIZE = (640, 360)
+RAW_EXTENSIONS = {
+    ".3fr", ".arw", ".cr2", ".cr3", ".dng", ".erf", ".fff", ".iiq",
+    ".kdc", ".mef", ".mos", ".mrw", ".nef", ".nrw", ".orf", ".pef",
+    ".raf", ".raw", ".rw2", ".sr2", ".srf", ".x3f",
+}
 
 
 @dataclass(frozen=True)
@@ -34,7 +41,12 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _media_kind(metadata: dict[str, Any] | None) -> str | None:
+def _media_kind(
+    metadata: dict[str, Any] | None,
+    source: Path | None = None,
+) -> str | None:
+    if source is not None and source.suffix.lower() in RAW_EXTENSIONS:
+        return "image"
     if not metadata or metadata.get("error"):
         return None
     if metadata.get("beacon_kind") == "image":
@@ -46,6 +58,33 @@ def _media_kind(metadata: dict[str, Any] | None) -> str | None:
     if "audio" in kinds:
         return "audio"
     return None
+
+
+def _render_raw_thumbnail(source: Path, temporary: Path) -> None:
+    import rawpy
+    from PIL import Image
+
+    with rawpy.imread(str(source)) as raw:
+        try:
+            thumb = raw.extract_thumb()
+            image = Image.open(io.BytesIO(thumb.data)).convert("RGB")
+        except (rawpy.LibRawNoThumbnailError, OSError, ValueError):
+            image = Image.fromarray(
+                raw.postprocess(
+                    use_camera_wb=True,
+                    half_size=True,
+                    no_auto_bright=False,
+                    output_bps=8,
+                )
+            )
+    image.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", THUMBNAIL_SIZE, "#0B1015")
+    canvas.paste(
+        image,
+        ((THUMBNAIL_SIZE[0] - image.width) // 2,
+         (THUMBNAIL_SIZE[1] - image.height) // 2),
+    )
+    canvas.save(temporary, format="PNG", optimize=True)
 
 
 def _existing_thumbnail(
@@ -132,11 +171,12 @@ def ensure_thumbnail(
     media_metadata: dict[str, Any] | None,
 ) -> ThumbnailResult | None:
     """Create and verify a separate preview derivative without editing the source."""
-    kind = _media_kind(media_metadata)
+    kind = _media_kind(media_metadata, source)
     if kind is None:
         return None
+    is_raw = source.suffix.lower() in RAW_EXTENSIONS
     executable = os.environ.get("BEACON_FFMPEG") or shutil.which("ffmpeg")
-    if executable is None:
+    if executable is None and not is_raw:
         LOGGER.warning("thumbnail skipped because ffmpeg is unavailable")
         return None
 
@@ -155,18 +195,22 @@ def ensure_thumbnail(
     destination = thumbnail_dir / f"{asset_id}.png"
     temporary = thumbnail_dir / f".{asset_id}.{uuid.uuid4().hex}.partial.png"
     try:
-        completed = subprocess.run(
-            _ffmpeg_command(executable, source, temporary, kind),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=120,
-        )
-        if completed.returncode != 0:
-            raise RuntimeError(
-                completed.stderr.strip()
-                or f"ffmpeg exited with code {completed.returncode}"
+        generator = RAW_GENERATOR if is_raw else GENERATOR
+        if is_raw:
+            _render_raw_thumbnail(source, temporary)
+        else:
+            completed = subprocess.run(
+                _ffmpeg_command(str(executable), source, temporary, kind),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
             )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    completed.stderr.strip()
+                    or f"ffmpeg exited with code {completed.returncode}"
+                )
         verification = probe(temporary)
         if (
             verification is None
@@ -220,7 +264,7 @@ def ensure_thumbnail(
                     source_sha256,
                     derivative_sha256,
                     derivative_size,
-                    GENERATOR,
+                    generator,
                     json.dumps(details, sort_keys=True),
                     now,
                     now,
@@ -235,7 +279,7 @@ def ensure_thumbnail(
                 location_path=str(destination),
                 details={
                     **details,
-                    "generator": GENERATOR,
+                    "generator": generator,
                     "sha256": derivative_sha256,
                     "size_bytes": derivative_size,
                     "source_sha256": source_sha256,
@@ -246,7 +290,7 @@ def ensure_thumbnail(
             sha256=derivative_sha256,
             size_bytes=derivative_size,
             source_sha256=source_sha256,
-            generator=GENERATOR,
+            generator=generator,
             created=True,
         )
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
@@ -261,6 +305,13 @@ def ensure_thumbnail(
                 message=f"Thumbnail generation failed: {error}",
                 asset_id=asset_id,
                 location_path=str(source),
-                details={"generator": GENERATOR, "source_sha256": source_sha256},
+                details={
+                    "generator": (
+                        RAW_GENERATOR
+                        if source.suffix.lower() in RAW_EXTENSIONS
+                        else GENERATOR
+                    ),
+                    "source_sha256": source_sha256,
+                },
             )
         return None

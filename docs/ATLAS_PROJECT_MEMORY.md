@@ -343,27 +343,29 @@ Next smallest step:
 
 ## Current Handoff
 
-- Last verified: 2026-07-23 on the Windows ATLAS host
-- Working branch/commit: `C:\Development\ATLAS`, branch `main`, commit `151ad64`
-- Current milestone: Beacon 0.13 local music intelligence before broader intake
-- Verified complete: Beacon 0.12 transcript and managed-placement phase; isolated
-  Python 3.11 music runtime; CUDA-enabled Demucs on the RTX 3060; ONNX Basic
-  Pitch; librosa BPM/key/chord analysis; schema-12 checksum-bound music results
-  and derivatives; conservative speech-versus-music gate
-- In progress: none; Beacon 0.13 music-intelligence setup is complete
+- Last verified: 2026-07-24 on the Windows ATLAS host
+- Working branch/commit: `C:\Development\ATLAS`, branch
+  `ops/overnight-250-tranche`
+- Current milestone: Beacon 0.14 Library navigation and local RAW previews
+- Verified complete: the exact 250-file, 98.72-GB production intake completed;
+  242 unique identities were cataloged and the final one-item contextual retry
+  completed. Beacon 0.14 adds independently scrollable Recents/Explorer Library
+  panels, catalog-backed folder navigation, file-type filters, brass/cyan
+  analysis-state rails, Microsoft Raw Image Extension, and packaged
+  rawpy/Pillow camera-RAW derivatives.
+- In progress: user inspection of production metadata and Beacon 0.14 UI
 - Blocked: no current blocker
-- Files changed: music worker/runtime installer, schema, orchestration, local
-  analysis context, repository/controller/QML, tests, versioning, and docs
-- Tests/live checks: all 64 tests pass with two opt-in real-ffprobe tests
-  skipped; synthetic C-major fixture produced MIDI and four verified stems;
-  six-second live spoken clip scored 31% under worker v2 and correctly skipped
-  MIDI/stems; source and result hashes match; packaged Beacon 0.13 live
-  screenshot passed; schema 12 integrity and foreign keys clean; pre-schema-12
-  backup `beacon-20260724T021910.173707Z.db` verified
+- Files changed: Library repository/controller/QML, RAW derivative generator,
+  packaged dependencies, tests, versioning, and docs
+- Tests/live checks: all 64 pre-Library tests passed and the focused 28-test
+  catalog/desktop suite passed with two opt-in real-ffprobe tests skipped; a
+  live CR3 produced a verified PNG derivative without changing source size,
+  timestamp, or SHA-256; packaged Beacon 0.14 generated the same RAW derivative
+  against an isolated database copy; schema 12 integrity and foreign keys clean
 - Unverified assumptions: post-restart Windows hostname, physical SMART state,
   DrivePool duplication/parity, independent archive backup strategy, code
   signing, production chord/key accuracy, acceptable stem storage policy,
   Essentia licensing, face-analysis policy, rights taxonomy, and canonical
   sidecar-versus-SQLite metadata policy
-- Next smallest step: define the first bounded production intake scope under
-  the new analysis, placement, transcript, and music-intelligence policies.
+- Next smallest step: Connor reviews Beacon 0.14 Library behavior and metadata,
+  then the branch can merge to `main`.

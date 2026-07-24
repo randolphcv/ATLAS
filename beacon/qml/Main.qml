@@ -2728,6 +2728,107 @@ ApplicationWindow {
                                             font.letterSpacing: 1.0
                                         }
                                     }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        PrimaryButton {
+                                            text: "Recents"
+                                            quiet: backend.libraryMode !== "recents"
+                                            onClicked: backend.setLibraryMode("recents")
+                                        }
+                                        PrimaryButton {
+                                            text: "Explorer"
+                                            quiet: backend.libraryMode !== "explorer"
+                                            onClicked: backend.setLibraryMode("explorer")
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        Text {
+                                            text: "TYPE"
+                                            color: root.muted
+                                            font.pixelSize: 8
+                                            font.letterSpacing: 1.0
+                                        }
+                                        ComboBox {
+                                            id: libraryTypeFilter
+                                            Layout.preferredWidth: 116
+                                            implicitHeight: 34
+                                            model: ["All", "Photos", "RAW", "Video", "Audio", "Other"]
+                                            currentIndex: {
+                                                var values = ["all", "photo", "raw", "video", "audio", "other"]
+                                                return Math.max(0, values.indexOf(backend.libraryFileType))
+                                            }
+                                            onActivated: {
+                                                var values = ["all", "photo", "raw", "video", "audio", "other"]
+                                                backend.setLibraryFileType(values[currentIndex])
+                                            }
+                                        }
+                                    }
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        visible: backend.libraryMode === "explorer"
+                                        spacing: 7
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            PrimaryButton {
+                                                text: "Up"
+                                                quiet: true
+                                                enabled: backend.libraryPath.toLowerCase() !== "j:\\"
+                                                onClicked: backend.libraryFolderUp()
+                                            }
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: backend.libraryPath
+                                                color: root.atlasBright
+                                                font.family: "Cascadia Mono"
+                                                font.pixelSize: 9
+                                                elide: Text.ElideMiddle
+                                            }
+                                        }
+                                        ListView {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: Math.min(contentHeight, 148)
+                                            visible: count > 0
+                                            clip: true
+                                            spacing: 5
+                                            model: backend.libraryFolders
+                                            boundsBehavior: Flickable.StopAtBounds
+                                            ScrollBar.vertical: ScrollBar {
+                                                policy: ScrollBar.AsNeeded
+                                            }
+                                            delegate: Rectangle {
+                                                required property string folderName
+                                                required property string folderPath
+                                                required property string countLabel
+                                                width: ListView.view.width
+                                                height: 34
+                                                radius: 6
+                                                color: folderMouse.containsMouse ? root.panelRaised : root.shell
+                                                border.color: root.line
+                                                Text {
+                                                    anchors.left: parent.left
+                                                    anchors.leftMargin: 11
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: "▸  " + folderName
+                                                    color: root.bone
+                                                    font.pixelSize: 10
+                                                }
+                                                Text {
+                                                    anchors.right: parent.right
+                                                    anchors.rightMargin: 11
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: countLabel
+                                                    color: root.muted
+                                                    font.pixelSize: 9
+                                                }
+                                                MouseArea {
+                                                    id: folderMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    onClicked: backend.openLibraryFolder(folderPath)
+                                                }
+                                            }
+                                        }
+                                    }
                                     TextField {
                                         id: searchField
                                         Layout.fillWidth: true
@@ -2760,6 +2861,10 @@ ApplicationWindow {
                                         clip: true
                                         spacing: 7
                                         model: backend.assets
+                                        boundsBehavior: Flickable.StopAtBounds
+                                        ScrollBar.vertical: ScrollBar {
+                                            policy: ScrollBar.AlwaysOn
+                                        }
                                         delegate: Rectangle {
                                             required property string assetId
                                             required property string filename
@@ -2769,6 +2874,8 @@ ApplicationWindow {
                                             required property string metaLine
                                             required property string path
                                             required property string thumbnailUrl
+                                            required property bool analyzed
+                                            required property string statusLabel
                                             width: ListView.view.width
                                             height: 78
                                             radius: 8
@@ -2777,6 +2884,23 @@ ApplicationWindow {
                                                    : assetHover.containsMouse ? root.panelRaised : root.shell
                                             border.color: backend.selectedAsset.id === assetId
                                                           ? Qt.rgba(0.39, 0.68, 0.69, 0.45) : root.line
+                                            Rectangle {
+                                                z: 2
+                                                anchors.top: parent.top
+                                                anchors.bottom: parent.bottom
+                                                anchors.right: parent.right
+                                                width: 6
+                                                radius: 3
+                                                color: analyzed ? root.atlasBright : root.brass
+                                                opacity: 0.95
+                                                ToolTip.visible: statusHover.containsMouse
+                                                ToolTip.text: statusLabel
+                                                MouseArea {
+                                                    id: statusHover
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                }
+                                            }
                                             MouseArea {
                                                 id: assetHover
                                                 anchors.fill: parent
@@ -2876,6 +3000,7 @@ ApplicationWindow {
                                     anchors.margins: 1
                                     clip: true
                                     contentWidth: availableWidth
+                                    ScrollBar.vertical.policy: ScrollBar.AlwaysOn
                                     ColumnLayout {
                                         width: assetDetailScroll.availableWidth
                                         spacing: 0

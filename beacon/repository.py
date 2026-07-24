@@ -8,6 +8,24 @@ from typing import Any
 from .database import connect, migrate
 from .identity import atlas_uri
 
+RAW_PHOTO_EXTENSIONS = {
+    ".3fr", ".arw", ".cr2", ".cr3", ".dng", ".erf", ".fff", ".iiq",
+    ".kdc", ".mef", ".mos", ".mrw", ".nef", ".nrw", ".orf", ".pef",
+    ".raf", ".raw", ".rw2", ".sr2", ".srf", ".x3f",
+}
+PHOTO_EXTENSIONS = RAW_PHOTO_EXTENSIONS | {
+    ".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png",
+    ".tif", ".tiff", ".webp",
+}
+VIDEO_EXTENSIONS = {
+    ".3g2", ".3gp", ".avi", ".braw", ".crm", ".m2ts", ".m4v", ".mkv",
+    ".mov", ".mp4", ".mts", ".mxf", ".r3d", ".webm", ".wmv",
+}
+AUDIO_EXTENSIONS = {
+    ".aac", ".aif", ".aiff", ".alac", ".flac", ".m4a", ".mp3", ".ogg",
+    ".opus", ".wav", ".wma",
+}
+
 
 def _media_summary(value: str | None) -> dict[str, Any]:
     if not value:
@@ -107,14 +125,37 @@ def search_assets(
     db_path: Path,
     *,
     query: str = "",
+    path_prefix: str = "",
+    file_type: str = "all",
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
-    limit = max(1, min(limit, 100))
+    limit = max(1, min(limit, 1000))
     offset = max(0, offset)
     pattern = f"%{query.strip()}%"
+    prefix_pattern = f"{path_prefix.rstrip(chr(92))}{chr(92)}%" if path_prefix else "%"
+    extension_groups = {
+        "photo": PHOTO_EXTENSIONS,
+        "raw": RAW_PHOTO_EXTENSIONS,
+        "video": VIDEO_EXTENSIONS,
+        "audio": AUDIO_EXTENSIONS,
+    }
+    selected_extensions = extension_groups.get(file_type, set())
+    extension_clause = ""
+    extension_parameters: list[str] = []
+    if selected_extensions:
+        extension_clause = " AND EXISTS (SELECT 1 FROM locations typed WHERE typed.asset_id=a.id AND (" + " OR ".join(
+            "lower(typed.path) LIKE ?" for _ in selected_extensions
+        ) + "))"
+        extension_parameters = [f"%{suffix}" for suffix in sorted(selected_extensions)]
+    elif file_type == "other":
+        known = sorted(PHOTO_EXTENSIONS | VIDEO_EXTENSIONS | AUDIO_EXTENSIONS)
+        extension_clause = " AND NOT EXISTS (SELECT 1 FROM locations typed WHERE typed.asset_id=a.id AND (" + " OR ".join(
+            "lower(typed.path) LIKE ?" for _ in known
+        ) + "))"
+        extension_parameters = [f"%{suffix}" for suffix in known]
     where = """
-        WHERE ? = '%%'
+        WHERE (? = '%%'
            OR a.id LIKE ?
            OR a.sha256 LIKE ?
            OR EXISTS (
@@ -132,12 +173,20 @@ def search_assets(
                WHERE editable.asset_id = a.id
                  AND editable.metadata_json LIKE ?
            )
-    """
+    ) AND EXISTS (
+        SELECT 1 FROM locations scoped
+        WHERE scoped.asset_id=a.id AND lower(scoped.path) LIKE lower(?)
+    )
+    """ + extension_clause
+    parameters = [
+        pattern, pattern, pattern, pattern, pattern, pattern, prefix_pattern,
+        *extension_parameters,
+    ]
     with connect(db_path) as connection:
         migrate(connection)
         total = connection.execute(
             f"SELECT COUNT(*) FROM assets a {where}",
-            (pattern, pattern, pattern, pattern, pattern, pattern),
+            parameters,
         ).fetchone()[0]
         rows = connection.execute(
             f"""
@@ -181,6 +230,12 @@ def search_assets(
                     FROM asset_metadata editable
                     WHERE editable.asset_id = a.id
                 ) AS editable_metadata_json
+                ,EXISTS (
+                    SELECT 1 FROM analysis_results analyzed
+                    WHERE analyzed.asset_id=a.id
+                      AND analyzed.analysis_kind='contextual_metadata'
+                      AND analyzed.review_state IN ('candidate','approved')
+                ) AS analyzed
             FROM assets a
             LEFT JOIN locations l ON l.asset_id = a.id
             {where}
@@ -189,12 +244,7 @@ def search_assets(
             LIMIT ? OFFSET ?
             """,
             (
-                pattern,
-                pattern,
-                pattern,
-                pattern,
-                pattern,
-                pattern,
+                *parameters,
                 limit,
                 offset,
             ),
@@ -205,6 +255,39 @@ def search_assets(
         "limit": limit,
         "offset": offset,
     }
+
+
+def library_folders(db_path: Path, path_prefix: str = "J:\\") -> list[dict[str, Any]]:
+    """Return direct catalog-backed child folders beneath a Windows path."""
+    base = path_prefix.rstrip("\\")
+    prefix = f"{base}\\"
+    counts: dict[str, set[str]] = {}
+    with connect(db_path) as connection:
+        migrate(connection)
+        rows = connection.execute(
+            """
+            SELECT asset_id,path FROM locations
+            WHERE lower(path) LIKE lower(?)
+            ORDER BY path COLLATE NOCASE
+            """,
+            (f"{prefix}%",),
+        ).fetchall()
+    for row in rows:
+        path = str(row["path"])
+        remainder = path[len(prefix):] if path.lower().startswith(prefix.lower()) else ""
+        if "\\" not in remainder:
+            continue
+        child = remainder.split("\\", 1)[0]
+        child_path = f"{base}\\{child}"
+        counts.setdefault(child_path, set()).add(str(row["asset_id"]))
+    return [
+        {
+            "name": Path(folder).name,
+            "path": folder,
+            "asset_count": len(asset_ids),
+        }
+        for folder, asset_ids in sorted(counts.items(), key=lambda item: item[0].lower())
+    ]
 
 
 def asset_detail(db_path: Path, asset_id: str) -> dict[str, Any] | None:

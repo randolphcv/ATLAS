@@ -5,12 +5,16 @@ observes and catalogs files without owning or changing originals.
 
 ## Current application
 
-Beacon 0.13.0 is a native Windows desktop application. It includes:
+Beacon 0.14.0 is a native Windows desktop application. It includes:
 
 - the verified Phase 1 read-only catalog;
 - a branded Qt Quick desktop shell with no embedded browser;
 - catalog search and master-detail asset inspection;
+- independently scrollable Library panels, Recents and catalog-backed Explorer
+  tabs, file-type filters, and cataloged/analyzed status rails;
 - verified image, video, and audio thumbnails stored as separate derivatives;
+- local CR2, CR3, and common camera-RAW preview derivatives without changing
+  originals;
 - a Finder-style Space preview for images, audio, video, and bounded read-only
   plain-text inspection, with a safe metadata fallback for binary formats;
 - a persistent application-level Space shortcut and a larger selected-asset

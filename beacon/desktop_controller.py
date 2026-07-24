@@ -59,8 +59,16 @@ from .local_analysis import (
     request_local_analysis_cancel,
     run_local_analysis_job,
 )
-from .repository import asset_detail, catalog_summary, recent_events, search_assets
+from .repository import (
+    RAW_PHOTO_EXTENSIONS,
+    asset_detail,
+    catalog_summary,
+    library_folders,
+    recent_events,
+    search_assets,
+)
 from .text_preview import read_text_preview
+from .thumbnails import ensure_thumbnail
 
 LOGGER = logging.getLogger("beacon.desktop")
 
@@ -261,6 +269,7 @@ class DesktopController(QObject):
     selectedAssetChanged = Signal()
     currentViewChanged = Signal()
     searchQueryChanged = Signal()
+    libraryChanged = Signal()
     busyChanged = Signal()
     statusChanged = Signal()
     lastRefreshChanged = Signal()
@@ -279,6 +288,9 @@ class DesktopController(QObject):
         self._selected_asset: dict[str, Any] = {}
         self._current_view = "overview"
         self._search_query = ""
+        self._library_mode = "recents"
+        self._library_path = "J:\\"
+        self._library_file_type = "all"
         self._busy = False
         self._status_message = ""
         self._status_kind = "neutral"
@@ -308,7 +320,12 @@ class DesktopController(QObject):
                 "metaLine",
                 "locationCount",
                 "thumbnailUrl",
+                "analyzed",
+                "statusLabel",
             )
+        )
+        self._library_folders = DictListModel(
+            ("folderName", "folderPath", "assetCount", "countLabel")
         )
         self._events = DictListModel(
             (
@@ -392,6 +409,10 @@ class DesktopController(QObject):
         return self._assets
 
     @Property(QObject, constant=True)
+    def libraryFolders(self) -> QObject:
+        return self._library_folders
+
+    @Property(QObject, constant=True)
     def events(self) -> QObject:
         return self._events
 
@@ -455,6 +476,18 @@ class DesktopController(QObject):
     def searchQuery(self) -> str:
         return self._search_query
 
+    @Property(str, notify=libraryChanged)
+    def libraryMode(self) -> str:
+        return self._library_mode
+
+    @Property(str, notify=libraryChanged)
+    def libraryPath(self) -> str:
+        return self._library_path
+
+    @Property(str, notify=libraryChanged)
+    def libraryFileType(self) -> str:
+        return self._library_file_type
+
     @Property(bool, notify=busyChanged)
     def busy(self) -> bool:
         return self._busy
@@ -509,6 +542,48 @@ class DesktopController(QObject):
         self._search_query = query
         self.searchQueryChanged.emit()
         self._load_assets(preserve_selection=True)
+
+    @Slot(str)
+    def setLibraryMode(self, mode: str) -> None:
+        if mode not in {"recents", "explorer"} or mode == self._library_mode:
+            return
+        self._library_mode = mode
+        self.libraryChanged.emit()
+        self._load_assets(preserve_selection=True)
+
+    @Slot(str)
+    def setLibraryFileType(self, file_type: str) -> None:
+        normalized = file_type.strip().lower()
+        if normalized not in {"all", "photo", "raw", "video", "audio", "other"}:
+            normalized = "all"
+        if normalized == self._library_file_type:
+            return
+        self._library_file_type = normalized
+        self.libraryChanged.emit()
+        self._load_assets(preserve_selection=True)
+
+    @Slot(str)
+    def openLibraryFolder(self, path: str) -> None:
+        candidate = Path(path)
+        try:
+            resolved = str(candidate.resolve())
+        except OSError:
+            return
+        if not resolved.lower().startswith("j:\\"):
+            return
+        self._library_mode = "explorer"
+        self._library_path = resolved
+        self.libraryChanged.emit()
+        self._load_assets(preserve_selection=False)
+
+    @Slot()
+    def libraryFolderUp(self) -> None:
+        current = Path(self._library_path)
+        parent = current.parent
+        target = "J:\\" if str(current).lower() == "j:\\" else str(parent)
+        if not target.lower().startswith("j:\\"):
+            target = "J:\\"
+        self.openLibraryFolder(target)
 
     @Slot()
     def refresh(self) -> None:
@@ -605,10 +680,26 @@ class DesktopController(QObject):
         result = search_assets(
             self.settings.db_path,
             query=self._search_query,
-            limit=100,
+            path_prefix=self._library_path if self._library_mode == "explorer" else "",
+            file_type=self._library_file_type,
+            limit=500 if self._library_mode == "explorer" else 100,
         )
         rows = [self._asset_row(item) for item in result["items"]]
         self._assets.replace(rows)
+        folders = (
+            library_folders(self.settings.db_path, self._library_path)
+            if self._library_mode == "explorer"
+            else []
+        )
+        self._library_folders.replace(
+            {
+                "folderName": item["name"],
+                "folderPath": item["path"],
+                "assetCount": item["asset_count"],
+                "countLabel": f"{item['asset_count']:,}",
+            }
+            for item in folders
+        )
         available_ids = {row["assetId"] for row in rows}
         if current_id in available_ids:
             self._select_asset(str(current_id))
@@ -1238,6 +1329,8 @@ class DesktopController(QObject):
             "thumbnailUrl": DesktopController._local_file_url(
                 asset.get("thumbnail_path")
             ),
+            "analyzed": bool(asset.get("analyzed")),
+            "statusLabel": "Analyzed" if asset.get("analyzed") else "Cataloged",
         }
 
     @staticmethod
@@ -1258,6 +1351,28 @@ class DesktopController(QObject):
         if detail is None:
             self._selected_asset = {}
         else:
+            primary_path = Path(str(detail.get("primary_path") or ""))
+            is_raw_photo = primary_path.suffix.lower() in RAW_PHOTO_EXTENSIONS
+            if (
+                is_raw_photo
+                and primary_path.is_file()
+                and not detail.get("thumbnail_path")
+            ):
+                try:
+                    generated = ensure_thumbnail(
+                        primary_path,
+                        self.settings.db_path,
+                        asset_id=str(detail["id"]),
+                        source_sha256=str(detail["sha256"]),
+                        media_metadata=detail.get("media_metadata"),
+                    )
+                    if generated is not None:
+                        detail["thumbnail_path"] = generated.path
+                except Exception:
+                    LOGGER.exception(
+                        "could not prepare RAW preview asset_id=%s",
+                        asset_id,
+                    )
             detail["sizeLabel"] = format_bytes(detail.get("size_bytes"))
             detail["lastSeenLabel"] = format_timestamp(detail.get("last_seen_at"))
             detail["createdLabel"] = format_timestamp(detail.get("created_at"))
@@ -1273,9 +1388,10 @@ class DesktopController(QObject):
                 detail.get("thumbnail_path")
             )
             preview_kind = str(detail.get("kind") or "file")
+            if is_raw_photo and detail.get("thumbnailUrl"):
+                preview_kind = "image"
             if preview_kind not in {"image", "video", "audio"}:
                 preview_kind = "file"
-                primary_path = Path(str(detail.get("primary_path") or ""))
                 text_preview = read_text_preview(primary_path)
                 if text_preview is not None:
                     preview_kind = "text"
@@ -1301,6 +1417,8 @@ class DesktopController(QObject):
             detail["previewUrl"] = self._local_file_url(
                 detail.get("primary_path")
             )
+            if is_raw_photo and detail.get("thumbnailUrl"):
+                detail["previewUrl"] = detail["thumbnailUrl"]
             detail["previewAvailable"] = bool(detail["previewUrl"])
             transcript = detail.get("transcript") or {}
             detail["transcript"] = {

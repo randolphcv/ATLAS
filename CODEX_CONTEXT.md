@@ -162,6 +162,19 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 
 ## Engineering Preferences
 
+### Current Beacon baseline (2026-07-24)
+
+- Beacon 0.14.0 is the current packaged candidate on branch
+  `ops/overnight-250-tranche`.
+- The bounded 250-file production tranche completed intake and contextual
+  analysis locally; the one malformed Qwen JSON response passed on a one-item
+  retry.
+- Library browsing uses Recents plus a catalog-backed Explorer; brass means
+  cataloged and cyan means contextually analyzed.
+- RAW previews are disposable checksum-bound PNG derivatives. Microsoft Raw
+  Image Extension and Beacon's packaged rawpy/Pillow fallback are installed;
+  originals are never decoded in place or rewritten.
+
 - Favor boring, recoverable engineering over clever shortcuts.
 - Use explicit schemas, migrations, typed boundaries, and structured logs.
 - Make jobs restartable and idempotent.

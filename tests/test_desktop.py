@@ -105,6 +105,8 @@ class DesktopControllerTests(unittest.TestCase):
         self.assertEqual(row["filename"], "native-signal.txt")
         self.assertEqual(row["assetId"], self.cataloged.asset_id)
         self.assertEqual(row["thumbnailUrl"], "")
+        self.assertFalse(row["analyzed"])
+        self.assertEqual(row["statusLabel"], "Cataloged")
         self.assertEqual(
             self.controller.selectedAsset["atlas_uri"],
             f"atlas://asset/{self.cataloged.asset_id}",
@@ -129,6 +131,11 @@ class DesktopControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.selectedAsset, {})
 
         self.controller.setSearchQuery("native")
+        self.assertEqual(self.controller.assets.rowCount(), 1)
+
+        self.controller.setLibraryFileType("video")
+        self.assertEqual(self.controller.assets.rowCount(), 0)
+        self.controller.setLibraryFileType("all")
         self.assertEqual(self.controller.assets.rowCount(), 1)
 
     def test_catalog_context_is_explicit(self) -> None:

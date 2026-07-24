@@ -19,7 +19,7 @@ ATLAS is a modular, long-term media storage and intelligence platform designed t
 The Windows hostname was still `DESKTOP-8B4OJIR` when verified on 2026-07-23.
 Connor intends to rename it to `Ultron`, effective only after a later restart.
 
-> Current implementation note (2026-07-23): Beacon 0.13.0 is a packaged native
+> Current implementation note (2026-07-24): Beacon 0.14.0 is a packaged native
 > Windows app, not a browser-first dashboard. Schema 12 adds persistent,
 > checksum-bound full transcripts to the existing recursive
 > Archive Intake snapshots, durable item-level progress, cancel-between-files,
@@ -31,11 +31,16 @@ Connor intends to rename it to `Ultron`, effective only after a later restart.
 > Music intelligence runs through a separate Python 3.11 environment with
 > CUDA Demucs, ONNX Basic Pitch, and librosa DSP. Essentia is intentionally not
 > distributed pending an explicit AGPL licensing decision.
+> The Library now has independently scrollable Recents and catalog-backed
+> Explorer views, direct folder navigation, file-type filters, and brass/cyan
+> cataloged-versus-analyzed rails. Microsoft Raw Image Extension plus Beacon's
+> packaged rawpy/Pillow fallback provides non-destructive CR2, CR3, and common
+> camera-RAW previews.
 
 ## Immediate Next Task
 
-Verify and merge the bounded Beacon 0.13 music-intelligence feature before
-starting broader intake.
+Review and merge Beacon 0.14 Library navigation and RAW-preview support after
+the bounded 250-file production tranche.
 
 ---
 
