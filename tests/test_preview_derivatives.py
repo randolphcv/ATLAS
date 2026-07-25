@@ -21,7 +21,7 @@ from beacon.repository import asset_detail
 
 
 class HeicPreviewTests(unittest.TestCase):
-    def test_heic_catalog_creates_verified_png_preview_without_source_change(
+    def test_heic_catalog_creates_verified_jpeg_preview_without_source_change(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -49,7 +49,7 @@ class HeicPreviewTests(unittest.TestCase):
             self.assertEqual((stream["width"], stream["height"]), (80, 48))
             thumbnail = Path(str(detail["thumbnail_path"]))
             self.assertTrue(thumbnail.is_file())
-            self.assertEqual(thumbnail.suffix, ".png")
+            self.assertEqual(thumbnail.suffix, ".jpg")
             self.assertEqual(sha256_file(source), source_hash)
 
 

@@ -67,6 +67,7 @@ from .repository import (
     asset_detail,
     catalog_summary,
     library_folders,
+    missing_thumbnail_assets,
     recent_events,
     search_assets,
 )
@@ -83,6 +84,7 @@ LOGGER = logging.getLogger("beacon.desktop")
 ANALYSIS_STAGE_LABELS = {
     "verifying_source": "VERIFYING SOURCE",
     "preparing_raw_preview": "PREPARING RAW PREVIEW",
+    "preparing_image_preview": "PREPARING IMAGE PREVIEW",
     "preparing_visual_context": "PREPARING VISUAL CONTEXT",
     "preparing_audio_context": "PREPARING AUDIO CONTEXT",
     "transcribing_audio": "TRANSCRIBING AUDIO",
@@ -419,6 +421,43 @@ class _PreviewWorker(QRunnable):
             self.signals.failed.emit(str(error))
 
 
+class _ThumbnailWorker(QRunnable):
+    def __init__(
+        self,
+        db_path: Path,
+        asset_id: str,
+        source_path: Path,
+        source_sha256: str,
+        media_metadata: dict[str, Any] | None,
+    ) -> None:
+        super().__init__()
+        self.db_path = db_path
+        self.asset_id = asset_id
+        self.source_path = source_path
+        self.source_sha256 = source_sha256
+        self.media_metadata = media_metadata
+        self.signals = _PreviewSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = ensure_thumbnail(
+                self.source_path,
+                self.db_path,
+                asset_id=self.asset_id,
+                source_sha256=self.source_sha256,
+                media_metadata=self.media_metadata,
+            )
+            if result is None:
+                raise RuntimeError("Image thumbnail could not be decoded")
+            self.signals.succeeded.emit(result)
+        except Exception as error:
+            LOGGER.exception(
+                "library thumbnail failed asset_id=%s", self.asset_id
+            )
+            self.signals.failed.emit(str(error))
+
+
 class DesktopController(QObject):
     summaryChanged = Signal()
     databaseHealthChanged = Signal()
@@ -448,6 +487,7 @@ class DesktopController(QObject):
         self._library_mode = "recents"
         self._library_path = "J:\\"
         self._library_file_type = "all"
+        self._show_hidden_library_files = False
         self._busy = False
         self._status_message = ""
         self._status_kind = "neutral"
@@ -463,6 +503,11 @@ class DesktopController(QObject):
         self._workers: list[QRunnable] = []
         self._thread_pool = QThreadPool(self)
         self._thread_pool.setMaxThreadCount(1)
+        self._thumbnail_thread_pool = QThreadPool(self)
+        self._thumbnail_thread_pool.setMaxThreadCount(1)
+        self._thumbnail_workers: list[_ThumbnailWorker] = []
+        self._thumbnail_pending: set[str] = set()
+        self._thumbnail_backlog: dict[str, dict[str, Any]] = {}
 
         self._assets = DictListModel(
             (
@@ -548,6 +593,7 @@ class DesktopController(QObject):
         recovered = recover_intake_jobs(self.settings.db_path)
         recovered_analysis = recover_local_analysis_jobs(self.settings.db_path)
         self.refresh()
+        self.warmLibraryThumbnails()
         if recovered:
             self._set_status(
                 f"Recovered {recovered} interrupted intake job"
@@ -651,6 +697,10 @@ class DesktopController(QObject):
     def libraryFileType(self) -> str:
         return self._library_file_type
 
+    @Property(bool, notify=libraryChanged)
+    def showHiddenLibraryFiles(self) -> bool:
+        return self._show_hidden_library_files
+
     @Property(bool, notify=busyChanged)
     def busy(self) -> bool:
         return self._busy
@@ -696,6 +746,8 @@ class DesktopController(QObject):
         if self._current_view != view:
             self._current_view = view
             self.currentViewChanged.emit()
+            if view == "library":
+                self.warmLibraryThumbnails()
 
     @Slot(str)
     def setSearchQuery(self, query: str) -> None:
@@ -722,6 +774,15 @@ class DesktopController(QObject):
         if normalized == self._library_file_type:
             return
         self._library_file_type = normalized
+        self.libraryChanged.emit()
+        self._load_assets(preserve_selection=True)
+
+    @Slot(bool)
+    def setShowHiddenLibraryFiles(self, value: bool) -> None:
+        normalized = bool(value)
+        if normalized == self._show_hidden_library_files:
+            return
+        self._show_hidden_library_files = normalized
         self.libraryChanged.emit()
         self._load_assets(preserve_selection=True)
 
@@ -845,12 +906,17 @@ class DesktopController(QObject):
             query=self._search_query,
             path_prefix=self._library_path if self._library_mode == "explorer" else "",
             file_type=self._library_file_type,
+            include_hidden=self._show_hidden_library_files,
             limit=500 if self._library_mode == "explorer" else 100,
         )
         rows = [self._asset_row(item) for item in result["items"]]
         self._assets.replace(rows)
         folders = (
-            library_folders(self.settings.db_path, self._library_path)
+            library_folders(
+                self.settings.db_path,
+                self._library_path,
+                include_hidden=self._show_hidden_library_files,
+            )
             if self._library_mode == "explorer"
             else []
         )
@@ -871,6 +937,164 @@ class DesktopController(QObject):
         else:
             self._selected_asset = {}
             self.selectedAssetChanged.emit()
+
+    @Slot(int)
+    def navigateLibraryAsset(self, offset: int) -> None:
+        if not offset or self._assets.rowCount() == 0:
+            return
+        selected_id = str(self._selected_asset.get("id") or "")
+        current_index = next(
+            (
+                index
+                for index in range(self._assets.rowCount())
+                if self._assets.get(index).get("assetId") == selected_id
+            ),
+            0,
+        )
+        target_index = max(
+            0,
+            min(self._assets.rowCount() - 1, current_index + int(offset)),
+        )
+        target = self._assets.get(target_index)
+        target_id = str(target.get("assetId") or "")
+        if not target_id or target_id == selected_id:
+            return
+        self._select_asset(target_id)
+
+    @Slot(str)
+    def prepareLibraryThumbnail(self, asset_id: str) -> None:
+        asset_id = asset_id.strip()
+        if not asset_id or asset_id in self._thumbnail_pending:
+            return
+        detail = asset_detail(self.settings.db_path, asset_id)
+        if detail is None:
+            return
+        existing_url = self._local_file_url(detail.get("thumbnail_path"))
+        if existing_url:
+            self._assets.update_matching(
+                "assetId", asset_id, {"thumbnailUrl": existing_url}
+            )
+            return
+        source = Path(str(detail.get("primary_path") or ""))
+        if source.suffix.lower() not in HEIF_EXTENSIONS or not source.is_file():
+            return
+        self._thumbnail_backlog.pop(asset_id, None)
+        self._start_thumbnail_worker(
+            asset_id=asset_id,
+            source_path=source,
+            source_sha256=str(detail.get("sha256") or ""),
+            media_metadata=detail.get("media_metadata"),
+            priority=10,
+        )
+
+    @Slot()
+    def warmLibraryThumbnails(self) -> None:
+        if self._active_local_analysis_job_id:
+            return
+        for candidate in missing_thumbnail_assets(
+            self.settings.db_path,
+            extensions=HEIF_EXTENSIONS,
+            limit=250,
+        ):
+            source = Path(str(candidate["source_path"]))
+            asset_id = str(candidate["asset_id"])
+            if (
+                source.is_file()
+                and asset_id not in self._thumbnail_pending
+                and asset_id not in self._thumbnail_backlog
+            ):
+                self._thumbnail_backlog[asset_id] = dict(candidate)
+        self._schedule_next_thumbnail()
+
+    def _schedule_next_thumbnail(self) -> None:
+        if self._thumbnail_pending or not self._thumbnail_backlog:
+            return
+        asset_id = next(iter(self._thumbnail_backlog))
+        candidate = self._thumbnail_backlog.pop(asset_id)
+        self._start_thumbnail_worker(
+            asset_id=asset_id,
+            source_path=Path(str(candidate["source_path"])),
+            source_sha256=str(candidate["source_sha256"]),
+            media_metadata=candidate.get("media_metadata"),
+            priority=-1,
+        )
+
+    def _start_thumbnail_worker(
+        self,
+        *,
+        asset_id: str,
+        source_path: Path,
+        source_sha256: str,
+        media_metadata: dict[str, Any] | None,
+        priority: int,
+    ) -> None:
+        if (
+            not asset_id
+            or not source_sha256
+            or asset_id in self._thumbnail_pending
+        ):
+            return
+        self._thumbnail_pending.add(asset_id)
+        worker = _ThumbnailWorker(
+            self.settings.db_path,
+            asset_id,
+            source_path,
+            source_sha256,
+            media_metadata,
+        )
+        self._thumbnail_workers.append(worker)
+        worker.signals.succeeded.connect(
+            lambda result, current=worker: self._thumbnail_succeeded(
+                current, result
+            )
+        )
+        worker.signals.failed.connect(
+            lambda message, current=worker: self._thumbnail_failed(
+                current, message
+            )
+        )
+        self._thumbnail_thread_pool.start(worker, priority)
+
+    def _thumbnail_succeeded(
+        self,
+        worker: _ThumbnailWorker,
+        result: ThumbnailResult,
+    ) -> None:
+        self._finish_thumbnail_worker(worker)
+        thumbnail_url = self._local_file_url(result.path)
+        self._assets.update_matching(
+            "assetId",
+            worker.asset_id,
+            {"thumbnailUrl": thumbnail_url},
+        )
+        if str(self._selected_asset.get("id") or "") == worker.asset_id:
+            updated = dict(self._selected_asset)
+            updated["thumbnailUrl"] = thumbnail_url
+            if updated.get("previewKind") == "image":
+                updated["previewUrl"] = thumbnail_url
+                updated["previewAvailable"] = bool(thumbnail_url)
+                updated["previewRequiresPreparation"] = False
+                updated["previewPreparing"] = False
+            self._selected_asset = updated
+            self.selectedAssetChanged.emit()
+
+    def _thumbnail_failed(
+        self,
+        worker: _ThumbnailWorker,
+        message: str,
+    ) -> None:
+        LOGGER.warning(
+            "library thumbnail unavailable asset_id=%s error=%s",
+            worker.asset_id,
+            message,
+        )
+        self._finish_thumbnail_worker(worker)
+
+    def _finish_thumbnail_worker(self, worker: _ThumbnailWorker) -> None:
+        self._thumbnail_pending.discard(worker.asset_id)
+        if worker in self._thumbnail_workers:
+            self._thumbnail_workers.remove(worker)
+        self._schedule_next_thumbnail()
 
     def _load_events(self) -> None:
         rows = []
@@ -2236,6 +2460,8 @@ class DesktopController(QObject):
     @Slot()
     def shutdown(self) -> None:
         """Pause intake work and let the current verified file operation finish."""
+        self._thumbnail_backlog.clear()
+        self._thumbnail_thread_pool.clear()
         for worker in tuple(self._workers):
             if isinstance(worker, _IntakeRunWorker):
                 try:

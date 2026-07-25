@@ -177,6 +177,71 @@ class DesktopControllerTests(unittest.TestCase):
             self.controller.selectedAsset["previewUrl"].startswith("file:")
         )
 
+    def test_heic_library_warmup_updates_the_visible_thumbnail(self) -> None:
+        source = self.root / "fixtures" / "library-card.heic"
+        from_pillow(Image.new("RGB", (72, 48), "#C39A58")).save(source)
+        source_bytes = source.read_bytes()
+        cataloged = catalog_file(
+            source,
+            self.db,
+            stability_seconds=0,
+            include_thumbnail_generation=False,
+        )
+        self.controller.refresh()
+
+        with patch.dict(
+            os.environ,
+            {"BEACON_THUMBNAIL_ROOT": str(self.root / "library-thumbnails")},
+        ):
+            self.controller.warmLibraryThumbnails()
+            self.controller._thumbnail_thread_pool.waitForDone(10_000)
+            QCoreApplication.processEvents()
+
+        rows = [
+            self.controller.assets.get(index)
+            for index in range(self.controller.assets.rowCount())
+        ]
+        row = next(item for item in rows if item["assetId"] == cataloged.asset_id)
+        self.assertTrue(row["thumbnailUrl"].startswith("file:"))
+        self.assertEqual(source.read_bytes(), source_bytes)
+
+    def test_support_files_are_hidden_until_explicitly_shown(self) -> None:
+        sidecar = self.root / "fixtures" / "native-signal.xmp"
+        sidecar.write_text("<x:xmpmeta>fixture</x:xmpmeta>", encoding="utf-8")
+        catalog_file(
+            sidecar,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        self.controller.refresh()
+
+        self.assertEqual(self.controller.assets.rowCount(), 1)
+        self.assertFalse(self.controller.showHiddenLibraryFiles)
+        self.controller.setShowHiddenLibraryFiles(True)
+        self.assertEqual(self.controller.assets.rowCount(), 2)
+
+    def test_library_navigation_moves_to_the_adjacent_asset(self) -> None:
+        second = self.root / "fixtures" / "second.txt"
+        second.write_text("Second library row.", encoding="utf-8")
+        catalog_file(
+            second,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        self.controller.refresh()
+        first_id = self.controller.assets.get(0)["assetId"]
+        second_id = self.controller.assets.get(1)["assetId"]
+
+        self.controller.selectAsset(first_id)
+        self.controller.navigateLibraryAsset(1)
+        self.assertEqual(self.controller.selectedAsset["id"], second_id)
+        self.controller.navigateLibraryAsset(-1)
+        self.assertEqual(self.controller.selectedAsset["id"], first_id)
+
     def test_catalog_context_is_explicit(self) -> None:
         self.assertEqual(
             _catalog_label(DEFAULT_RUNTIME / "beacon.db"),
@@ -667,6 +732,103 @@ def verify_reset():
     app.exit(0 if geometry == expected else 16)
 
 QTimer.singleShot(250, press_with_button_focused)
+raise SystemExit(app.exec())
+"""
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    script,
+                    str(root / "beacon.db"),
+                    str(root / "backups"),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+            )
+
+    def test_arrow_keys_move_between_library_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for name in ("first.txt", "second.txt"):
+                source = root / name
+                source.write_text(name, encoding="utf-8")
+                catalog_file(
+                    source,
+                    root / "beacon.db",
+                    stability_seconds=0,
+                    include_media_probe=False,
+                )
+            environment = os.environ.copy()
+            environment["QT_QPA_PLATFORM"] = "offscreen"
+            environment["QT_QUICK_BACKEND"] = "software"
+            script = r"""
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QTimer, Qt, QUrl
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuickControls2 import QQuickStyle
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication
+
+from beacon.desktop_controller import DesktopController, DesktopSettings
+
+QQuickStyle.setStyle("Fusion")
+app = QApplication(["beacon-arrow-test"])
+controller = DesktopController(
+    DesktopSettings(Path(sys.argv[1]), Path(sys.argv[2]))
+)
+controller.setCurrentView("library")
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("backend", controller)
+engine.rootContext().setContextProperty("previewMuted", True)
+engine.load(QUrl.fromLocalFile(str(Path.cwd() / "beacon" / "qml" / "Main.qml")))
+if not engine.rootObjects():
+    raise SystemExit(20)
+window = engine.rootObjects()[0]
+initial_id = controller.selectedAsset.get("id")
+
+def move_down():
+    QTest.keyClick(window, Qt.Key.Key_Down)
+    QTimer.singleShot(120, verify_down)
+
+def verify_down():
+    if controller.selectedAsset.get("id") == initial_id:
+        app.exit(21)
+        return
+    QTest.keyClick(window, Qt.Key.Key_Up)
+    QTimer.singleShot(120, verify_up)
+
+def verify_up():
+    if controller.selectedAsset.get("id") != initial_id:
+        app.exit(22)
+        return
+    QTest.keyClick(window, Qt.Key.Key_Space)
+    QTimer.singleShot(120, move_inside_preview)
+
+def move_inside_preview():
+    if not window.property("previewOpen"):
+        app.exit(23)
+        return
+    QTest.keyClick(window, Qt.Key.Key_Right)
+    QTimer.singleShot(120, verify_preview_move)
+
+def verify_preview_move():
+    if controller.selectedAsset.get("id") == initial_id:
+        app.exit(24)
+        return
+    QTest.keyClick(window, Qt.Key.Key_Space)
+    QTimer.singleShot(80, lambda: app.exit(0))
+
+QTimer.singleShot(250, move_down)
 raise SystemExit(app.exec())
 """
             result = subprocess.run(

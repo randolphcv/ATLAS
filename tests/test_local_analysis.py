@@ -5,17 +5,22 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from PIL import Image
 
 from beacon.catalog import catalog_file
 from beacon.database import SCHEMA_VERSION, database_integrity
 from beacon.local_analysis import (
     analysis_scope_preview,
     create_local_analysis_job,
+    create_selected_local_analysis_job,
     list_local_analysis_jobs,
     recover_local_analysis_jobs,
     retry_local_analysis_failures,
     request_local_analysis_cancel,
     run_local_analysis_job,
+    _prepare_media_context,
     _process_is_alive,
 )
 from beacon.repository import asset_detail
@@ -143,6 +148,81 @@ class LocalAnalysisJobTests(unittest.TestCase):
             )
         finally:
             connection.close()
+
+    def test_support_files_are_excluded_from_analysis_scope(self) -> None:
+        sidecar = self.sources / "camera-settings.xmp"
+        sidecar.write_text("<x:xmpmeta>fixture</x:xmpmeta>", encoding="utf-8")
+        catalog_file(
+            sidecar,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        preview = analysis_scope_preview(self.db)
+        self.assertEqual(preview["assets"], 2)
+
+    def test_selected_analysis_job_contains_only_explicit_assets(self) -> None:
+        connection = sqlite3.connect(self.db)
+        try:
+            asset_ids = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT id FROM assets ORDER BY id"
+                ).fetchall()
+            ]
+        finally:
+            connection.close()
+
+        job_id = create_selected_local_analysis_job(
+            self.db,
+            asset_ids=[asset_ids[1]],
+            model="fixture-model",
+        )
+
+        connection = sqlite3.connect(self.db)
+        try:
+            rows = connection.execute(
+                """
+                SELECT asset_id FROM local_analysis_items
+                WHERE job_id=?
+                """,
+                (job_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        self.assertEqual(rows, [(asset_ids[1],)])
+
+    def test_still_image_keeps_thumbnail_instead_of_video_sampling(self) -> None:
+        source = self.sources / "photograph.jpg"
+        source.write_bytes(b"source bytes are checksum context only")
+        thumbnail = self.root / "thumbnail.jpg"
+        Image.new("RGB", (80, 48), "#4A8C91").save(thumbnail)
+        asset = {
+            "source_path": str(source),
+            "media_metadata": {
+                "beacon_kind": "image",
+                "streams": [
+                    {
+                        "codec_type": "video",
+                        "codec_name": "mjpeg",
+                        "duration": "0.040000",
+                    }
+                ],
+            },
+            "thumbnail_path": str(thumbnail),
+        }
+
+        with patch("beacon.local_analysis.subprocess.run") as run:
+            context, images, temporary_root = _prepare_media_context(asset)
+        try:
+            self.assertEqual(context["media_mode"], "still_image")
+            self.assertEqual(images, [thumbnail])
+            run.assert_not_called()
+        finally:
+            import shutil
+
+            shutil.rmtree(temporary_root, ignore_errors=True)
 
     def test_pipeline_stage_is_durable_and_clears_at_completion(self) -> None:
         observed: list[tuple[str, str | None]] = []

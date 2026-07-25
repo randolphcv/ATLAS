@@ -22,13 +22,15 @@ from .catalog import sha256_file
 from .database import connect, migrate, record_event
 from .desk import seed_threads
 from .managed_moves import commit_analyzed_file, placement_needs_clarification
+from .media import IMAGE_EXTENSIONS
 from .metadata import apply_analysis_metadata, apply_analysis_organization_path
 from .music_analysis import analyze_asset_music
+from .repository import SUPPORT_FILE_EXTENSIONS
 from .thumbnails import RAW_EXTENSIONS, ensure_thumbnail
 from .transcripts import get_asset_transcript, save_asset_transcript
 
 DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
-POLICY_VERSION = "beacon-local-multimodal-v2"
+POLICY_VERSION = "beacon-local-content-v3"
 _WHISPER_MODEL: Any = None
 
 
@@ -56,6 +58,14 @@ def _utc_now() -> str:
 
 def _canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _is_still_image(source: Path, metadata: dict[str, Any]) -> bool:
+    return (
+        metadata.get("beacon_kind") == "image"
+        or source.suffix.lower() in IMAGE_EXTENSIONS
+        or source.suffix.lower() in RAW_EXTENSIONS
+    )
 
 
 def _normalize_confidence(value: object) -> tuple[float, str | None]:
@@ -140,11 +150,19 @@ def analysis_scope_preview(
         raise ValueError("unsupported analysis scope")
     with connect(db_path) as connection:
         migrate(connection)
+        parameters: list[str] = []
         where = """
             WHERE lower(locations.path) NOT LIKE '%.ds_store'
               AND lower(locations.path) NOT LIKE '%\\desktop.ini'
               AND lower(locations.path) NOT LIKE '%\\thumbs.db'
         """
+        where += " AND NOT (" + " OR ".join(
+            "lower(locations.path) LIKE ?"
+            for _ in SUPPORT_FILE_EXTENSIONS
+        ) + ")"
+        parameters.extend(
+            f"%{suffix}" for suffix in sorted(SUPPORT_FILE_EXTENSIONS)
+        )
         if not include_analyzed:
             where += """
               AND NOT EXISTS (
@@ -154,7 +172,6 @@ def analysis_scope_preview(
                   AND result.review_state IN ('candidate', 'approved')
             )
             """
-        parameters: list[str] = []
         if scope_kind == "raw":
             where += " AND (" + " OR ".join(
                 "lower(locations.path) LIKE ?" for _ in RAW_EXTENSIONS
@@ -184,8 +201,7 @@ def analysis_scope_preview(
         }
         if (
             "video" in kinds
-            or metadata.get("kind") == "image"
-            or Path(row["source_path"]).suffix.lower() in RAW_EXTENSIONS
+            or _is_still_image(Path(row["source_path"]), metadata)
         ):
             visual += 1
         elif "audio" in kinds:
@@ -226,7 +242,14 @@ def create_local_analysis_job(
     now = _utc_now()
     with connect(db_path) as connection:
         scope_clause = ""
-        scope_parameters: list[object] = [int(include_analyzed)]
+        support_clause = " AND NOT (" + " OR ".join(
+            "lower(locations.path) LIKE ?"
+            for _ in SUPPORT_FILE_EXTENSIONS
+        ) + ")"
+        scope_parameters: list[object] = [
+            *(f"%{suffix}" for suffix in sorted(SUPPORT_FILE_EXTENSIONS)),
+            int(include_analyzed),
+        ]
         if scope_kind == "raw":
             scope_clause = " AND (" + " OR ".join(
                 "lower(locations.path) LIKE ?" for _ in RAW_EXTENSIONS
@@ -243,6 +266,7 @@ def create_local_analysis_job(
             WHERE lower(locations.path) NOT LIKE '%.ds_store'
               AND lower(locations.path) NOT LIKE '%\\desktop.ini'
               AND lower(locations.path) NOT LIKE '%\\thumbs.db'
+              {support_clause}
               AND (? OR NOT EXISTS (
                 SELECT 1 FROM analysis_results result
                 WHERE result.asset_id = assets.id
@@ -289,6 +313,126 @@ def create_local_analysis_job(
                 "job_id": job_id, "model": model, "endpoint": endpoint,
                 "scope_sha256": preview["scope_sha256"],
                 "scope_kind": scope_kind,
+            },
+        )
+    return job_id
+
+
+def create_selected_local_analysis_job(
+    db_path: Path,
+    *,
+    asset_ids: list[str] | tuple[str, ...],
+    model: str,
+    endpoint: str = DEFAULT_ENDPOINT,
+    requested_by: str = "human targeted content repair",
+) -> str:
+    """Create a durable reanalysis job containing only explicit catalog assets."""
+    selected_ids = tuple(dict.fromkeys(
+        str(asset_id).strip() for asset_id in asset_ids if str(asset_id).strip()
+    ))
+    if not selected_ids:
+        raise ValueError("choose at least one asset for targeted analysis")
+    if len(selected_ids) > 1000:
+        raise ValueError("targeted analysis is limited to 1,000 assets")
+    model = model.strip()
+    if not model:
+        raise ValueError("choose a local model")
+    placeholders = ",".join("?" for _ in selected_ids)
+    with connect(db_path) as connection:
+        rows = connection.execute(
+            f"""
+            SELECT assets.id, assets.sha256,
+                   (
+                       SELECT preferred.path
+                       FROM locations preferred
+                       WHERE preferred.asset_id=assets.id
+                       ORDER BY
+                           CASE
+                               WHEN EXISTS (
+                                   SELECT 1 FROM managed_moves managed
+                                   WHERE managed.asset_id=preferred.asset_id
+                                     AND managed.destination_path=preferred.path
+                                     AND managed.state='complete'
+                               )
+                               THEN 0
+                               WHEN lower(preferred.path) LIKE 'j:\\library\\%'
+                                 OR lower(preferred.path) LIKE 'j:\\assets\\%'
+                                 OR lower(preferred.path) LIKE 'j:\\projects\\%'
+                               THEN 1
+                               WHEN lower(preferred.path) LIKE 'j:\\inbox\\%'
+                               THEN 2
+                               ELSE 3
+                           END,
+                           preferred.observed_at DESC
+                       LIMIT 1
+                   ) source_path
+            FROM assets
+            WHERE assets.id IN ({placeholders})
+            ORDER BY source_path COLLATE NOCASE
+            """,
+            selected_ids,
+        ).fetchall()
+        found_ids = {str(row["id"]) for row in rows}
+        missing = [asset_id for asset_id in selected_ids if asset_id not in found_ids]
+        if missing:
+            raise LookupError(
+                f"{len(missing)} selected assets are no longer in the catalog"
+            )
+        digest = hashlib.sha256()
+        for row in rows:
+            digest.update(f"{row['id']}\0{row['sha256']}\n".encode())
+        scope_sha256 = digest.hexdigest()
+        job_id = str(uuid.uuid4())
+        now = _utc_now()
+        connection.execute(
+            """
+            INSERT INTO local_analysis_jobs(
+                id,state,model,endpoint,policy_version,scope_sha256,total_items,
+                requested_by,created_at,updated_at
+            ) VALUES (?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                model,
+                endpoint.rstrip("/"),
+                POLICY_VERSION,
+                scope_sha256,
+                len(rows),
+                requested_by,
+                now,
+                now,
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO local_analysis_items(
+                id,job_id,asset_id,source_sha256,source_path,state
+            ) VALUES (?, ?, ?, ?, ?, 'pending')
+            """,
+            (
+                (
+                    str(uuid.uuid5(uuid.UUID(job_id), str(row["id"]))),
+                    job_id,
+                    row["id"],
+                    row["sha256"],
+                    row["source_path"],
+                )
+                for row in rows
+            ),
+        )
+        record_event(
+            connection,
+            kind="local_analysis_job",
+            state="queued",
+            message=(
+                f"Prepared targeted content repair for {len(rows):,} assets"
+            ),
+            details={
+                "job_id": job_id,
+                "model": model,
+                "endpoint": endpoint,
+                "scope_sha256": scope_sha256,
+                "scope_kind": "selected_content_repair",
             },
         )
     return job_id
@@ -452,15 +596,25 @@ def _default_analyzer(
     prompt = (
         "You are Beacon, a local archive and stock-footage metadata specialist. "
         "Use all supplied sampled frames, transcript, spectrogram, filename, and "
-        "verified technical context. Be highly descriptive and produce as many "
+        "verified technical context. For visual media, the title, description, "
+        "tags, and stock metadata must describe only content actually visible in "
+        "the supplied images. Describe subjects, actions, setting, light, color, "
+        "composition, mood, and visible text concretely. Never use a filename, "
+        "extension, codec, resolution, duration, file size, path, frame rate, or "
+        "analysis mechanism as a substitute for visible content. Never call an "
+        "ordinary still photograph a video frame or image sequence because of "
+        "technical decoder metadata. Be highly descriptive and produce as many "
         "specific, relevant search tags as useful (up to 100): subjects, actions, "
         "apparent age group, apparent gender presentation (never gender identity), "
         "facial expression, wardrobe, setting, weather, lighting, dominant colors, "
         "shot size, angle, composition, camera movement, copy space, mood, concepts, "
         "speech topics, sound sources, music character, and likely B-roll uses. "
         "Do not identify an unnamed person, invent dialogue, rights, relationships, "
-        "or events. Make visual claims only from supplied images; if no image is "
-        "supplied, explicitly limit the description to technical and path context. "
+        "or events. Make visual claims only from supplied images. If supplied "
+        "visual evidence cannot be interpreted, set evidence_mode to "
+        "'unreadable' instead of inventing or falling back to specifications. "
+        "If no image is supplied, explicitly limit the result to available audio "
+        "or technical context. "
         "Distinguish observation from uncertainty. A managed archive move "
         "policy already exists, so provide a useful organization suggestion without "
         "asking for approval; analysis itself must never move or alter an original."
@@ -485,6 +639,21 @@ def _default_analyzer(
         "properties": {
             "title": {"type": "string"},
             "description": {"type": "string"},
+            "content_observations": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "maxItems": 20,
+            },
+            "evidence_mode": {
+                "type": "string",
+                "enum": [
+                    "visual_content",
+                    "audio_content",
+                    "technical_only",
+                    "unreadable",
+                ],
+            },
             "media_category": {"type": "string"},
             "tags": {
                 "type": "array",
@@ -501,27 +670,37 @@ def _default_analyzer(
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         },
         "required": [
-            "title", "description", "media_category", "tags", "privacy_flags",
+            "title", "description", "content_observations", "evidence_mode",
+            "media_category", "tags", "privacy_flags",
             "organization_suggestion", "confidence",
             "stock_metadata",
         ],
     }
     media_context, image_paths, temporary_root = _prepare_media_context(asset)
+    source = Path(str(asset["source_path"]))
+    is_still_image = _is_still_image(
+        source, asset.get("media_metadata") or {}
+    )
     stage_callback = asset.get("stage_callback")
     if callable(stage_callback):
         stage_callback(
             "visually_observing" if image_paths else "analyzing_context"
         )
     media_context["visual_evidence_supplied"] = bool(image_paths)
-    content = _canonical_json(
-        {
-            "source_filename": Path(asset["source_path"]).name,
-            "source_path_context": str(Path(asset["source_path"]).parent),
-            "size_bytes": asset["size_bytes"],
-            "verified_media_metadata": asset["media_metadata"],
-            "local_media_context": media_context,
-        }
-    )
+    request_context: dict[str, Any] = {
+        "asset_mode": "still_image" if is_still_image else "media",
+        "local_media_context": media_context,
+    }
+    if not is_still_image:
+        request_context.update(
+            {
+                "source_filename": source.name,
+                "source_path_context": str(source.parent),
+                "size_bytes": asset["size_bytes"],
+                "verified_media_metadata": asset["media_metadata"],
+            }
+        )
+    content = _canonical_json(request_context)
     message: dict[str, Any] = {"role": "user", "content": content}
     encoded_images = []
     for image_path in image_paths:
@@ -550,6 +729,16 @@ def _default_analyzer(
     result = json.loads(message["content"])
     if not isinstance(result, dict):
         raise ValueError("local model result is not an object")
+    if encoded_images:
+        observations = result.get("content_observations")
+        if (
+            result.get("evidence_mode") != "visual_content"
+            or not isinstance(observations, list)
+            or not any(str(item).strip() for item in observations)
+        ):
+            raise ValueError(
+                "local model did not produce visual-content evidence"
+            )
     return result
 
 
@@ -700,11 +889,17 @@ def _prepare_media_context(
     thumbnail = Path(str(asset.get("thumbnail_path") or ""))
     if thumbnail.is_file():
         images.append(thumbnail)
-    context: dict[str, Any] = {"sampling": "verified local derivatives only"}
+    is_still_image = _is_still_image(source, metadata)
+    context: dict[str, Any] = {
+        "sampling": "verified local derivatives only",
+        "media_mode": "still_image" if is_still_image else "time_based",
+    }
     executable = os.environ.get("BEACON_FFMPEG") or shutil.which("ffmpeg")
     stage_callback = asset.get("stage_callback")
     temp_root = Path(tempfile.mkdtemp(prefix="beacon-analysis-"))
-    if executable and "video" in kinds:
+    if is_still_image:
+        context["still_image_derivatives"] = len(images)
+    elif executable and "video" in kinds:
         if callable(stage_callback):
             stage_callback("preparing_visual_context")
         images.clear()
@@ -882,23 +1077,32 @@ def run_local_analysis_job(
                 raise FileNotFoundError(str(source))
             if sha256_file(source) != item["source_sha256"]:
                 raise ValueError("source bytes changed since cataloging")
+            media_metadata = json.loads(
+                asset.get("media_metadata_json") or "{}"
+            )
             if (
-                source.suffix.lower() in RAW_EXTENSIONS
+                _is_still_image(source, media_metadata)
                 and not asset.get("thumbnail_path")
             ):
-                _set_job_stage(db_path, job_id, "preparing_raw_preview")
+                _set_job_stage(
+                    db_path,
+                    job_id,
+                    (
+                        "preparing_raw_preview"
+                        if source.suffix.lower() in RAW_EXTENSIONS
+                        else "preparing_image_preview"
+                    ),
+                )
                 generated = ensure_thumbnail(
                     source,
                     db_path,
                     asset_id=str(item["asset_id"]),
                     source_sha256=str(item["source_sha256"]),
-                    media_metadata=json.loads(
-                        asset.get("media_metadata_json") or "{}"
-                    ),
+                    media_metadata=media_metadata,
                 )
                 if generated is None:
                     raise RuntimeError(
-                        "RAW visual derivative could not be generated; "
+                        "Still-image visual derivative could not be generated; "
                         "contextual analysis was stopped to prevent guessing"
                     )
                 asset["thumbnail_path"] = generated.path
@@ -910,7 +1114,7 @@ def run_local_analysis_job(
                     **item,
                     "db_path": str(db_path),
                     "size_bytes": int(asset["size_bytes"]),
-                    "media_metadata": json.loads(asset["media_metadata_json"] or "{}"),
+                    "media_metadata": media_metadata,
                     "thumbnail_path": asset["thumbnail_path"],
                     "stage_callback": (
                         lambda stage: _set_job_stage(db_path, job_id, stage)

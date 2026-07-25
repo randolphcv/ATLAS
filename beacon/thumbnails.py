@@ -19,7 +19,7 @@ from .media import probe
 LOGGER = logging.getLogger("beacon.thumbnails")
 GENERATOR = "beacon-ffmpeg-thumbnail-v1"
 RAW_GENERATOR = "beacon-rawpy-thumbnail-v1"
-HEIF_GENERATOR = "beacon-pillow-heif-thumbnail-v1"
+HEIF_GENERATOR = "beacon-pillow-heif-jpeg-thumbnail-v2"
 THUMBNAIL_SIZE = (640, 360)
 HEIF_EXTENSIONS = {".heic", ".heif"}
 RAW_EXTENSIONS = {
@@ -113,15 +113,13 @@ def _render_heif_thumbnail(source: Path, temporary: Path) -> None:
 
     image = open_heif(source).to_pillow().convert("RGB")
     image.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
-    canvas = Image.new("RGB", THUMBNAIL_SIZE, "#0B1015")
-    canvas.paste(
-        image,
-        (
-            (THUMBNAIL_SIZE[0] - image.width) // 2,
-            (THUMBNAIL_SIZE[1] - image.height) // 2,
-        ),
+    image.save(
+        temporary,
+        format="JPEG",
+        quality=86,
+        optimize=False,
+        progressive=False,
     )
-    canvas.save(temporary, format="PNG", optimize=True)
 
 
 def _existing_thumbnail(
@@ -230,8 +228,12 @@ def ensure_thumbnail(
     source_stat = source.stat()
     thumbnail_dir = _thumbnail_directory(db_path)
     thumbnail_dir.mkdir(parents=True, exist_ok=True)
-    destination = thumbnail_dir / f"{asset_id}.png"
-    temporary = thumbnail_dir / f".{asset_id}.{uuid.uuid4().hex}.partial.png"
+    output_suffix = ".jpg" if is_heif else ".png"
+    destination = thumbnail_dir / f"{asset_id}{output_suffix}"
+    temporary = (
+        thumbnail_dir
+        / f".{asset_id}.{uuid.uuid4().hex}.partial{output_suffix}"
+    )
     try:
         generator = (
             RAW_GENERATOR
@@ -280,7 +282,7 @@ def ensure_thumbnail(
         os.replace(temporary, destination)
         now = _utc_now()
         details = {
-            "format": "png",
+            "format": "jpeg" if is_heif else "png",
             "height": int(stream["height"]),
             "media_kind": kind,
             "width": int(stream["width"]),

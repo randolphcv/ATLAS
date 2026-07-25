@@ -25,6 +25,17 @@ AUDIO_EXTENSIONS = {
     ".aac", ".aif", ".aiff", ".alac", ".flac", ".m4a", ".mp3", ".ogg",
     ".opus", ".wav", ".wma",
 }
+SUPPORT_FILE_EXTENSIONS = {
+    ".aae",
+    ".cfa",
+    ".cos",
+    ".dop",
+    ".mie",
+    ".pek",
+    ".pp3",
+    ".thm",
+    ".xmp",
+}
 
 
 def _media_summary(value: str | None) -> dict[str, Any]:
@@ -162,6 +173,7 @@ def search_assets(
     query: str = "",
     path_prefix: str = "",
     file_type: str = "all",
+    include_hidden: bool = False,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
@@ -189,6 +201,23 @@ def search_assets(
             "lower(typed.path) LIKE ?" for _ in known
         ) + "))"
         extension_parameters = [f"%{suffix}" for suffix in known]
+    hidden_clause = ""
+    hidden_parameters: list[str] = []
+    if not include_hidden:
+        hidden_clause = """
+        AND EXISTS (
+            SELECT 1 FROM locations visible
+            WHERE visible.asset_id=a.id
+              AND NOT (
+        """ + " OR ".join(
+            "lower(visible.path) LIKE ?" for _ in SUPPORT_FILE_EXTENSIONS
+        ) + """
+              )
+        )
+        """
+        hidden_parameters = [
+            f"%{suffix}" for suffix in sorted(SUPPORT_FILE_EXTENSIONS)
+        ]
     where = """
         WHERE (? = '%%'
            OR a.id LIKE ?
@@ -217,11 +246,12 @@ def search_assets(
         SELECT 1 FROM locations scoped
         WHERE scoped.asset_id=a.id AND lower(scoped.path) LIKE lower(?)
     )
-    """ + extension_clause
+    """ + extension_clause + hidden_clause
     parameters = [
         pattern, pattern, pattern, pattern, pattern, pattern, pattern,
         prefix_pattern,
         *extension_parameters,
+        *hidden_parameters,
     ]
     with connect(db_path) as connection:
         migrate(connection)
@@ -305,7 +335,12 @@ def search_assets(
     }
 
 
-def library_folders(db_path: Path, path_prefix: str = "J:\\") -> list[dict[str, Any]]:
+def library_folders(
+    db_path: Path,
+    path_prefix: str = "J:\\",
+    *,
+    include_hidden: bool = False,
+) -> list[dict[str, Any]]:
     """Return direct catalog-backed child folders beneath a Windows path."""
     base = path_prefix.rstrip("\\")
     prefix = f"{base}\\"
@@ -322,6 +357,11 @@ def library_folders(db_path: Path, path_prefix: str = "J:\\") -> list[dict[str, 
         ).fetchall()
     for row in rows:
         path = str(row["path"])
+        if (
+            not include_hidden
+            and Path(path).suffix.lower() in SUPPORT_FILE_EXTENSIONS
+        ):
+            continue
         remainder = path[len(prefix):] if path.lower().startswith(prefix.lower()) else ""
         if "\\" not in remainder:
             continue
@@ -335,6 +375,71 @@ def library_folders(db_path: Path, path_prefix: str = "J:\\") -> list[dict[str, 
             "asset_count": len(asset_ids),
         }
         for folder, asset_ids in sorted(counts.items(), key=lambda item: item[0].lower())
+    ]
+
+
+def missing_thumbnail_assets(
+    db_path: Path,
+    *,
+    extensions: set[str],
+    limit: int = 250,
+) -> list[dict[str, Any]]:
+    """Return checksum-bound image sources that lack a completed thumbnail."""
+    normalized = {suffix.lower() for suffix in extensions}
+    if not normalized:
+        return []
+    patterns = [f"%{suffix}" for suffix in sorted(normalized)]
+    with connect(db_path) as connection:
+        migrate(connection)
+        rows = connection.execute(
+            f"""
+            SELECT a.id, a.sha256, a.media_metadata_json,
+                   (
+                       SELECT preferred.path
+                       FROM locations preferred
+                       WHERE preferred.asset_id=a.id
+                         AND (
+                           {" OR ".join(
+                               "lower(preferred.path) LIKE ?"
+                               for _ in patterns
+                           )}
+                         )
+                       ORDER BY preferred.observed_at DESC
+                       LIMIT 1
+                   ) AS source_path
+            FROM assets a
+            WHERE EXISTS (
+                SELECT 1 FROM locations typed
+                WHERE typed.asset_id=a.id
+                  AND (
+                    {" OR ".join(
+                        "lower(typed.path) LIKE ?" for _ in patterns
+                    )}
+                  )
+            )
+              AND NOT EXISTS (
+                SELECT 1 FROM derivatives d
+                WHERE d.asset_id=a.id
+                  AND d.kind='thumbnail'
+                  AND d.state='complete'
+                  AND d.source_sha256=a.sha256
+              )
+            ORDER BY a.last_seen_at DESC
+            LIMIT ?
+            """,
+            (*patterns, *patterns, max(1, min(limit, 1000))),
+        ).fetchall()
+    return [
+        {
+            "asset_id": row["id"],
+            "source_sha256": row["sha256"],
+            "source_path": row["source_path"],
+            "media_metadata": json.loads(
+                row["media_metadata_json"] or "{}"
+            ),
+        }
+        for row in rows
+        if row["source_path"]
     ]
 
 

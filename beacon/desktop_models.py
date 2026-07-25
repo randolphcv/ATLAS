@@ -37,9 +37,30 @@ class DictListModel(QAbstractListModel):
         self._rows = [dict(row) for row in rows]
         self.endResetModel()
 
+    def update_matching(
+        self,
+        role_name: str,
+        value: object,
+        changes: Mapping[str, Any],
+    ) -> bool:
+        for row_index, row in enumerate(self._rows):
+            if row.get(role_name) != value:
+                continue
+            changed_roles = [
+                role_id
+                for role_id, name in self._role_ids.items()
+                if name in changes and row.get(name) != changes[name]
+            ]
+            if not changed_roles:
+                return False
+            row.update(changes)
+            model_index = self.index(row_index, 0)
+            self.dataChanged.emit(model_index, model_index, changed_roles)
+            return True
+        return False
+
     @Slot(int, result="QVariantMap")
     def get(self, index: int) -> dict[str, Any]:
         if 0 <= index < len(self._rows):
             return dict(self._rows[index])
         return {}
-

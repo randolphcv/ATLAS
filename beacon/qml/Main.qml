@@ -450,6 +450,56 @@ ApplicationWindow {
                 root.openSelectedPreview()
         }
     }
+    Shortcut {
+        sequence: "Up"
+        context: Qt.ApplicationShortcut
+        autoRepeat: true
+        enabled: backend.currentView === "library"
+                 && !previewDialog.visible
+                 && !searchField.activeFocus
+                 && !beaconReplyField.activeFocus
+                 && !shellBeaconComposer.activeFocus
+                 && !newRequestSubject.activeFocus
+                 && !newRequestBody.activeFocus
+                 && !newIntakeRoot.activeFocus
+                 && !newIntakeLimit.activeFocus
+        onActivated: backend.navigateLibraryAsset(-1)
+    }
+    Shortcut {
+        sequence: "Down"
+        context: Qt.ApplicationShortcut
+        autoRepeat: true
+        enabled: backend.currentView === "library"
+                 && !previewDialog.visible
+                 && !searchField.activeFocus
+                 && !beaconReplyField.activeFocus
+                 && !shellBeaconComposer.activeFocus
+                 && !newRequestSubject.activeFocus
+                 && !newRequestBody.activeFocus
+                 && !newIntakeRoot.activeFocus
+                 && !newIntakeLimit.activeFocus
+        onActivated: backend.navigateLibraryAsset(1)
+    }
+    Shortcut {
+        sequences: ["Left", "Up"]
+        context: Qt.ApplicationShortcut
+        autoRepeat: true
+        enabled: previewDialog.visible
+        onActivated: {
+            backend.navigateLibraryAsset(-1)
+            backend.prepareSelectedPreview()
+        }
+    }
+    Shortcut {
+        sequences: ["Right", "Down"]
+        context: Qt.ApplicationShortcut
+        autoRepeat: true
+        enabled: previewDialog.visible
+        onActivated: {
+            backend.navigateLibraryAsset(1)
+            backend.prepareSelectedPreview()
+        }
+    }
 
     Dialog {
         id: backupDialog
@@ -3061,6 +3111,11 @@ ApplicationWindow {
                                                 font.pixelSize: 9
                                                 elide: Text.ElideMiddle
                                             }
+                                            CheckBox {
+                                                text: "Show hidden files"
+                                                checked: backend.showHiddenLibraryFiles
+                                                onClicked: backend.setShowHiddenLibraryFiles(checked)
+                                            }
                                         }
                                         ListView {
                                             Layout.fillWidth: true
@@ -3143,7 +3198,27 @@ ApplicationWindow {
                                         ScrollBar.vertical: ScrollBar {
                                             policy: ScrollBar.AlwaysOn
                                         }
+                                        function syncSelectedIndex() {
+                                            var selectedId = backend.selectedAsset.id || ""
+                                            for (var row = 0; row < count; row++) {
+                                                if (model.get(row).assetId === selectedId) {
+                                                    currentIndex = row
+                                                    positionViewAtIndex(
+                                                        row, ListView.Contain
+                                                    )
+                                                    return
+                                                }
+                                            }
+                                        }
+                                        Component.onCompleted: syncSelectedIndex()
+                                        Connections {
+                                            target: backend
+                                            function onSelectedAssetChanged() {
+                                                libraryAssetList.syncSelectedIndex()
+                                            }
+                                        }
                                         delegate: Rectangle {
+                                            required property int index
                                             required property string assetId
                                             required property string filename
                                             required property string displayTitle
@@ -3162,6 +3237,10 @@ ApplicationWindow {
                                                    : assetHover.containsMouse ? root.panelRaised : root.shell
                                             border.color: backend.selectedAsset.id === assetId
                                                           ? Qt.rgba(0.39, 0.68, 0.69, 0.45) : root.line
+                                            Component.onCompleted: {
+                                                if (thumbnailUrl.length === 0)
+                                                    backend.prepareLibraryThumbnail(assetId)
+                                            }
                                             Rectangle {
                                                 z: 2
                                                 anchors.top: parent.top
@@ -3184,6 +3263,7 @@ ApplicationWindow {
                                                 anchors.fill: parent
                                                 hoverEnabled: true
                                                 onClicked: {
+                                                    libraryAssetList.currentIndex = index
                                                     backend.selectAsset(assetId)
                                                     assetHover.forceActiveFocus()
                                                 }
