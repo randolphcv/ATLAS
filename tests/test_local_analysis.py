@@ -25,6 +25,7 @@ from beacon.local_analysis import (
     _prepare_media_context,
     _process_is_alive,
 )
+from beacon.media import should_probe
 from beacon.repository import asset_detail
 from beacon.transcripts import get_asset_transcript, save_asset_transcript
 
@@ -245,6 +246,121 @@ class LocalAnalysisJobTests(unittest.TestCase):
             import shutil
 
             shutil.rmtree(temporary_root, ignore_errors=True)
+
+    def test_incomplete_audio_metadata_is_reprobed_and_persisted(self) -> None:
+        source = self.sources / "field-recording.aiff"
+        source.write_bytes(b"valid source fixture")
+        cataloged = catalog_file(
+            source,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        job_id = create_selected_local_analysis_job(
+            self.db,
+            asset_ids=[cataloged.asset_id],
+            model="fixture-model",
+        )
+        refreshed = {
+            "format": {"duration": "12.5"},
+            "streams": [
+                {
+                    "codec_name": "pcm_s16be",
+                    "codec_type": "audio",
+                    "sample_rate": "48000",
+                }
+            ],
+        }
+
+        def audio_analyzer(
+            endpoint: str, model: str, asset: dict[str, object]
+        ) -> dict:
+            metadata = asset["media_metadata"]
+            assert isinstance(metadata, dict)
+            self.assertEqual(metadata["streams"][0]["codec_type"], "audio")
+            result = self._analyzer(endpoint, model, asset)
+            result["evidence_mode"] = "audio_content"
+            return result
+
+        with patch("beacon.local_analysis.probe", return_value=refreshed):
+            result = run_local_analysis_job(
+                self.db,
+                job_id,
+                analyzer=audio_analyzer,
+            )
+
+        self.assertEqual(result.state, "complete")
+        connection = sqlite3.connect(self.db)
+        try:
+            stored = connection.execute(
+                "SELECT media_metadata_json FROM assets WHERE id=?",
+                (cataloged.asset_id,),
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        self.assertEqual(json.loads(stored), refreshed)
+
+    def test_black_video_samples_fall_back_to_audio_content(self) -> None:
+        source = self.sources / "black-with-audio.mp4"
+        source.write_bytes(b"source fixture")
+        asset = {
+            "source_path": str(source),
+            "media_metadata": {
+                "format": {"duration": "10"},
+                "streams": [
+                    {"codec_type": "video", "duration": "10"},
+                    {"codec_type": "audio", "duration": "10"},
+                ],
+            },
+            "thumbnail_path": "",
+        }
+
+        def create_derivative(command: list[str], **kwargs: object):
+            destination = Path(command[-1])
+            color = "#000000" if destination.suffix == ".jpg" else "#A36B35"
+            Image.new("RGB", (64, 48), color).save(destination)
+
+            class Completed:
+                returncode = 0
+
+            return Completed()
+
+        with (
+            patch("beacon.local_analysis.shutil.which", return_value="ffmpeg"),
+            patch(
+                "beacon.local_analysis.subprocess.run",
+                side_effect=create_derivative,
+            ),
+            patch(
+                "beacon.local_analysis._transcribe_audio",
+                return_value={
+                    "status": "complete",
+                    "analysis_excerpt": "Two people discuss an upcoming trip.",
+                },
+            ),
+        ):
+            context, images, temporary_root = _prepare_media_context(asset)
+        try:
+            self.assertEqual(
+                context["visual_sampling_outcome"],
+                "uniformly_near_black",
+            )
+            self.assertEqual(context["expected_evidence_mode"], "audio_content")
+            self.assertEqual(
+                context["speech_analysis"]["transcript"],
+                "Two people discuss an upcoming trip.",
+            )
+            self.assertEqual(len(images), 1)
+            self.assertEqual(images[0].name, "audio-spectrum.png")
+        finally:
+            import shutil
+
+            shutil.rmtree(temporary_root, ignore_errors=True)
+
+    def test_aiff_is_in_the_media_probe_scope(self) -> None:
+        self.assertTrue(should_probe(Path("field-recording.aiff")))
+        self.assertTrue(should_probe(Path("field-recording.AIF")))
 
     def test_local_model_retries_invalid_structured_content(self) -> None:
         source = self.sources / "retry-evidence.txt"

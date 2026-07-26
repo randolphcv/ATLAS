@@ -9,15 +9,31 @@ from typing import Any
 
 AUDIO_VIDEO_EXTENSIONS = {
     ".aac",
+    ".aif",
+    ".aiff",
+    ".alac",
     ".avi",
+    ".braw",
+    ".crm",
     ".flac",
     ".m4a",
+    ".m2ts",
+    ".m4v",
     ".mkv",
     ".mov",
     ".mp3",
     ".mp4",
+    ".mts",
+    ".mxf",
+    ".ogg",
+    ".opus",
+    ".r3d",
+    ".3g2",
+    ".3gp",
     ".wav",
     ".webm",
+    ".wma",
+    ".wmv",
 }
 
 IMAGE_EXTENSIONS = {

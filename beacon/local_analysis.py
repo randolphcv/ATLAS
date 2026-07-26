@@ -26,7 +26,7 @@ from .managed_moves import (
     placement_needs_clarification,
     recover_interrupted_managed_moves,
 )
-from .media import IMAGE_EXTENSIONS
+from .media import IMAGE_EXTENSIONS, probe
 from .metadata import apply_analysis_metadata, apply_analysis_organization_path
 from .music_analysis import analyze_asset_music
 from .repository import is_hidden_support_path, support_path_sql
@@ -72,6 +72,67 @@ def _is_still_image(source: Path, metadata: dict[str, Any]) -> bool:
         or source.suffix.lower() in IMAGE_EXTENSIONS
         or source.suffix.lower() in RAW_EXTENSIONS
     )
+
+
+def _has_media_streams(metadata: dict[str, Any]) -> bool:
+    if metadata.get("beacon_kind") == "image":
+        return True
+    return any(
+        str(stream.get("codec_type") or "") in {"audio", "image", "video"}
+        for stream in metadata.get("streams", [])
+        if isinstance(stream, dict)
+    )
+
+
+def _refresh_media_metadata(
+    db_path: Path,
+    *,
+    asset_id: str,
+    source_sha256: str,
+    source: Path,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Reprobe incomplete metadata only after the source checksum is verified."""
+    if _has_media_streams(metadata):
+        return metadata
+    refreshed = probe(source)
+    if (
+        not isinstance(refreshed, dict)
+        or refreshed.get("error")
+        or not _has_media_streams(refreshed)
+    ):
+        return metadata
+    encoded = json.dumps(refreshed, ensure_ascii=False, sort_keys=True)
+    with connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE assets
+            SET media_metadata_json=?,last_seen_at=?
+            WHERE id=? AND sha256=?
+            """,
+            (encoded, _utc_now(), asset_id, source_sha256),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("catalog checksum changed during media reprobe")
+        record_event(
+            connection,
+            kind="media_probe",
+            state="complete",
+            message="Refreshed incomplete media metadata before content analysis",
+            asset_id=asset_id,
+            location_path=str(source),
+            details={
+                "source_sha256": source_sha256,
+                "stream_types": sorted(
+                    {
+                        str(stream.get("codec_type") or "")
+                        for stream in refreshed.get("streams", [])
+                        if isinstance(stream, dict)
+                    }
+                ),
+            },
+        )
+    return refreshed
 
 
 def _normalize_confidence(value: object) -> tuple[float, str | None]:
@@ -1010,6 +1071,112 @@ def ensure_asset_transcript(db_path: Path, asset_id: str) -> dict[str, Any]:
     )
 
 
+def _image_is_uniformly_near_black(path: Path) -> bool:
+    try:
+        from PIL import Image, ImageStat
+
+        with Image.open(path) as image:
+            grayscale = image.convert("L")
+            grayscale.thumbnail((320, 320))
+            statistics = ImageStat.Stat(grayscale)
+            mean = float(statistics.mean[0])
+            deviation = float(statistics.stddev[0])
+            histogram = grayscale.histogram()
+    except (OSError, ValueError):
+        return False
+    pixels = sum(histogram)
+    threshold_count = max(1, math.ceil(pixels * 0.99))
+    cumulative = 0
+    percentile_99 = 255
+    for level, count in enumerate(histogram):
+        cumulative += count
+        if cumulative >= threshold_count:
+            percentile_99 = level
+            break
+    return mean <= 10 and deviation <= 6 and percentile_99 <= 24
+
+
+def _all_images_uniformly_near_black(images: list[Path]) -> bool:
+    return bool(images) and all(_image_is_uniformly_near_black(path) for path in images)
+
+
+def _append_audio_context(
+    *,
+    context: dict[str, Any],
+    images: list[Path],
+    temp_root: Path,
+    executable: str,
+    source: Path,
+    asset: dict[str, Any],
+    stage_callback: object,
+) -> None:
+    if callable(stage_callback):
+        stage_callback("preparing_audio_context")
+    spectrum = temp_root / "audio-spectrum.png"
+    completed = subprocess.run(
+        [
+            executable, "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(source), "-lavfi",
+            "showspectrumpic=s=1200x600:legend=1:color=channel",
+            "-frames:v", "1", str(spectrum),
+        ],
+        capture_output=True, timeout=180, check=False,
+    )
+    if completed.returncode == 0 and spectrum.is_file():
+        images.append(spectrum)
+        context["spectrogram"] = "full-file local frequency/time visualization"
+    if callable(stage_callback):
+        stage_callback("transcribing_audio")
+    speech = _transcribe_audio(
+        source,
+        db_path=Path(str(asset["db_path"])) if asset.get("db_path") else None,
+        asset_id=str(asset.get("asset_id") or ""),
+        source_sha256=str(asset.get("source_sha256") or ""),
+    )
+    context["speech_analysis"] = {
+        key: value
+        for key, value in speech.items()
+        if key not in {"transcript", "analysis_excerpt"}
+    }
+    context["speech_analysis"]["transcript"] = speech.get(
+        "analysis_excerpt", ""
+    )
+    has_audio_evidence = bool(
+        images or str(speech.get("analysis_excerpt") or "").strip()
+    )
+    if asset.get("db_path") and asset.get("asset_id"):
+        try:
+            if callable(stage_callback):
+                stage_callback("analyzing_music")
+            music = analyze_asset_music(
+                Path(str(asset["db_path"])),
+                asset_id=str(asset["asset_id"]),
+                source_path=source,
+                source_sha256=str(asset.get("source_sha256") or ""),
+                full=True,
+            )
+            context["music_analysis"] = {
+                key: value
+                for key, value in music.items()
+                if key not in {"derivatives", "stems"}
+            }
+            context["music_analysis"]["stem_kinds"] = [
+                item.get("kind")
+                for item in music.get("stems") or []
+                if item.get("kind")
+            ]
+            has_audio_evidence = True
+        except ValueError:
+            raise
+        except Exception as error:
+            context["music_analysis"] = {
+                "status": "failed",
+                "error": str(error)[:1000],
+            }
+    if has_audio_evidence:
+        context["expected_evidence_mode"] = "audio_content"
+
+
 def _prepare_media_context(
     asset: dict[str, Any],
 ) -> tuple[dict[str, Any], list[Path], Path]:
@@ -1075,74 +1242,25 @@ def _prepare_media_context(
                 images.append(destination)
                 sampled.append(0.0)
         context["video_sample_seconds"] = sampled
-        if images:
+        if _all_images_uniformly_near_black(images):
+            images.clear()
+            context["visual_sampling_outcome"] = "uniformly_near_black"
+        elif images:
             context["expected_evidence_mode"] = "visual_content"
-    elif executable and "audio" in kinds:
-        if callable(stage_callback):
-            stage_callback("preparing_audio_context")
-        spectrum = temp_root / "audio-spectrum.png"
-        completed = subprocess.run(
-            [
-                executable, "-hide_banner", "-loglevel", "error", "-y",
-                "-i", str(source), "-lavfi",
-                "showspectrumpic=s=1200x600:legend=1:color=channel",
-                "-frames:v", "1", str(spectrum),
-            ],
-            capture_output=True, timeout=180, check=False,
+    if (
+        executable
+        and "audio" in kinds
+        and context.get("expected_evidence_mode") != "visual_content"
+    ):
+        _append_audio_context(
+            context=context,
+            images=images,
+            temp_root=temp_root,
+            executable=executable,
+            source=source,
+            asset=asset,
+            stage_callback=stage_callback,
         )
-        if completed.returncode == 0 and spectrum.is_file():
-            images.append(spectrum)
-            context["spectrogram"] = "full-file local frequency/time visualization"
-        if callable(stage_callback):
-            stage_callback("transcribing_audio")
-        speech = _transcribe_audio(
-            source,
-            db_path=Path(str(asset["db_path"])) if asset.get("db_path") else None,
-            asset_id=str(asset.get("asset_id") or ""),
-            source_sha256=str(asset.get("source_sha256") or ""),
-        )
-        context["speech_analysis"] = {
-            key: value
-            for key, value in speech.items()
-            if key not in {"transcript", "analysis_excerpt"}
-        }
-        context["speech_analysis"]["transcript"] = speech.get(
-            "analysis_excerpt", ""
-        )
-        has_audio_evidence = bool(
-            images or str(speech.get("analysis_excerpt") or "").strip()
-        )
-        if asset.get("db_path") and asset.get("asset_id"):
-            try:
-                if callable(stage_callback):
-                    stage_callback("analyzing_music")
-                music = analyze_asset_music(
-                    Path(str(asset["db_path"])),
-                    asset_id=str(asset["asset_id"]),
-                    source_path=source,
-                    source_sha256=str(asset.get("source_sha256") or ""),
-                    full=True,
-                )
-                context["music_analysis"] = {
-                    key: value
-                    for key, value in music.items()
-                    if key not in {"derivatives", "stems"}
-                }
-                context["music_analysis"]["stem_kinds"] = [
-                    item.get("kind")
-                    for item in music.get("stems") or []
-                    if item.get("kind")
-                ]
-                has_audio_evidence = True
-            except ValueError:
-                raise
-            except Exception as error:
-                context["music_analysis"] = {
-                    "status": "failed",
-                    "error": str(error)[:1000],
-                }
-        if has_audio_evidence:
-            context["expected_evidence_mode"] = "audio_content"
     if "expected_evidence_mode" not in context:
         preview = read_text_preview(source, max_bytes=64 * 1024)
         if preview is not None and preview.text.strip():
@@ -1288,6 +1406,13 @@ def _run_local_analysis_job(
                 raise ValueError("source bytes changed since cataloging")
             media_metadata = json.loads(
                 asset.get("media_metadata_json") or "{}"
+            )
+            media_metadata = _refresh_media_metadata(
+                db_path,
+                asset_id=str(item["asset_id"]),
+                source_sha256=str(item["source_sha256"]),
+                source=source,
+                metadata=media_metadata,
             )
             if (
                 _is_still_image(source, media_metadata)
