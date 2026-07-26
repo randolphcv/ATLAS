@@ -1,5 +1,32 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-25 Beacon 0.21.4 immediate native video preview
+
+The reported MP4 delay was a routing bug rather than a native decoder problem.
+Beacon classified every approximately 60 fps QuickTime-family file as
+slow-motion media, blanked the preview URL, and synchronously waited for a
+full 1080p compatibility transcode. The affected 790 MB Canon H.264 MP4
+produced its first native Qt frame in 0.266 seconds when routed correctly.
+
+Non-Apple 59.94/60 fps H.264 now plays directly. Genuine Apple/high-frame-rate
+media retains compatibility handling, but the readable source is immediately
+available while a silent GPU-preferred 720p derivative is prepared in the
+background. The preview uses its catalog thumbnail as a poster while buffering
+and preserves position when a completed derivative replaces the source.
+Packaged FFmpeg, FFprobe, thumbnail, music, and analysis helpers no longer open
+Windows console windows.
+
+All 113 tests pass and packaged smoke exits 0. Live release:
+
+- executable:
+  `C:\Development\ATLAS\dist\releases\0.21.4\ATLAS Beacon\ATLAS Beacon.exe`
+- executable SHA-256:
+  `5edb0d43d84990a3259a16b46b96ce3ff3a7c424d4bb88183b36a13d863c32cb`
+- ZIP:
+  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.21.4-win64.zip`
+- ZIP SHA-256:
+  `4b9be2bd514bcc35cce221abc02091a48707111dec5a15bb49722f851dab57ab`
+
 ## 2026-07-25 Beacon 0.21.3 content-analysis hardening
 
 Content analysis now validates each candidate before completion, excludes

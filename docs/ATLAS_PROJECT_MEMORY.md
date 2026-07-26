@@ -7,6 +7,28 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
 
 ## Current Verified/Reported Baseline
 
+### Beacon 0.21.4 immediate native video preview
+
+- Ordinary non-Apple 59.94/60 fps H.264 MP4 media now uses native Qt playback
+  instead of being falsely routed through the slow-motion compatibility proxy.
+- The reported 790 MB Canon MP4 produced its first native frame in 0.266
+  seconds during direct acceptance testing.
+- When a genuine Apple/high-frame-rate compatibility derivative is required,
+  the readable source remains immediately available while a silent,
+  GPU-preferred 720p proxy is prepared in the background. A fast CPU fallback
+  remains available.
+- Video preview shows the stored thumbnail while the first frame buffers and
+  preserves playback position when switching to a completed compatibility
+  derivative.
+- Packaged background FFmpeg, FFprobe, thumbnail, music, and analysis helpers
+  use hidden Windows process flags and no longer open console windows.
+- All 113 tests pass. Packaged 0.21.4 smoke exits 0. The live desktop is:
+  `C:\Development\ATLAS\dist\releases\0.21.4\ATLAS Beacon\ATLAS Beacon.exe`.
+  Executable SHA-256:
+  `5edb0d43d84990a3259a16b46b96ce3ff3a7c424d4bb88183b36a13d863c32cb`.
+  ZIP SHA-256:
+  `4b9be2bd514bcc35cce221abc02091a48707111dec5a15bb49722f851dab57ab`.
+
 ### Beacon 0.21.3 content-analysis hardening
 
 - Schema 16 separates publishable analysis, confidently excluded generated
