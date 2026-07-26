@@ -7,6 +7,18 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
 
 ## Current Verified/Reported Baseline
 
+### Next phase
+
+- Intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` has 157 snapshotted
+  items and was running at handoff. Inspect its durable state before any live
+  mutation; do not interrupt active intake, migrate SQLite, or start analysis
+  while it is running.
+- Next priorities are GitHub repository setup, Connor's prepared shared
+  Markdown implementation for Ultron/Jarvis, and representative live Beacon
+  query testing.
+- The canonical starting prompt is
+  `docs\NEXT_PHASE_HANDOFF_PROMPT.md`.
+
 ### Beacon 0.21.4 immediate native video preview
 
 - Ordinary non-Apple 59.94/60 fps H.264 MP4 media now uses native Qt playback

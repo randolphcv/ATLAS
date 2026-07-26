@@ -1,5 +1,24 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-25 next phase queued
+
+Connor started intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` with 157
+snapshotted items. It was actively running at handoff. The next task must
+inspect its durable state first and must not interrupt active intake, migrate
+the live database, or begin analysis while intake is running.
+
+The next three priorities are:
+
+1. create the ATLAS GitHub repository after confirming its owner, name,
+   visibility, authentication, and exact publish scope;
+2. implement Connor's prepared prompt for a shared Markdown collaboration
+   file used by Ultron and Jarvis;
+3. run representative live Beacon query tests, preserving prompts, grounded
+   cards, durable worker outcomes, and useful failure evidence.
+
+The ready-to-copy starting prompt is
+`docs\NEXT_PHASE_HANDOFF_PROMPT.md`.
+
 ## 2026-07-25 Beacon 0.21.4 immediate native video preview
 
 The reported MP4 delay was a routing bug rather than a native decoder problem.

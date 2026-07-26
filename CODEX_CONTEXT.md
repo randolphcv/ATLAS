@@ -1,6 +1,6 @@
 # ATLAS — Connor Context and Product Direction
 
-Updated: 2026-07-22  
+Updated: 2026-07-25
 Purpose: portable context for **Ultron**, the Codex environment on the Windows
 ATLAS workstation. The separate MacBook Codex environment is **Jarvis**.
 
@@ -21,6 +21,22 @@ Jarvis. The current Windows hostname remains `DESKTOP-8B4OJIR`; a rename to
 `Ultron` is pending a later restart and must be verified afterward.
 
 This document captures the working preferences and design language that should remain consistent as ATLAS evolves. It is a curated guide, not a transcript archive and not permission to expand scope.
+
+## Next Working Phase
+
+The next phase begins with three ordered priorities:
+
+1. establish the ATLAS GitHub repository after confirming owner, name,
+   visibility, authentication, and publish scope;
+2. implement Connor's prepared prompt for a shared Markdown collaboration
+   artifact between Ultron and Jarvis;
+3. run grounded live Beacon queries and evaluate usefulness, result counts,
+   clarification, no-search behavior, correction memory, and attached cards.
+
+Connor has started a new intake batch overnight. At the beginning of the next
+task, inspect its durable state before changing the live runtime. Do not
+interrupt active intake, migrate the live database, or start analysis while
+that intake is still running.
 
 ## How Connor Likes Codex to Work
 
