@@ -853,6 +853,7 @@ def _default_analyzer(
     if encoded_images:
         message["images"] = encoded_images
     last_error: Exception | None = None
+    last_rejected_output: str | None = None
     try:
         for attempt in range(1, 4):
             retry_note = ""
@@ -863,19 +864,37 @@ def _default_analyzer(
                     "and return a complete schema-valid JSON object. Do not "
                     "substitute technical metadata."
                 )
+            messages: list[dict[str, Any]] = [
+                {
+                    "role": "system",
+                    "content": prompt + retry_note,
+                },
+                message,
+            ]
+            if last_rejected_output is not None:
+                messages.extend(
+                    [
+                        {
+                            "role": "assistant",
+                            "content": last_rejected_output[-8_000:],
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                "That response was rejected. Correct your own "
+                                "output using the supplied content evidence and "
+                                "return one complete schema-valid JSON object."
+                            ),
+                        },
+                    ]
+                )
             try:
                 response = _request_json(
                     endpoint,
                     "/api/chat",
                     {
                         "model": model,
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": prompt + retry_note,
-                            },
-                            message,
-                        ],
+                        "messages": messages,
                         "format": schema,
                         "stream": False,
                         "options": {
@@ -897,7 +916,8 @@ def _default_analyzer(
                     raise ValueError(
                         "local model returned no structured message"
                     )
-                result = json.loads(response_message["content"])
+                response_content = response_message["content"]
+                result = json.loads(response_content)
                 if not isinstance(result, dict):
                     raise ValueError("local model result is not an object")
                 for key in (
@@ -930,6 +950,11 @@ def _default_analyzer(
                 return result
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
                 last_error = error
+                if (
+                    isinstance(response_message, dict)
+                    and isinstance(response_message.get("content"), str)
+                ):
+                    last_rejected_output = response_message["content"]
     finally:
         shutil.rmtree(temporary_root, ignore_errors=True)
     raise ValueError(
@@ -1093,7 +1118,10 @@ def _image_is_uniformly_near_black(path: Path) -> bool:
         if cumulative >= threshold_count:
             percentile_99 = level
             break
-    return mean <= 10 and deviation <= 6 and percentile_99 <= 24
+    # Broadcast/video black is commonly encoded around luma 16-32 rather than
+    # digital zero. Require both low luminance and extremely low detail so a
+    # genuinely dark scene with visible structure remains visual evidence.
+    return mean <= 48 and deviation <= 3 and percentile_99 <= 56
 
 
 def _all_images_uniformly_near_black(images: list[Path]) -> bool:

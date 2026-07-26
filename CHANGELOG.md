@@ -6,8 +6,10 @@
   audio/video containers, including AIFF, MTS/M2TS, MXF, and camera RAW video.
 - Content analysis now checksum-verifies and durably reprobes incomplete
   catalog media metadata before deciding which evidence extractors to use.
-- Uniformly near-black video samples now fall through to the verified audio
-  stream instead of failing as visually unreadable content.
+- Uniformly low-detail black-level video samples now fall through to the
+  verified audio stream instead of failing as visually unreadable content.
+- When Qwen returns malformed structured analysis, the retry now gives Qwen
+  its rejected output so the agent can reason over and correct its own answer.
 - Treat Qwen's initial request goal as a revisable working interpretation.
   When a later Qwen tool decision conflicts, a focused Qwen reconciliation pass
   now revises or confirms the goal instead of allowing code to veto the action.

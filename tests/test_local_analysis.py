@@ -318,7 +318,7 @@ class LocalAnalysisJobTests(unittest.TestCase):
 
         def create_derivative(command: list[str], **kwargs: object):
             destination = Path(command[-1])
-            color = "#000000" if destination.suffix == ".jpg" else "#A36B35"
+            color = "#212121" if destination.suffix == ".jpg" else "#A36B35"
             Image.new("RGB", (64, 48), color).save(destination)
 
             class Completed:
@@ -404,6 +404,10 @@ class LocalAnalysisJobTests(unittest.TestCase):
 
         self.assertEqual(result["evidence_mode"], "text_content")
         self.assertEqual(request.call_count, 2)
+        retry_messages = request.call_args_list[1].args[2]["messages"]
+        self.assertEqual(retry_messages[-2]["role"], "assistant")
+        self.assertEqual(retry_messages[-2]["content"], "{not-json")
+        self.assertIn("Correct your own output", retry_messages[-1]["content"])
 
     def test_pipeline_stage_is_durable_and_clears_at_completion(self) -> None:
         observed: list[tuple[str, str | None]] = []

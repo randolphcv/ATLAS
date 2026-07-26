@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "atlas-beacon"
-version = "0.21.1"
+version = "0.21.2"
 description = "Local-first catalog and native desktop observatory for ATLAS"
 requires-python = ">=3.12"
 dependencies = [
