@@ -1,5 +1,39 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-25 Beacon 0.21.3 content-analysis hardening
+
+Content analysis now validates each candidate before completion, excludes
+known generated editing artifacts without discarding their catalog identity,
+publishes valid results even when individual items fail, and terminalizes
+truthfully after finalization errors. Interrupted managed placement is
+reconciled from verified source/destination bytes.
+
+Missing or errored media metadata is checksum-bound and reprobed before
+analysis. Probe coverage now includes AIFF and broader professional/mobile
+containers. Uniformly low-detail black video samples fall through to valid
+audio evidence. Qwen gets its rejected structured response on retry and uses
+a 32K context window, preserving rich transcripts and corrective reasoning.
+
+Live job `a6f80068-0b86-42dd-887b-0fc8f5b62265` completed in place with no
+replacement job: 408 publishable results, 177 excluded generated artifacts,
+zero failures, and zero pending. Schema 16 integrity is `ok` with zero
+foreign-key errors. All 110 tests pass and the packaged smoke exits 0.
+
+Release:
+
+- executable:
+  `C:\Development\ATLAS\dist\releases\0.21.3\ATLAS Beacon\ATLAS Beacon.exe`
+- executable SHA-256:
+  `800e025f389a9b01e012ae10b4bddce3a234c31ec1c07b8ff29e6cc545843cc`
+- ZIP:
+  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.21.3-win64.zip`
+- ZIP SHA-256:
+  `667948494f79ed2415197487c97c961fcbef38dc25dcd3e49b50cf19210bbd42`
+- pre-retry backup:
+  `C:\ProgramData\ATLAS\Beacon\backups\beacon-20260726T015647.539560Z.db`
+- backup SHA-256:
+  `3a5c9449aee2c36c454e7cfc166ea6218c62b3b2d395a08f30d6c47791cf844e`
+
 ## 2026-07-24 Beacon 0.18.1 goal-reconciliation hotfix
 
 The initial Qwen request goal is now a revisable working interpretation. When

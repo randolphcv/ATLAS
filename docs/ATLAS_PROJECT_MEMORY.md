@@ -1,11 +1,41 @@
 # ATLAS — Project Memory and Decision Ledger
 
-Updated: 2026-07-24
+Updated: 2026-07-25
 Status: portable cross-machine handoff; verify live Windows state before treating recorded runtime details as current
 
 Use this file for durable, low-noise context. Do not store raw logs, secrets, personal media content, full transcripts, or speculative brainstorming here.
 
 ## Current Verified/Reported Baseline
+
+### Beacon 0.21.3 content-analysis hardening
+
+- Schema 16 separates publishable analysis, confidently excluded generated
+  artifacts, and retryable failures. Finalization validates before publishing,
+  isolates bad candidates, always reaches a truthful terminal state, and can
+  recover interrupted checksum-verified managed placement.
+- Known Premiere preview/cache, Auto-Save, and support paths remain cataloged
+  but are hidden and excluded from content inference by default.
+- Incomplete media metadata is reprobed only after source checksum
+  verification. Probe coverage includes AIFF and additional professional,
+  mobile, and camera media containers.
+- Content evidence is adaptive: uniformly low-detail black video samples fall
+  through to a valid audio stream. Qwen receives rejected structured output
+  on retry so it can correct itself, with a 32K local context window and
+  bounded server diagnostics.
+- Live job `a6f80068-0b86-42dd-887b-0fc8f5b62265` is terminal `complete`:
+  408 publishable results, 177 excluded generated artifacts, zero failures,
+  and zero pending items. SQLite schema 16 integrity is `ok` with zero
+  foreign-key violations.
+- Pre-retry backup:
+  `C:\ProgramData\ATLAS\Beacon\backups\beacon-20260726T015647.539560Z.db`,
+  SHA-256
+  `3a5c9449aee2c36c454e7cfc166ea6218c62b3b2d395a08f30d6c47791cf844e`.
+- All 110 tests pass. Packaged 0.21.3 smoke exits 0. The live desktop is:
+  `C:\Development\ATLAS\dist\releases\0.21.3\ATLAS Beacon\ATLAS Beacon.exe`.
+  Executable SHA-256:
+  `800e025f389a9b01e012ae10b4bddce3a234c31ec1c07b8ff29e6cc545843cc`.
+  ZIP SHA-256:
+  `667948494f79ed2415197487c97c961fcbef38dc25dcd3e49b50cf19210bbd42`.
 
 ### Beacon 0.15.3 analysis reliability
 
