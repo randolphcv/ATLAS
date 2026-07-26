@@ -1,6 +1,6 @@
 # ATLAS — Project Memory and Decision Ledger
 
-Updated: 2026-07-25
+Updated: 2026-07-26
 Status: portable cross-machine handoff; verify live Windows state before treating recorded runtime details as current
 
 Use this file for durable, low-noise context. Do not store raw logs, secrets, personal media content, full transcripts, or speculative brainstorming here.
@@ -9,13 +9,26 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
 
 ### Next phase
 
-- Intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` has 157 snapshotted
-  items and was running at handoff. Inspect its durable state before any live
-  mutation; do not interrupt active intake, migrate SQLite, or start analysis
-  while it is running.
-- Next priorities are GitHub repository setup, Connor's prepared shared
-  Markdown implementation for Ultron/Jarvis, and representative live Beacon
-  query testing.
+- Intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` completed all 157
+  snapshotted items with no failures. Two newer intake jobs also completed;
+  the latest, `38fc99f1-cc62-41ef-929c-a89b3c1d11c6`, completed 500/500.
+- The latest analysis job,
+  `ea673da9-6ed6-4e18-a83a-8b4cc9df2e37`, is terminal `partial` with 484
+  publishable results and six failures. No intake or analysis job was active
+  during the 2026-07-26 next-phase verification.
+- The Ultron/Jarvis Markdown bridge is established. Ultron atomically owns
+  `J:\ULTRON_CONTEXT.md`; Jarvis atomically owns
+  `J:\JARVIS_CONTEXT.md`. Ultron read and acknowledged
+  `JARVIS-20260726-001` without editing Jarvis's file.
+- GitHub publication preparation targets `randolphcv/ATLAS` with the existing
+  `main` history. GitHub CLI 2.96.0 is installed, `.gitignore` is hardened,
+  and the tracked-history audit found no detected secrets, runtime databases,
+  executables, model files, archives, or personal-media binaries. Public
+  creation/push remains gated on Connor's explicit final confirmation because
+  tracked documentation and screenshots contain machine-specific paths.
+- All 113 unit tests pass; two real-FFprobe acceptance tests remain explicitly
+  skipped unless `BEACON_FFPROBE` is supplied.
+- After GitHub setup, run representative live Beacon query testing.
 - The canonical starting prompt is
   `docs\NEXT_PHASE_HANDOFF_PROMPT.md`.
 

@@ -1,5 +1,46 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-26 GitHub preparation and Ultron/Jarvis bridge
+
+The live safety baseline was rechecked before changes. `main` was clean at
+`2dc4b1b`; Beacon 0.21.4 was running from the verified release executable with
+the recorded SHA-256. Schema 16 integrity remained `ok` with zero foreign-key
+violations.
+
+Intake `43bc6778-69e1-4432-a937-bd367acc0a7e` completed 157/157. Two newer
+intakes also completed, including the latest 500-item job
+`38fc99f1-cc62-41ef-929c-a89b3c1d11c6`. No intake or analysis was active.
+The latest analysis `ea673da9-6ed6-4e18-a83a-8b4cc9df2e37` is terminal
+`partial` with 484 completed items and six failures.
+
+Ultron's persistent bridge file is live at `J:\ULTRON_CONTEXT.md`. It is
+written through a complete same-directory temporary file followed by atomic
+replacement. Jarvis's read-only peer file became visible at
+`J:\JARVIS_CONTEXT.md`; Ultron read it and acknowledged
+`JARVIS-20260726-001` without editing Jarvis's file.
+
+GitHub preparation targets owner `randolphcv`, repository `ATLAS`, and the
+existing `main` history. GitHub CLI 2.96.0 is installed. `.gitignore` now
+blocks runtime databases and journals, secrets and credential artifacts,
+generated derivatives, backups, model weights, packaged binaries, archives,
+and personal media while retaining intentional product screenshots under
+`docs/images`.
+
+The full tracked-history audit found no detected secrets, runtime databases,
+executables, model files, archives, or personal-media binaries. Twelve product
+documentation PNGs are tracked. Some tracked documentation and screenshots
+contain machine-specific Windows and `J:\` paths, including the local Windows
+username. Because Connor described public visibility as tentative, repository
+creation and push remain gated on explicit final public-publication
+confirmation. Do not rewrite history.
+
+All 113 unit tests pass from the repository virtual environment through
+`python -m unittest discover`; the two real-FFprobe acceptance tests remain
+explicitly skipped unless `BEACON_FFPROBE` is supplied.
+
+After GitHub setup, run the representative live Beacon conversation matrix
+specified in `docs\NEXT_PHASE_HANDOFF_PROMPT.md`.
+
 ## 2026-07-25 next phase queued
 
 Connor started intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` with 157

@@ -1,6 +1,6 @@
 # ATLAS — Connor Context and Product Direction
 
-Updated: 2026-07-25
+Updated: 2026-07-26
 Purpose: portable context for **Ultron**, the Codex environment on the Windows
 ATLAS workstation. The separate MacBook Codex environment is **Jarvis**.
 
@@ -24,19 +24,25 @@ This document captures the working preferences and design language that should r
 
 ## Next Working Phase
 
-The next phase begins with three ordered priorities:
+The Ultron/Jarvis Markdown bridge is established at
+`J:\ULTRON_CONTEXT.md` and `J:\JARVIS_CONTEXT.md` with separate ownership and
+atomic same-volume replacement. Ultron acknowledged Jarvis message
+`JARVIS-20260726-001`.
 
-1. establish the ATLAS GitHub repository after confirming owner, name,
-   visibility, authentication, and publish scope;
-2. implement Connor's prepared prompt for a shared Markdown collaboration
-   artifact between Ultron and Jarvis;
-3. run grounded live Beacon queries and evaluate usefulness, result counts,
-   clarification, no-search behavior, correction memory, and attached cards.
+GitHub publication preparation targets `randolphcv/ATLAS` with the existing
+`main` history. The local history and ignore audit is complete, GitHub CLI is
+installed, and public creation/push remains gated on Connor's explicit final
+confirmation because tracked documentation and screenshots expose
+machine-specific paths.
 
-Connor has started a new intake batch overnight. At the beginning of the next
-task, inspect its durable state before changing the live runtime. Do not
-interrupt active intake, migrate the live database, or start analysis while
-that intake is still running.
+The next product priority is grounded live Beacon query testing: evaluate
+usefulness, exact and semantic retrieval, requested counts, distinct results,
+clarification, explicit no-search behavior, correction memory, and attachment
+of only Qwen-selected grounded cards.
+
+The handed-off 157-item intake and two newer intake jobs completed. The latest
+analysis job is terminal `partial` with 484 completed items and six failures;
+no intake or analysis job was active during the 2026-07-26 verification.
 
 ## How Connor Likes Codex to Work
 

@@ -28,29 +28,29 @@ Current verified baseline:
 - Beacon 0.21.4 is live from
   `C:\Development\ATLAS\dist\releases\0.21.4\ATLAS Beacon\ATLAS Beacon.exe`;
 - schema 16 is healthy with zero foreign-key violations;
-- intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` was actively running
-  with 157 snapshotted items at handoff; re-check its durable state and do not
-  assume it is terminal;
+- intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` completed 157/157, and
+  the latest intake `38fc99f1-cc62-41ef-929c-a89b3c1d11c6` completed 500/500;
 - analysis job `a6f80068-0b86-42dd-887b-0fc8f5b62265` is complete with
   408 publishable results, 177 excluded generated artifacts, and zero
   failures;
+- latest analysis job `ea673da9-6ed6-4e18-a83a-8b4cc9df2e37` is terminal
+  `partial` with 484 completed items and six failures;
 - all 113 tests pass;
 - `main` includes the immediate native-video-preview correction;
+- the Ultron/Jarvis bridge is live at `J:\ULTRON_CONTEXT.md` and
+  `J:\JARVIS_CONTEXT.md`; preserve separate ownership and atomic replacement;
 - do not treat generated derivatives, runtime databases, backups, personal
   media, model files, secrets, or `J:\` content as Git source.
 
-Tomorrow's priorities, in order:
+Next priorities, in order:
 
-1. Set up the ATLAS GitHub repository. Confirm the repository name,
-   visibility, owner, and authentication path with Connor before publishing.
-   Audit `.gitignore` and the commit history for runtime data, secrets, media,
-   binaries, and machine-specific paths before adding or pushing a remote.
+1. Complete the `randolphcv/ATLAS` GitHub setup with the existing `main`
+   history only after Connor explicitly confirms public publication. GitHub
+   CLI is installed and `.gitignore` plus tracked history have been audited.
    Do not rewrite history or publish anything unexpected.
-2. Implement the shared Markdown file for Ultron and Jarvis. Connor has
-   prepared the authoritative implementation prompts; ask for and follow
-   those prompts rather than inventing the synchronization contract. Preserve
-   the identity boundary: Ultron is Windows Codex, Jarvis is MacBook Codex,
-   and Beacon is the product/runtime.
+2. Maintain the shared Markdown bridge after meaningful milestones. Ultron
+   writes only `J:\ULTRON_CONTEXT.md`, reads Jarvis's file without editing it,
+   and uses atomic same-directory replacement.
 3. Run representative Beacon conversation tests against the live catalog.
    Cover exact retrieval, semantic retrieval, requested result counts,
    distinct/unique results, explicit no-search turns, relevant clarification,
