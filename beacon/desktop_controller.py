@@ -37,7 +37,11 @@ from .desk import (
     thread_detail,
 )
 from .desktop_models import DictListModel
-from .managed_moves import MoveResult, move_cataloged_file
+from .managed_moves import (
+    MoveResult,
+    move_cataloged_file,
+    recover_interrupted_managed_moves,
+)
 from .metadata import empty_metadata, save_asset_metadata
 from .intake import (
     IntakeRunResult,
@@ -592,11 +596,21 @@ class DesktopController(QObject):
         self.settings.backup_dir.mkdir(parents=True, exist_ok=True)
         with connect(self.settings.db_path) as connection:
             migrate(connection)
+        recovered_moves = recover_interrupted_managed_moves(
+            self.settings.db_path
+        )
         recovered = recover_intake_jobs(self.settings.db_path)
         recovered_analysis = recover_local_analysis_jobs(self.settings.db_path)
         self.refresh()
         self.warmLibraryThumbnails()
-        if recovered:
+        if recovered_moves:
+            self._set_status(
+                f"Reconciled {recovered_moves} interrupted managed move"
+                + ("s" if recovered_moves != 1 else "")
+                + " from verified filesystem state.",
+                "working",
+            )
+        elif recovered:
             self._set_status(
                 f"Recovered {recovered} interrupted intake job"
                 + ("s" if recovered != 1 else "")

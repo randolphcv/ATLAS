@@ -10,6 +10,7 @@ from beacon.managed_moves import (
     analysis_placement_for,
     move_cataloged_file,
     placement_needs_clarification,
+    recover_interrupted_managed_moves,
 )
 from beacon.metadata import (
     apply_analysis_metadata,
@@ -296,6 +297,78 @@ class ManagedMoveTests(unittest.TestCase):
             )
         self.assertTrue(self.source.exists())
         self.assertTrue(destination.exists())
+
+    def test_interrupted_rename_is_completed_from_verified_destination(
+        self,
+    ) -> None:
+        destination = self.library / "Personal" / self.source.name
+        destination.parent.mkdir(parents=True)
+        move_id = "00000000-0000-4000-8000-000000000001"
+        with connect(self.db) as connection:
+            connection.execute(
+                """
+                INSERT INTO managed_moves(
+                    id,asset_id,source_path,destination_path,source_sha256,
+                    state,requested_by,authorization,created_at
+                ) VALUES (?, ?, ?, ?, ?, 'running', 'test', 'test', 'fixture')
+                """,
+                (
+                    move_id,
+                    self.asset.asset_id,
+                    str(self.source),
+                    str(destination),
+                    self.before,
+                ),
+            )
+        self.source.replace(destination)
+
+        self.assertEqual(recover_interrupted_managed_moves(self.db), 1)
+
+        with connect(self.db) as connection:
+            move = connection.execute(
+                "SELECT state,error FROM managed_moves WHERE id=?",
+                (move_id,),
+            ).fetchone()
+            location = connection.execute(
+                "SELECT path FROM locations WHERE asset_id=?",
+                (self.asset.asset_id,),
+            ).fetchone()
+        self.assertEqual(move["state"], "complete")
+        self.assertIsNone(move["error"])
+        self.assertEqual(location["path"], str(destination))
+        self.assertEqual(sha256_file(destination), self.before)
+
+    def test_interrupted_plan_leaves_verified_source_for_retry(self) -> None:
+        destination = self.library / "Personal" / self.source.name
+        move_id = "00000000-0000-4000-8000-000000000002"
+        with connect(self.db) as connection:
+            connection.execute(
+                """
+                INSERT INTO managed_moves(
+                    id,asset_id,source_path,destination_path,source_sha256,
+                    state,requested_by,authorization,created_at
+                ) VALUES (?, ?, ?, ?, ?, 'planned', 'test', 'test', 'fixture')
+                """,
+                (
+                    move_id,
+                    self.asset.asset_id,
+                    str(self.source),
+                    str(destination),
+                    self.before,
+                ),
+            )
+
+        self.assertEqual(recover_interrupted_managed_moves(self.db), 1)
+
+        with connect(self.db) as connection:
+            move = connection.execute(
+                "SELECT state,error FROM managed_moves WHERE id=?",
+                (move_id,),
+            ).fetchone()
+        self.assertEqual(move["state"], "failed")
+        self.assertIn("safe to retry", move["error"])
+        self.assertTrue(self.source.exists())
+        self.assertFalse(destination.exists())
 
 
 if __name__ == "__main__":

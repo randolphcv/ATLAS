@@ -21,7 +21,11 @@ from .analysis import import_analysis_manifest, validate_analysis_result
 from .catalog import sha256_file
 from .database import connect, migrate, record_event
 from .desk import seed_threads
-from .managed_moves import commit_analyzed_file, placement_needs_clarification
+from .managed_moves import (
+    commit_analyzed_file,
+    placement_needs_clarification,
+    recover_interrupted_managed_moves,
+)
 from .media import IMAGE_EXTENSIONS
 from .metadata import apply_analysis_metadata, apply_analysis_organization_path
 from .music_analysis import analyze_asset_music
@@ -649,6 +653,22 @@ def _artifact_exclusion_reason(source_path: str | Path) -> str | None:
     )
 
 
+def _analysis_metadata_applied(
+    db_path: Path,
+    asset_id: str,
+    run_id: str,
+) -> bool:
+    with connect(db_path) as connection:
+        return connection.execute(
+            """
+            SELECT 1 FROM asset_metadata_revisions
+            WHERE asset_id=? AND source=?
+            LIMIT 1
+            """,
+            (asset_id, f"analysis_run:{run_id}"),
+        ).fetchone() is not None
+
+
 def _default_analyzer(
     endpoint: str, model: str, asset: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1147,6 +1167,7 @@ def _run_local_analysis_job(
     progress_callback: Callable[[], None] | None = None,
     stop_on_item_error: bool = False,
 ) -> LocalAnalysisRunResult:
+    recover_interrupted_managed_moves(db_path)
     recover_local_analysis_jobs(db_path)
     with connect(db_path) as connection:
         job_row = connection.execute(
@@ -1513,12 +1534,17 @@ def _run_local_analysis_job(
                     """,
                     (candidate["asset_id"], now, now, job_id),
                 )
-            apply_analysis_metadata(
+            if not _analysis_metadata_applied(
                 db_path,
                 candidate["asset_id"],
-                candidate["payload"],
-                run_id=run_id,
-            )
+                run_id,
+            ):
+                apply_analysis_metadata(
+                    db_path,
+                    candidate["asset_id"],
+                    candidate["payload"],
+                    run_id=run_id,
+                )
             with connect(db_path) as connection:
                 locations = connection.execute(
                     """

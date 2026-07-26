@@ -419,6 +419,50 @@ class LocalAnalysisJobTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_finalization_resume_does_not_duplicate_metadata_revisions(
+        self,
+    ) -> None:
+        job_id = create_local_analysis_job(self.db, model="fixture-model")
+        first = run_local_analysis_job(
+            self.db,
+            job_id,
+            analyzer=self._analyzer,
+        )
+        connection = sqlite3.connect(self.db)
+        try:
+            revision_count = connection.execute(
+                "SELECT COUNT(*) FROM asset_metadata_revisions"
+            ).fetchone()[0]
+            connection.execute(
+                """
+                UPDATE local_analysis_jobs
+                SET state='paused',completed_at=NULL
+                WHERE id=?
+                """,
+                (job_id,),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        second = run_local_analysis_job(
+            self.db,
+            job_id,
+            analyzer=self._analyzer,
+        )
+
+        self.assertEqual(first.analysis_run_id, second.analysis_run_id)
+        connection = sqlite3.connect(self.db)
+        try:
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM asset_metadata_revisions"
+                ).fetchone()[0],
+                revision_count,
+            )
+        finally:
+            connection.close()
+
     def test_finalization_failure_is_terminal_and_truthful(self) -> None:
         job_id = create_local_analysis_job(self.db, model="fixture-model")
 

@@ -35,6 +35,129 @@ class PlacementDecision:
     reason: str
 
 
+def recover_interrupted_managed_moves(db_path: Path) -> int:
+    """Reconcile durable move records after a process stops mid-rename."""
+    with connect(db_path) as connection:
+        migrate(connection)
+        rows = connection.execute(
+            """
+            SELECT * FROM managed_moves
+            WHERE state IN ('planned', 'running')
+            ORDER BY created_at
+            """
+        ).fetchall()
+    recovered = 0
+    for row in rows:
+        source = Path(row["source_path"])
+        destination = Path(row["destination_path"])
+        expected_sha256 = str(row["source_sha256"])
+        source_exists = source.is_file()
+        destination_exists = destination.is_file()
+        if not source_exists and destination_exists:
+            if sha256_file(destination) != expected_sha256:
+                _fail_move(
+                    db_path,
+                    row["id"],
+                    "Interrupted move destination checksum did not match.",
+                )
+                recovered += 1
+                continue
+            destination_stat = destination.stat()
+            completed = _utc_now()
+            with connect(db_path) as connection:
+                source_location = connection.execute(
+                    """
+                    SELECT 1 FROM locations
+                    WHERE asset_id=? AND path=?
+                    """,
+                    (row["asset_id"], str(source)),
+                ).fetchone()
+                destination_location = connection.execute(
+                    """
+                    SELECT 1 FROM locations
+                    WHERE asset_id=? AND path=?
+                    """,
+                    (row["asset_id"], str(destination)),
+                ).fetchone()
+                if source_location is not None:
+                    connection.execute(
+                        """
+                        UPDATE locations
+                        SET path=?,modified_ns=?,observed_at=?
+                        WHERE asset_id=? AND path=?
+                        """,
+                        (
+                            str(destination),
+                            destination_stat.st_mtime_ns,
+                            completed,
+                            row["asset_id"],
+                            str(source),
+                        ),
+                    )
+                elif destination_location is None:
+                    _fail_move(
+                        db_path,
+                        row["id"],
+                        "Interrupted move destination is not catalog-bound.",
+                    )
+                    recovered += 1
+                    continue
+                connection.execute(
+                    """
+                    UPDATE managed_moves
+                    SET state='complete',error=NULL,completed_at=?
+                    WHERE id=?
+                    """,
+                    (completed, row["id"]),
+                )
+                record_event(
+                    connection,
+                    kind="managed_move",
+                    state="complete",
+                    message=(
+                        "Recovered an interrupted managed move from its "
+                        "verified destination"
+                    ),
+                    asset_id=row["asset_id"],
+                    location_path=str(destination),
+                    details={
+                        "move_id": row["id"],
+                        "source_path": str(source),
+                        "destination_path": str(destination),
+                        "sha256": expected_sha256,
+                        "recovered": True,
+                    },
+                )
+            recovered += 1
+            continue
+        if source_exists and not destination_exists:
+            source_matches = sha256_file(source) == expected_sha256
+            _fail_move(
+                db_path,
+                row["id"],
+                (
+                    "Interrupted before the atomic rename; source remains "
+                    "verified and is safe to retry."
+                    if source_matches
+                    else "Interrupted move source checksum no longer matches."
+                ),
+            )
+            recovered += 1
+            continue
+        _fail_move(
+            db_path,
+            row["id"],
+            (
+                "Interrupted move has both source and destination; Beacon "
+                "left both untouched for human review."
+                if source_exists and destination_exists
+                else "Interrupted move has neither source nor destination."
+            ),
+        )
+        recovered += 1
+    return recovered
+
+
 def analysis_placement_for(source_path: Path) -> PlacementDecision:
     """Choose a conservative final home from an established Inbox hierarchy."""
     source = Path(os.path.abspath(source_path))
