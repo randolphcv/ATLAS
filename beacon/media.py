@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .processes import hidden_creation_flags
+
 AUDIO_VIDEO_EXTENSIONS = {
     ".aac",
     ".aif",
@@ -100,6 +102,7 @@ def probe(path: Path) -> dict[str, Any] | None:
             text=True,
             check=False,
             timeout=60,
+            creationflags=hidden_creation_flags(),
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         return {"error": str(error), "returncode": None}

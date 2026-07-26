@@ -29,6 +29,7 @@ from .managed_moves import (
 from .media import IMAGE_EXTENSIONS, probe
 from .metadata import apply_analysis_metadata, apply_analysis_organization_path
 from .music_analysis import analyze_asset_music
+from .processes import hidden_creation_flags
 from .repository import is_hidden_support_path, support_path_sql
 from .text_preview import read_text_preview
 from .thumbnails import RAW_EXTENSIONS, ensure_thumbnail
@@ -1158,7 +1159,10 @@ def _append_audio_context(
             "showspectrumpic=s=1200x600:legend=1:color=channel",
             "-frames:v", "1", str(spectrum),
         ],
-        capture_output=True, timeout=180, check=False,
+        capture_output=True,
+        timeout=180,
+        check=False,
+        creationflags=hidden_creation_flags(),
     )
     if completed.returncode == 0 and spectrum.is_file():
         images.append(spectrum)
@@ -1260,7 +1264,10 @@ def _prepare_media_context(
                     "-vf", "scale=960:-2:force_original_aspect_ratio=decrease",
                     str(destination),
                 ],
-                capture_output=True, timeout=120, check=False,
+                capture_output=True,
+                timeout=120,
+                check=False,
+                creationflags=hidden_creation_flags(),
             )
             if completed.returncode == 0 and destination.is_file():
                 images.append(destination)
@@ -1274,7 +1281,10 @@ def _prepare_media_context(
                     "-vf", "scale=960:-2:force_original_aspect_ratio=decrease",
                     str(destination),
                 ],
-                capture_output=True, timeout=120, check=False,
+                capture_output=True,
+                timeout=120,
+                check=False,
+                creationflags=hidden_creation_flags(),
             )
             if completed.returncode == 0 and destination.is_file():
                 images.append(destination)

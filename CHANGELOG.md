@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Ordinary non-Apple 59.94/60 fps H.264 MP4 files now play directly instead
+  of being misclassified as slow-motion media and blocked on transcoding.
+- Compatibility previews never suppress the readable source: native playback
+  starts immediately while the optimized derivative is prepared in the
+  background, with a thumbnail poster during initial buffering.
+- Genuine Apple/high-frame-rate compatibility previews are now silent,
+  GPU-preferred 720p derivatives with a fast CPU fallback and lower preview
+  bitrate. Background FFmpeg, FFprobe, and analysis helpers no longer open
+  Windows console windows.
 - Expanded FFprobe coverage for common professional, mobile, and lossless
   audio/video containers, including AIFF, MTS/M2TS, MXF, and camera RAW video.
 - Content analysis now checksum-verifies and durably reprobes incomplete

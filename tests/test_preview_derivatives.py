@@ -134,6 +134,7 @@ class VideoPreviewTests(unittest.TestCase):
             self.assertTrue(first.created)
             self.assertFalse(second.created)
             self.assertEqual(first.path, second.path)
+            self.assertEqual(first.generator, "beacon-ffmpeg-cfr-preview-v2")
             proxy_metadata = probe(Path(first.path))
             video = next(
                 stream
@@ -147,6 +148,8 @@ class VideoPreviewTests(unittest.TestCase):
                 30.0,
                 places=2,
             )
+            self.assertLessEqual(int(video["width"]), 1280)
+            self.assertLessEqual(int(video["height"]), 720)
             self.assertEqual(sha256_file(source), source_hash)
 
     def test_standard_video_does_not_require_proxy(self) -> None:
@@ -163,6 +166,56 @@ class VideoPreviewTests(unittest.TestCase):
         }
         self.assertFalse(
             needs_video_compatibility_preview(source, metadata)
+        )
+
+    def test_non_apple_59_94_fps_video_plays_natively(self) -> None:
+        source = Path("canon-camera.mp4")
+        metadata = {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "r_frame_rate": "60000/1001",
+                    "avg_frame_rate": "60000/1001",
+                }
+            ],
+            "format": {
+                "tags": {
+                    "compatible_brands": "mp42avc1CAEP",
+                    "major_brand": "mp42",
+                }
+            },
+        }
+        self.assertFalse(
+            needs_video_compatibility_preview(source, metadata)
+        )
+
+    def test_apple_60_and_general_120_fps_video_require_proxy(self) -> None:
+        apple = {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "r_frame_rate": "60/1",
+                    "avg_frame_rate": "60/1",
+                }
+            ],
+            "format": {"tags": {"make": "Apple"}},
+        }
+        high_rate = {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "r_frame_rate": "120/1",
+                    "avg_frame_rate": "120/1",
+                }
+            ],
+            "format": {"tags": {"make": "Canon"}},
+        }
+        self.assertTrue(
+            needs_video_compatibility_preview(Path("iphone.mov"), apple)
+        )
+        self.assertTrue(
+            needs_video_compatibility_preview(Path("slow-motion.mp4"), high_rate)
         )
 
 

@@ -1449,6 +1449,7 @@ ApplicationWindow {
 
         property string previewKind: backend.selectedAsset.previewKind || "file"
         property bool playable: previewKind === "audio" || previewKind === "video"
+        property int pendingResumePosition: 0
         readonly property int defaultPreviewWidth: Math.min(
             Math.max(640, root.width - 72), 1080
         )
@@ -1466,6 +1467,7 @@ ApplicationWindow {
         onVisibleChanged: {
             if (visible) {
                 if (playable && backend.selectedAsset.previewAvailable) {
+                    pendingResumePosition = 0
                     previewPlayer.source = backend.selectedAsset.previewUrl
                     previewPlayer.play()
                 }
@@ -1489,8 +1491,16 @@ ApplicationWindow {
                 if (previewDialog.visible
                         && previewDialog.playable
                         && backend.selectedAsset.previewAvailable) {
-                    previewPlayer.source = backend.selectedAsset.previewUrl
-                    previewPlayer.play()
+                    var nextSource = backend.selectedAsset.previewUrl || ""
+                    if (previewPlayer.source.toString() !== nextSource) {
+                        previewDialog.pendingResumePosition =
+                                previewPlayer.position
+                        previewPlayer.source = nextSource
+                        previewPlayer.play()
+                    } else if (previewPlayer.playbackState
+                               !== MediaPlayer.PlayingState) {
+                        previewPlayer.play()
+                    }
                 }
             }
         }
@@ -1502,6 +1512,14 @@ ApplicationWindow {
                 muted: previewMuted
             }
             videoOutput: previewVideo
+            onMediaStatusChanged: {
+                if ((mediaStatus === MediaPlayer.LoadedMedia
+                        || mediaStatus === MediaPlayer.BufferedMedia)
+                        && previewDialog.pendingResumePosition > 0) {
+                    setPosition(previewDialog.pendingResumePosition)
+                    previewDialog.pendingResumePosition = 0
+                }
+            }
         }
 
         ColumnLayout {
@@ -1578,6 +1596,36 @@ ApplicationWindow {
                     anchors.margins: 12
                     visible: previewDialog.previewKind === "video"
                     fillMode: VideoOutput.PreserveAspectFit
+                }
+
+                Image {
+                    z: 2
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    visible: previewDialog.previewKind === "video"
+                             && backend.selectedAsset.previewAvailable
+                             && previewPlayer.position <= 0
+                    source: previewDialog.visible
+                            ? (backend.selectedAsset.thumbnailUrl || "") : ""
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    cache: true
+                }
+
+                BusyIndicator {
+                    z: 3
+                    anchors.centerIn: parent
+                    running: previewDialog.previewKind === "video"
+                             && backend.selectedAsset.previewAvailable
+                             && (
+                                 previewPlayer.mediaStatus
+                                     === MediaPlayer.LoadingMedia
+                                 || previewPlayer.mediaStatus
+                                     === MediaPlayer.BufferingMedia
+                                 || previewPlayer.mediaStatus
+                                     === MediaPlayer.StalledMedia
+                             )
+                    visible: running
                 }
 
                 ScrollView {

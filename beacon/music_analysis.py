@@ -12,6 +12,7 @@ from typing import Any
 
 from .catalog import sha256_file
 from .database import connect, migrate, record_event
+from .processes import hidden_creation_flags
 
 WORKER_VERSION = "beacon-music-v3"
 
@@ -67,6 +68,7 @@ def runtime_status(timeout: float = 30) -> dict[str, Any]:
         text=True,
         timeout=timeout,
         check=False,
+        creationflags=hidden_creation_flags(),
     )
     if completed.returncode:
         return {
@@ -156,6 +158,7 @@ def analyze_asset_music(
         text=True,
         timeout=timeout,
         check=False,
+        creationflags=hidden_creation_flags(),
     )
     if completed.returncode:
         raise RuntimeError(

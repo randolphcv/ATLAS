@@ -15,6 +15,7 @@ from typing import Any
 from .catalog import sha256_file
 from .database import connect, migrate, record_event
 from .media import probe
+from .processes import hidden_creation_flags
 
 LOGGER = logging.getLogger("beacon.thumbnails")
 GENERATOR = "beacon-ffmpeg-thumbnail-v1"
@@ -253,6 +254,7 @@ def ensure_thumbnail(
                 text=True,
                 check=False,
                 timeout=120,
+                creationflags=hidden_creation_flags(),
             )
             if completed.returncode != 0:
                 raise RuntimeError(

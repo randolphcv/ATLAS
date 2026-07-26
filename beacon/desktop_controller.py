@@ -2116,7 +2116,7 @@ class DesktopController(QObject):
                 requires_video_proxy
                 and not compatible_video_path.is_file()
             )
-            if requires_preparation:
+            if is_heif_photo and requires_preparation:
                 detail["previewUrl"] = ""
             detail["previewRequiresPreparation"] = requires_preparation
             detail["previewPreparing"] = False

@@ -9,17 +9,21 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from fractions import Fraction
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from .catalog import sha256_file
 from .database import connect, migrate, record_event
 from .media import probe
+from .processes import hidden_creation_flags
 
 LOGGER = logging.getLogger("beacon.preview_derivatives")
-GENERATOR = "beacon-ffmpeg-cfr-preview-v1"
+GENERATOR = "beacon-ffmpeg-cfr-preview-v2"
 DERIVATIVE_KIND = "preview_video"
 QUICKTIME_EXTENSIONS = {".mov", ".m4v", ".mp4"}
+APPLE_COMPATIBILITY_FRAME_RATE = 59.0
+GENERAL_COMPATIBILITY_FRAME_RATE = 90.0
 
 
 @dataclass(frozen=True)
@@ -77,7 +81,27 @@ def needs_video_compatibility_preview(
         or '"make": "apple"' in serialized
         or '"manufacturer": "apple"' in serialized
     )
-    return frame_rate >= 59.0 or apple_quicktime
+    return frame_rate >= GENERAL_COMPATIBILITY_FRAME_RATE or (
+        apple_quicktime and frame_rate >= APPLE_COMPATIBILITY_FRAME_RATE
+    )
+
+
+@lru_cache(maxsize=4)
+def _accelerated_encoder(executable: str) -> str | None:
+    try:
+        completed = subprocess.run(
+            [executable, "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+            creationflags=hidden_creation_flags(),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode == 0 and "h264_nvenc" in completed.stdout:
+        return "h264_nvenc"
+    return None
 
 
 def _existing_preview(
@@ -118,8 +142,10 @@ def _ffmpeg_command(
     executable: str,
     source: Path,
     temporary: Path,
+    *,
+    encoder: str,
 ) -> list[str]:
-    return [
+    command = [
         executable,
         "-hide_banner",
         "-loglevel",
@@ -136,27 +162,54 @@ def _ffmpeg_command(
         "-vf",
         (
             "fps=30,"
-            "scale=1920:1080:force_original_aspect_ratio=decrease:"
+            "scale=1280:720:force_original_aspect_ratio=decrease:"
             "force_divisible_by=2"
         ),
         "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
+        encoder,
+    ]
+    if encoder == "h264_nvenc":
+        command.extend(
+            [
+                "-preset",
+                "p1",
+                "-tune",
+                "ll",
+                "-rc",
+                "vbr",
+                "-cq",
+                "30",
+                "-b:v",
+                "0",
+            ]
+        )
+    else:
+        command.extend(
+            [
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "30",
+            ]
+        )
+    command.extend(
+        [
         "-pix_fmt",
         "yuv420p",
         "-fps_mode",
         "cfr",
+        "-g",
+        "60",
         "-c:a",
         "aac",
         "-b:a",
-        "192k",
+        "128k",
         "-movflags",
         "+faststart",
         str(temporary),
-    ]
+        ]
+    )
+    return command
 
 
 def ensure_video_preview(
@@ -183,24 +236,50 @@ def ensure_video_preview(
     source_stat = source.stat()
     preview_dir = _preview_directory(db_path)
     preview_dir.mkdir(parents=True, exist_ok=True)
-    required_free = max(512 * 1024 * 1024, source_stat.st_size * 2)
+    required_free = max(512 * 1024 * 1024, source_stat.st_size)
     if shutil.disk_usage(preview_dir).free < required_free:
         raise RuntimeError("Insufficient free space for compatible video preview")
 
     destination = preview_dir / f"{asset_id}.mp4"
     temporary = preview_dir / f".{asset_id}.{uuid.uuid4().hex}.partial.mp4"
     try:
-        completed = subprocess.run(
-            _ffmpeg_command(str(executable), source, temporary),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=1800,
-        )
-        if completed.returncode != 0:
-            raise RuntimeError(
+        encoders = [
+            encoder
+            for encoder in (
+                _accelerated_encoder(str(executable)),
+                "libx264",
+            )
+            if encoder
+        ]
+        completed: subprocess.CompletedProcess[str] | None = None
+        selected_encoder = ""
+        errors: list[str] = []
+        for encoder in dict.fromkeys(encoders):
+            temporary.unlink(missing_ok=True)
+            completed = subprocess.run(
+                _ffmpeg_command(
+                    str(executable),
+                    source,
+                    temporary,
+                    encoder=encoder,
+                ),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=1800,
+                creationflags=hidden_creation_flags(),
+            )
+            if completed.returncode == 0 and temporary.is_file():
+                selected_encoder = encoder
+                break
+            errors.append(
                 completed.stderr.strip()
-                or f"ffmpeg exited with code {completed.returncode}"
+                or f"{encoder} exited with code {completed.returncode}"
+            )
+        if completed is None or not selected_encoder:
+            raise RuntimeError(
+                " ; ".join(errors)
+                or "FFmpeg could not create a compatible preview"
             )
         verification = probe(temporary)
         if (
@@ -233,7 +312,9 @@ def ensure_video_preview(
         now = _utc_now()
         details = {
             "codec": "h264",
+            "encoder": selected_encoder,
             "frame_rate": 30,
+            "maximum_dimensions": "1280x720",
             "media_kind": "video",
             "purpose": "stable local QuickTime preview",
         }

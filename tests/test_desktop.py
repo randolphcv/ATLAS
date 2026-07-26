@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import json
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -172,6 +174,49 @@ class DesktopControllerTests(unittest.TestCase):
             QCoreApplication.processEvents()
 
         self.assertFalse(self.controller.selectedAsset["previewPreparing"])
+        self.assertTrue(self.controller.selectedAsset["previewAvailable"])
+        self.assertTrue(
+            self.controller.selectedAsset["previewUrl"].startswith("file:")
+        )
+
+    def test_video_proxy_preparation_never_blocks_the_native_source(self) -> None:
+        source = self.root / "fixtures" / "iphone-slo-mo.mp4"
+        source.write_bytes(b"synthetic video fixture")
+        cataloged = catalog_file(
+            source,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        metadata = {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "r_frame_rate": "60/1",
+                    "avg_frame_rate": "60/1",
+                }
+            ],
+            "format": {"tags": {"make": "Apple"}},
+        }
+        connection = sqlite3.connect(self.db)
+        try:
+            connection.execute(
+                "UPDATE assets SET media_metadata_json=? WHERE id=?",
+                (json.dumps(metadata), cataloged.asset_id),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        self.controller.refresh()
+        self.controller.selectAsset(cataloged.asset_id)
+
+        self.assertEqual(self.controller.selectedAsset["previewKind"], "video")
+        self.assertTrue(
+            self.controller.selectedAsset["previewRequiresPreparation"]
+        )
         self.assertTrue(self.controller.selectedAsset["previewAvailable"])
         self.assertTrue(
             self.controller.selectedAsset["previewUrl"].startswith("file:")
