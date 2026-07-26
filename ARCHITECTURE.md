@@ -11,7 +11,8 @@
 - **Desktop:** native Qt Quick observation and recovery interface.
 - **Beacon Desk:** durable local human/Beacon conversations and queue state;
   never a file-operation interpreter.
-- **Archive Intake:** explicit, durable recursive catalog jobs; never an
+- **Archive Intake:** explicit, durable one-shot catalog jobs. Granular,
+  General, and Total scopes all freeze before work begins; none is an
   automatic production watcher or managed-move trigger.
 - **API:** optional localhost-only integration adapter.
 
@@ -58,6 +59,29 @@ size and modified time, catalogs one regular non-link file, then commits that
 item's result. Progress therefore survives UI refreshes and process restarts.
 Cancel and app-close pauses are honored between files; retry resets only failed
 items.
+
+One-shot work uses the same three scope levels across Intake and Analysis:
+
+- **Granular** contains exact human-selected files or the current catalog
+  asset.
+- **General** contains one approved recursive folder with an optional intake
+  cap, or one analysis media category.
+- **Total** is the default. Intake snapshots every currently discovered
+  regular file below the configured approved Inbox root with no item cap;
+  Analysis snapshots every currently eligible unanalyzed catalog asset.
+
+Every level remains a deterministic click-time snapshot. Files arriving after
+snapshot creation belong to a later job, and an Analysis re-run that includes
+existing candidates remains an explicit option.
+
+Future **Continuous** operation is a separate lifecycle mode, not a fourth
+scope level. It will observe approved roots, wait for copy stability, coalesce
+bursts, and create ordinary durable one-shot jobs. It must enforce one active
+intake runner and one inference-lane owner, apply backpressure, survive drive
+disconnects and application restarts, and expose its paused/degraded state.
+It must not silently enlarge an existing snapshot, bypass checksum verification,
+or gain new file-mutation authority. Taskbar and Windows background-lifecycle
+behavior remain a later product decision.
 
 Human and Beacon-supplied context lives in revisioned `asset_metadata` records.
 Those records are fully editable in Library and searchable, while source

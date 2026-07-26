@@ -1,5 +1,52 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-26 Beacon 0.22.0 scalable scope candidate
+
+Intake and Analysis now use the same explicit **Granular / General / Total**
+scope hierarchy, with Total selected by default.
+
+- Granular Intake uses exact files; Granular Analysis targets the current
+  catalog asset.
+- General Intake uses an approved recursive folder and optional cap; General
+  Analysis filters visual, audio-only, camera RAW, or other bounded content.
+- Total Intake is an uncapped click-time snapshot of the configured approved
+  Inbox root; Total Analysis snapshots every currently eligible unanalyzed
+  catalog asset.
+
+All scopes remain deterministic durable snapshots. New arrivals never enter an
+existing job silently. Existing-candidate reanalysis remains explicit, project
+and support-file exclusions remain enforced, and no schema migration or new
+file-operation authority was introduced.
+
+Continuous open operation is documented as the next separate lifecycle
+milestone. It must reuse ordinary durable jobs and add copy stability,
+debouncing/coalescing, backpressure, drive-disconnect and restart recovery,
+inference-lane arbitration, and intake-to-analysis orchestration before any
+background/taskbar behavior is activated.
+
+Verification:
+
+- 119 tests pass, including real FFprobe acceptance.
+- Native offscreen render at 1360x840 shows the complete Analysis dialog with
+  Total selected by default.
+- Packaged 0.22.0 isolated smoke exits 0.
+- The packaged capability audit found zero blocked files.
+- executable:
+  `C:\Development\ATLAS\dist\releases\0.22.0\ATLAS Beacon\ATLAS Beacon.exe`
+- executable SHA-256:
+  `54a455fa4c70adba18ade5e23a0aac1f48206c292d5f8c64c65297eacc82116f`
+- ZIP:
+  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.22.0-win64.zip`
+- ZIP SHA-256:
+  `6831c560870764a872132a91e8d2f507df33e677a044e0de40efb5791e94e23f`
+
+The candidate is intentionally not active. Live Beacon 0.21.5 remains PID
+38920 because production analysis job
+`c687374f-97c0-4147-8a73-ce9d81623a22` is still running. At the last check it
+had 128 publishable items complete, 92 pending, one running, and zero
+failures. Re-check durable state and do not stop Beacon or activate 0.22.0
+until that job is terminal.
+
 ## 2026-07-26 Beacon 0.21.5 analysis failure closure
 
 The latest 490-item analysis job

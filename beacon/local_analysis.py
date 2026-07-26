@@ -39,6 +39,9 @@ DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
 POLICY_VERSION = "beacon-local-content-v4"
 _WHISPER_MODEL: Any = None
 NON_CONTENT_PROJECT_EXTENSIONS = frozenset({".aep", ".aepx", ".prproj"})
+ANALYSIS_SCOPE_KINDS = frozenset(
+    {"all", "visual", "audio", "other", "raw"}
+)
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,96 @@ def _is_still_image(source: Path, metadata: dict[str, Any]) -> bool:
         or source.suffix.lower() in IMAGE_EXTENSIONS
         or source.suffix.lower() in RAW_EXTENSIONS
     )
+
+
+def _analysis_media_bucket(
+    source: Path, metadata: dict[str, Any]
+) -> str:
+    kinds = {
+        str(stream.get("codec_type") or "")
+        for stream in metadata.get("streams", [])
+        if isinstance(stream, dict)
+    }
+    if "video" in kinds or _is_still_image(source, metadata):
+        return "visual"
+    if "audio" in kinds:
+        return "audio"
+    return "other"
+
+
+def _analysis_scope_rows(
+    connection: Any,
+    *,
+    include_analyzed: bool,
+    scope_kind: str,
+) -> list[Any]:
+    if scope_kind not in ANALYSIS_SCOPE_KINDS:
+        raise ValueError("unsupported analysis scope")
+    visible_predicate, parameters = support_path_sql("locations.path")
+    project_predicate, project_parameters = _project_scope_sql(
+        "locations.path"
+    )
+    parameters.extend(project_parameters)
+    parameters.append(int(include_analyzed))
+    rows = connection.execute(
+        f"""
+        SELECT assets.id, assets.sha256, assets.size_bytes,
+               MIN(locations.path) AS source_path,
+               assets.media_metadata_json
+        FROM assets JOIN locations ON locations.asset_id = assets.id
+        WHERE lower(locations.path) NOT LIKE '%.ds_store'
+          AND lower(locations.path) NOT LIKE '%\\desktop.ini'
+          AND lower(locations.path) NOT LIKE '%\\thumbs.db'
+          AND ({visible_predicate})
+          AND ({project_predicate})
+          AND (? OR NOT EXISTS (
+            SELECT 1 FROM analysis_results result
+            WHERE result.asset_id = assets.id
+              AND result.analysis_kind = 'contextual_metadata'
+              AND result.review_state IN ('candidate', 'approved')
+          ))
+        GROUP BY assets.id
+        ORDER BY source_path COLLATE NOCASE
+        """,
+        parameters,
+    ).fetchall()
+    if scope_kind == "all":
+        return list(rows)
+    selected = []
+    for row in rows:
+        source = Path(str(row["source_path"]))
+        metadata = json.loads(row["media_metadata_json"] or "{}")
+        if scope_kind == "raw":
+            matches = source.suffix.lower() in RAW_EXTENSIONS
+        else:
+            matches = _analysis_media_bucket(source, metadata) == scope_kind
+        if matches:
+            selected.append(row)
+    return selected
+
+
+def _analysis_scope_summary(rows: list[Any]) -> dict[str, Any]:
+    visual = audio = other = 0
+    digest = hashlib.sha256()
+    for row in rows:
+        source = Path(str(row["source_path"]))
+        metadata = json.loads(row["media_metadata_json"] or "{}")
+        bucket = _analysis_media_bucket(source, metadata)
+        if bucket == "visual":
+            visual += 1
+        elif bucket == "audio":
+            audio += 1
+        else:
+            other += 1
+        digest.update(f"{row['id']}\0{row['sha256']}\n".encode())
+    return {
+        "assets": len(rows),
+        "bytes": sum(int(row["size_bytes"]) for row in rows),
+        "visual": visual,
+        "audio": audio,
+        "other": other,
+        "scope_sha256": digest.hexdigest(),
+    }
 
 
 def _has_media_streams(metadata: dict[str, Any]) -> bool:
@@ -234,77 +327,42 @@ def analysis_scope_preview(
     include_analyzed: bool = False,
     scope_kind: str = "all",
 ) -> dict[str, Any]:
-    if scope_kind not in {"all", "raw"}:
+    if scope_kind not in ANALYSIS_SCOPE_KINDS:
         raise ValueError("unsupported analysis scope")
+    return analysis_scope_previews(
+        db_path,
+        include_analyzed=include_analyzed,
+    )[scope_kind]
+
+
+def analysis_scope_previews(
+    db_path: Path,
+    *,
+    include_analyzed: bool = False,
+) -> dict[str, dict[str, Any]]:
     with connect(db_path) as connection:
         migrate(connection)
-        visible_predicate, parameters = support_path_sql("locations.path")
-        project_predicate, project_parameters = _project_scope_sql(
-            "locations.path"
+        rows = _analysis_scope_rows(
+            connection,
+            include_analyzed=include_analyzed,
+            scope_kind="all",
         )
-        where = """
-            WHERE lower(locations.path) NOT LIKE '%.ds_store'
-              AND lower(locations.path) NOT LIKE '%\\desktop.ini'
-              AND lower(locations.path) NOT LIKE '%\\thumbs.db'
-        """
-        where += f" AND ({visible_predicate})"
-        where += f" AND ({project_predicate})"
-        parameters.extend(project_parameters)
-        if not include_analyzed:
-            where += """
-              AND NOT EXISTS (
-                SELECT 1 FROM analysis_results result
-                WHERE result.asset_id = assets.id
-                  AND result.analysis_kind = 'contextual_metadata'
-                  AND result.review_state IN ('candidate', 'approved')
-            )
-            """
-        if scope_kind == "raw":
-            where += " AND (" + " OR ".join(
-                "lower(locations.path) LIKE ?" for _ in RAW_EXTENSIONS
-            ) + ")"
-            parameters.extend(
-                f"%{suffix}" for suffix in sorted(RAW_EXTENSIONS)
-            )
-        rows = connection.execute(
-            f"""
-            SELECT assets.id, assets.sha256, assets.size_bytes,
-                   MIN(locations.path) AS source_path,
-                   assets.media_metadata_json
-            FROM assets JOIN locations ON locations.asset_id = assets.id
-            {where}
-            GROUP BY assets.id
-            ORDER BY source_path COLLATE NOCASE
-            """,
-            parameters,
-        ).fetchall()
-    visual = audio = other = 0
+    grouped: dict[str, list[Any]] = {
+        "all": list(rows),
+        "visual": [],
+        "audio": [],
+        "other": [],
+        "raw": [],
+    }
     for row in rows:
+        source = Path(str(row["source_path"]))
         metadata = json.loads(row["media_metadata_json"] or "{}")
-        kinds = {
-            str(stream.get("codec_type") or "")
-            for stream in metadata.get("streams", [])
-            if isinstance(stream, dict)
-        }
-        if (
-            "video" in kinds
-            or _is_still_image(Path(row["source_path"]), metadata)
-        ):
-            visual += 1
-        elif "audio" in kinds:
-            audio += 1
-        else:
-            other += 1
-    digest = hashlib.sha256()
-    for row in rows:
-        digest.update(f"{row['id']}\0{row['sha256']}\n".encode())
+        grouped[_analysis_media_bucket(source, metadata)].append(row)
+        if source.suffix.lower() in RAW_EXTENSIONS:
+            grouped["raw"].append(row)
     return {
-        "assets": len(rows),
-        "bytes": sum(int(row["size_bytes"]) for row in rows),
-        "visual": visual,
-        "audio": audio,
-        "other": other,
-        "scope_sha256": digest.hexdigest(),
+        kind: _analysis_scope_summary(scoped_rows)
+        for kind, scoped_rows in grouped.items()
     }
 
 
@@ -320,57 +378,16 @@ def create_local_analysis_job(
     model = model.strip()
     if not model:
         raise ValueError("choose a local model")
-    preview = analysis_scope_preview(
-        db_path,
-        include_analyzed=include_analyzed,
-        scope_kind=scope_kind,
-    )
     job_id = str(uuid.uuid4())
     now = _utc_now()
     with connect(db_path) as connection:
-        scope_clause = ""
-        visible_predicate, visible_parameters = support_path_sql(
-            "locations.path"
+        migrate(connection)
+        rows = _analysis_scope_rows(
+            connection,
+            include_analyzed=include_analyzed,
+            scope_kind=scope_kind,
         )
-        project_predicate, project_parameters = _project_scope_sql(
-            "locations.path"
-        )
-        support_clause = f" AND ({visible_predicate})"
-        project_clause = f" AND ({project_predicate})"
-        scope_parameters: list[object] = [
-            *visible_parameters,
-            *project_parameters,
-            int(include_analyzed),
-        ]
-        if scope_kind == "raw":
-            scope_clause = " AND (" + " OR ".join(
-                "lower(locations.path) LIKE ?" for _ in RAW_EXTENSIONS
-            ) + ")"
-            scope_parameters.extend(
-                f"%{suffix}" for suffix in sorted(RAW_EXTENSIONS)
-            )
-        elif scope_kind != "all":
-            raise ValueError("unsupported analysis scope")
-        rows = connection.execute(
-            f"""
-            SELECT assets.id, assets.sha256, MIN(locations.path) AS source_path
-            FROM assets JOIN locations ON locations.asset_id = assets.id
-            WHERE lower(locations.path) NOT LIKE '%.ds_store'
-              AND lower(locations.path) NOT LIKE '%\\desktop.ini'
-              AND lower(locations.path) NOT LIKE '%\\thumbs.db'
-              {support_clause}
-              {project_clause}
-              AND (? OR NOT EXISTS (
-                SELECT 1 FROM analysis_results result
-                WHERE result.asset_id = assets.id
-                  AND result.analysis_kind = 'contextual_metadata'
-                  AND result.review_state IN ('candidate', 'approved')
-              ))
-              {scope_clause}
-            GROUP BY assets.id ORDER BY source_path COLLATE NOCASE
-            """,
-            scope_parameters,
-        ).fetchall()
+        preview = _analysis_scope_summary(rows)
         connection.execute(
             """
             INSERT INTO local_analysis_jobs(

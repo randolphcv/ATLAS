@@ -5,7 +5,9 @@ observes and catalogs files without owning or changing originals.
 
 ## Current application
 
-Beacon 0.17.2 is the live native Windows desktop application. It includes:
+Beacon 0.22.0 is the current packaged source candidate. The verified live
+0.21.5 desktop remains active until its in-flight catalog analysis is terminal;
+the candidate includes:
 
 - the verified Phase 1 read-only catalog;
 - a branded Qt Quick desktop shell with no embedded browser;
@@ -42,10 +44,14 @@ Beacon 0.17.2 is the live native Windows desktop application. It includes:
   interrupted-session recovery;
 - native multi-file selection for exact human-curated Inbox batches plus a
   recursive folder picker for scoped subfolder intake;
+- shared **Granular / General / Total** controls across Intake and Analysis,
+  with Total as the default uncapped click-time snapshot;
+- General Analysis scopes for visual, audio-only, camera RAW, or other bounded
+  content, plus Granular Analysis of the current catalog asset;
 - recoverable automatic disposal of Finder `.DS_Store` metadata through the
   Windows Recycle Bin before intake snapshots are frozen;
-- bounded representative intake scopes by default, with an explicit blank
-  limit required to snapshot every discovered file;
+- deterministic snapshot membership: later arrivals never silently enter an
+  already-created Total job;
 - analysis-complete placement for files whose existing Inbox hierarchy gives
   Beacon an unambiguous final home;
 - revisioned editable titles, descriptions, categories, tags, people, dates,
@@ -65,14 +71,16 @@ Development-environment names are deliberately separate from the product:
 Connor's MacBook, and **Beacon** remains the ATLAS application and future
 persistent librarian agent.
 
-No cloud service, watcher against `J:\`, or Windows service is enabled. The API
-is not started by the desktop application.
+No cloud service, continuous watcher against `J:\`, or Windows service is
+enabled. Continuous open operation is a separate planned lifecycle mode; the
+API is not started by the desktop application.
 
 ![ATLAS Beacon Desk on the native Overview](docs/images/beacon-desk.png)
 
 ## Run the Windows app
 
-1. Open `C:\Development\ATLAS\dist\releases\0.9.0\ATLAS Beacon\`.
+1. Open `C:\Development\ATLAS\dist\releases\0.22.0\ATLAS Beacon\` after the
+   active production analysis has completed and the candidate is activated.
 2. Double-click `ATLAS Beacon.exe`.
 3. Open Library, select an asset, and press Space (or click Preview).
 4. Press Space or Escape to close the temporary preview.
@@ -84,7 +92,7 @@ The app does not open a browser or listen on a network port. Keep the entire
 A ready-to-extract package is generated at:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.9.0-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.22.0-win64.zip
 ```
 
 This private development build is not code-signed, so Windows may identify the

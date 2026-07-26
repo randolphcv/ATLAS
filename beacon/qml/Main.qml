@@ -203,6 +203,42 @@ ApplicationWindow {
         }
     }
 
+    component ScopeChoice: Button {
+        id: scopeChoice
+        property string titleText
+        property string detailText
+        property bool selected: false
+        focusPolicy: Qt.TabFocus
+        implicitHeight: 58
+        leftPadding: 11
+        rightPadding: 11
+        hoverEnabled: true
+        contentItem: ColumnLayout {
+            spacing: 2
+            Text {
+                text: scopeChoice.titleText.toUpperCase()
+                color: scopeChoice.selected ? root.bone : root.muted
+                font.pixelSize: 9
+                font.weight: Font.DemiBold
+                font.letterSpacing: 1.0
+            }
+            Text {
+                Layout.fillWidth: true
+                text: scopeChoice.detailText
+                color: scopeChoice.selected ? root.atlasBright : root.muted
+                font.pixelSize: 9
+                elide: Text.ElideRight
+            }
+        }
+        background: Rectangle {
+            radius: 7
+            color: scopeChoice.selected
+                   ? Qt.rgba(0.29, 0.55, 0.57, 0.15)
+                   : (scopeChoice.hovered ? root.panel : root.ink)
+            border.color: scopeChoice.selected ? root.atlasBright : root.line
+        }
+    }
+
     component GroundedResultCard: Rectangle {
         id: resultCard
         property string assetId
@@ -581,12 +617,47 @@ ApplicationWindow {
     Dialog {
         id: localAnalysisDialog
         objectName: "localAnalysisDialog"
+        property string scopeMode: "total"
+        property string scopeKind: "visual"
+        function scopeValue(key) {
+            var readiness = backend.analysisReadiness || {}
+            var scoped = readiness
+            if (scopeMode === "granular")
+                scoped = readiness.selectedScope || {}
+            else if (scopeMode === "general") {
+                var scopes = readiness.generalScopes || {}
+                scoped = scopes[scopeKind] || {}
+            }
+            if (includeAnalyzedAssets.checked && scopeMode !== "granular") {
+                var allKey = "all" + key.charAt(0).toUpperCase()
+                           + key.slice(1)
+                return scoped[allKey] === undefined ? "0" : scoped[allKey]
+            }
+            return scoped[key] === undefined ? "0" : scoped[key]
+        }
+        function scopeCount() {
+            var readiness = backend.analysisReadiness || {}
+            if (scopeMode === "granular")
+                return (readiness.selectedScope || {}).assets || 0
+            if (scopeMode === "general") {
+                var scoped = (readiness.generalScopes || {})[scopeKind] || {}
+                return includeAnalyzedAssets.checked
+                       ? (scoped.allAssets || 0) : (scoped.assets || 0)
+            }
+            return includeAnalyzedAssets.checked
+                   ? (readiness.allAssets || 0) : (readiness.assets || 0)
+        }
         modal: true
         anchors.centerIn: Overlay.overlay
         width: Math.min(root.width - 80, 690)
         padding: 0
         closePolicy: Popup.CloseOnEscape
-        onOpened: backend.refreshAnalysisReadiness()
+        onOpened: {
+            scopeMode = "total"
+            scopeKind = "visual"
+            includeAnalyzedAssets.checked = false
+            backend.refreshAnalysisReadiness()
+        }
         background: Rectangle {
             radius: 12
             color: root.panelRaised
@@ -609,6 +680,85 @@ ApplicationWindow {
                     font.pixelSize: 12
                     lineHeight: 1.4
                     wrapMode: Text.WordWrap
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    ScopeChoice {
+                        objectName: "analysisGranularScope"
+                        Layout.fillWidth: true
+                        titleText: "Granular"
+                        detailText: "Current catalog asset"
+                        selected: localAnalysisDialog.scopeMode === "granular"
+                        onClicked: localAnalysisDialog.scopeMode = "granular"
+                    }
+                    ScopeChoice {
+                        objectName: "analysisGeneralScope"
+                        Layout.fillWidth: true
+                        titleText: "General"
+                        detailText: "One media category"
+                        selected: localAnalysisDialog.scopeMode === "general"
+                        onClicked: localAnalysisDialog.scopeMode = "general"
+                    }
+                    ScopeChoice {
+                        objectName: "analysisTotalScope"
+                        Layout.fillWidth: true
+                        titleText: "Total"
+                        detailText: "Every eligible asset"
+                        selected: localAnalysisDialog.scopeMode === "total"
+                        onClicked: localAnalysisDialog.scopeMode = "total"
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: localAnalysisDialog.scopeMode === "general"
+                    spacing: 10
+                    Text {
+                        text: "CATEGORY"
+                        color: root.muted
+                        font.pixelSize: 8
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: 1.0
+                    }
+                    ComboBox {
+                        id: localAnalysisScopeKind
+                        objectName: "localAnalysisScopeKind"
+                        Layout.fillWidth: true
+                        textRole: "label"
+                        valueRole: "value"
+                        model: [
+                            { "label": "Visual media", "value": "visual" },
+                            { "label": "Audio-only media", "value": "audio" },
+                            { "label": "Camera RAW photos", "value": "raw" },
+                            { "label": "Other bounded content", "value": "other" }
+                        ]
+                        onCurrentValueChanged: {
+                            if (currentValue)
+                                localAnalysisDialog.scopeKind = currentValue
+                        }
+                    }
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 38
+                    radius: 7
+                    visible: localAnalysisDialog.scopeMode === "granular"
+                    color: root.ink
+                    border.color: backend.analysisReadiness.selectedAssetExcluded
+                                  ? root.brass : root.line
+                    Text {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        text: backend.analysisReadiness.selectedAssetExcluded
+                              ? "Selected project file remains cataloged and is excluded from contextual analysis."
+                              : "Selected: "
+                                + (backend.analysisReadiness.selectedAssetLabel
+                                   || "No catalog asset selected")
+                        color: backend.analysisReadiness.selectedAssetExcluded
+                               ? root.brass : root.bone
+                        font.pixelSize: 10
+                        elide: Text.ElideMiddle
+                    }
                 }
                 Rectangle {
                     Layout.fillWidth: true
@@ -659,39 +809,32 @@ ApplicationWindow {
                     columnSpacing: 10
                     MetricCard {
                         Layout.fillWidth: true
-                        eyebrow: includeAnalyzedAssets.checked ? "Reanalysis scope" : "Unanalyzed"
-                        value: includeAnalyzedAssets.checked
-                               ? (backend.analysisReadiness.allAssetsLabel || "0")
-                               : (backend.analysisReadiness.assetsLabel || "0")
-                        note: includeAnalyzedAssets.checked
-                              ? (backend.analysisReadiness.allBytesLabel || "0 B")
-                              : (backend.analysisReadiness.bytesLabel || "0 B")
+                        eyebrow: localAnalysisDialog.scopeMode === "granular"
+                                 ? "Selected"
+                                 : includeAnalyzedAssets.checked
+                                   ? "Reanalysis scope" : "Unanalyzed"
+                        value: localAnalysisDialog.scopeValue("assetsLabel")
+                        note: localAnalysisDialog.scopeValue("bytesLabel")
                         accentColor: root.atlasBright
                     }
                     MetricCard {
                         Layout.fillWidth: true
                         eyebrow: "Visual"
-                        value: includeAnalyzedAssets.checked
-                               ? (backend.analysisReadiness.allVisualLabel || "0")
-                               : (backend.analysisReadiness.visualLabel || "0")
+                        value: localAnalysisDialog.scopeValue("visualLabel")
                         note: "Images or video"
                         accentColor: root.atlasBright
                     }
                     MetricCard {
                         Layout.fillWidth: true
                         eyebrow: "Audio"
-                        value: includeAnalyzedAssets.checked
-                               ? (backend.analysisReadiness.allAudioLabel || "0")
-                               : (backend.analysisReadiness.audioLabel || "0")
+                        value: localAnalysisDialog.scopeValue("audioLabel")
                         note: "Speech + acoustic context"
                         accentColor: root.brass
                     }
                     MetricCard {
                         Layout.fillWidth: true
                         eyebrow: "Other"
-                        value: includeAnalyzedAssets.checked
-                               ? (backend.analysisReadiness.allOtherLabel || "0")
-                               : (backend.analysisReadiness.otherLabel || "0")
+                        value: localAnalysisDialog.scopeValue("otherLabel")
                         note: "Bounded context"
                         accentColor: root.brass
                     }
@@ -718,8 +861,9 @@ ApplicationWindow {
                 }
                 CheckBox {
                     id: includeAnalyzedAssets
-                    text: "Reanalyze every catalog asset, including existing candidates"
+                    text: "Include assets that already have candidates in this scope"
                     checked: false
+                    visible: localAnalysisDialog.scopeMode !== "granular"
                     enabled: !backend.busy
                 }
                 Rectangle {
@@ -760,15 +904,18 @@ ApplicationWindow {
                 }
                 PrimaryButton {
                     objectName: "startLocalAnalysisButton"
-                    text: "Start local analysis"
+                    text: localAnalysisDialog.scopeMode === "total"
+                          ? "Analyze total scope" : "Start local analysis"
                     enabled: !backend.busy
-                             && (includeAnalyzedAssets.checked
-                                 ? backend.analysisReadiness.canReanalyze === true
-                                 : backend.analysisReadiness.canStart === true)
+                             && localAnalysisDialog.scopeCount() > 0
+                             && (localAnalysisDialog.scopeMode !== "granular"
+                                 || backend.analysisReadiness.canAnalyzeSelected === true)
                              && localAnalysisModel.currentText.length > 0
                     onClicked: {
                         backend.startLocalCatalogAnalysis(
                             localAnalysisModel.currentText,
+                            localAnalysisDialog.scopeMode,
+                            localAnalysisDialog.scopeKind,
                             includeAnalyzedAssets.checked
                         )
                         localAnalysisDialog.close()
@@ -781,15 +928,16 @@ ApplicationWindow {
     Dialog {
         id: newIntakeDialog
         objectName: "newIntakeDialog"
+        property string scopeMode: "total"
         modal: true
         anchors.centerIn: Overlay.overlay
         width: Math.min(root.width - 80, 650)
         padding: 0
         closePolicy: Popup.CloseOnEscape
         onOpened: {
+            scopeMode = "total"
             newIntakeRoot.text = backend.defaultIntakeRoot
-            newIntakeLimit.text = "25"
-            newIntakeRoot.forceActiveFocus()
+            newIntakeLimit.text = ""
         }
         background: Rectangle {
             radius: 12
@@ -804,55 +952,47 @@ ApplicationWindow {
                 spacing: 13
                 PanelTitle {
                     eyebrow: "Archive intake"
-                    title: "Prepare a recursive catalog job"
+                    title: "Choose the intake scope"
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: "Beacon will make a durable snapshot of regular files below this approved folder. Creating the job does not start it, move a file, or change an original."
+                    text: "Beacon freezes the chosen scope into a durable catalog snapshot. Total is the default and includes every regular file currently below the approved Inbox root; later arrivals are never added silently."
                     color: root.muted
                     font.pixelSize: 12
                     lineHeight: 1.4
                     wrapMode: Text.WordWrap
                 }
-                Rectangle {
+                RowLayout {
                     Layout.fillWidth: true
-                    implicitHeight: 62
-                    radius: 7
-                    color: root.ink
-                    border.color: root.line
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 10
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Text {
-                                text: "MANUAL BATCH"
-                                color: root.brass
-                                font.pixelSize: 8
-                                font.weight: Font.DemiBold
-                                font.letterSpacing: 1.0
-                            }
-                            Text {
-                                text: "Choose exact files or recursively include one Inbox folder."
-                                color: root.muted
-                                font.pixelSize: 10
-                            }
-                        }
-                        PrimaryButton {
-                            text: "Choose files…"
-                            quiet: true
-                            onClicked: selectedIntakeFiles.open()
-                        }
-                        PrimaryButton {
-                            text: "Choose folderâ€¦"
-                            quiet: true
-                            onClicked: selectedIntakeFolder.open()
-                        }
+                    spacing: 8
+                    ScopeChoice {
+                        objectName: "intakeGranularScope"
+                        Layout.fillWidth: true
+                        titleText: "Granular"
+                        detailText: "Choose exact files"
+                        selected: newIntakeDialog.scopeMode === "granular"
+                        onClicked: newIntakeDialog.scopeMode = "granular"
+                    }
+                    ScopeChoice {
+                        objectName: "intakeGeneralScope"
+                        Layout.fillWidth: true
+                        titleText: "General"
+                        detailText: "Folder with optional cap"
+                        selected: newIntakeDialog.scopeMode === "general"
+                        onClicked: newIntakeDialog.scopeMode = "general"
+                    }
+                    ScopeChoice {
+                        objectName: "intakeTotalScope"
+                        Layout.fillWidth: true
+                        titleText: "Total"
+                        detailText: "All files in Inbox"
+                        selected: newIntakeDialog.scopeMode === "total"
+                        onClicked: newIntakeDialog.scopeMode = "total"
                     }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true
+                    visible: newIntakeDialog.scopeMode === "general"
                     spacing: 5
                     Text {
                         text: "APPROVED SOURCE FOLDER"
@@ -881,9 +1021,16 @@ ApplicationWindow {
                                           ? root.atlasBright : root.line
                         }
                     }
+                    PrimaryButton {
+                        Layout.alignment: Qt.AlignRight
+                        text: "Choose folder…"
+                        quiet: true
+                        onClicked: selectedIntakeFolder.open()
+                    }
                 }
                 RowLayout {
                     Layout.fillWidth: true
+                    visible: newIntakeDialog.scopeMode === "general"
                     spacing: 14
                     ColumnLayout {
                         Layout.preferredWidth: 190
@@ -900,7 +1047,7 @@ ApplicationWindow {
                             objectName: "newIntakeLimit"
                             Layout.fillWidth: true
                             implicitHeight: 42
-                            text: "25"
+                            text: ""
                             placeholderText: "Blank = all files"
                             color: root.bone
                             placeholderTextColor: root.muted
@@ -928,13 +1075,34 @@ ApplicationWindow {
                         Text {
                             anchors.fill: parent
                             anchors.margins: 11
-                            text: "Start with 25 for a representative proof. Leave the limit blank only when you intend to snapshot every discovered file."
+                            text: "Use a cap for a representative batch, or leave it blank to include the whole selected folder."
                             color: root.muted
                             font.pixelSize: 10
                             lineHeight: 1.3
                             wrapMode: Text.WordWrap
                             verticalAlignment: Text.AlignVCenter
                         }
+                    }
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 52
+                    radius: 7
+                    color: root.ink
+                    border.color: root.line
+                    visible: newIntakeDialog.scopeMode !== "general"
+                    Text {
+                        anchors.fill: parent
+                        anchors.margins: 11
+                        text: newIntakeDialog.scopeMode === "granular"
+                              ? "Choose one or more exact files from an approved Inbox location. No neighboring files are included."
+                              : "Total scope: " + backend.defaultIntakeRoot
+                                + " · every currently discovered regular file · no item cap"
+                        color: root.muted
+                        font.pixelSize: 10
+                        lineHeight: 1.3
+                        wrapMode: Text.WordWrap
+                        verticalAlignment: Text.AlignVCenter
                     }
                 }
                 Rectangle {
@@ -982,17 +1150,28 @@ ApplicationWindow {
                     onClicked: newIntakeDialog.close()
                 }
                 PrimaryButton {
-                    text: "Create snapshot"
+                    objectName: "createIntakeScopeButton"
+                    text: newIntakeDialog.scopeMode === "granular"
+                          ? "Choose files…"
+                          : newIntakeDialog.scopeMode === "total"
+                            ? "Create total snapshot"
+                            : "Create snapshot"
                     enabled: !backend.busy
-                             && newIntakeRoot.text.trim().length > 0
-                             && (newIntakeLimit.text.length === 0
-                                 || newIntakeLimit.acceptableInput)
+                             && (newIntakeDialog.scopeMode !== "general"
+                                 || (newIntakeRoot.text.trim().length > 0
+                                     && (newIntakeLimit.text.length === 0
+                                         || newIntakeLimit.acceptableInput)))
                     onClicked: {
-                        backend.createIntakeJob(
-                            newIntakeRoot.text,
-                            newIntakeLimit.text
-                        )
-                        newIntakeDialog.close()
+                        if (newIntakeDialog.scopeMode === "granular") {
+                            selectedIntakeFiles.open()
+                        } else {
+                            backend.createScopedIntakeJob(
+                                newIntakeDialog.scopeMode,
+                                newIntakeRoot.text,
+                                newIntakeLimit.text
+                            )
+                            newIntakeDialog.close()
+                        }
                     }
                 }
             }

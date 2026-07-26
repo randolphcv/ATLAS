@@ -531,6 +531,70 @@ class DesktopControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.selectedIntakeJob["progressLabel"], "100%")
         self.assertEqual(self.controller.intakeSummary["active"], 0)
 
+    def test_total_intake_defaults_to_the_approved_root_without_a_cap(
+        self,
+    ) -> None:
+        second = self.source.parent / "total-second.txt"
+        second.write_text("second total-scope file", encoding="utf-8")
+        loop = QEventLoop()
+        timed_out = False
+
+        def stop_when_finished() -> None:
+            if not self.controller.busy:
+                loop.quit()
+
+        def timeout() -> None:
+            nonlocal timed_out
+            timed_out = True
+            loop.quit()
+
+        self.controller.busyChanged.connect(stop_when_finished)
+        QTimer.singleShot(10000, timeout)
+        self.controller.createScopedIntakeJob(
+            "total",
+            str(self.root / "not-the-approved-root"),
+            "1",
+        )
+        loop.exec()
+
+        self.assertFalse(timed_out)
+        self.assertEqual(
+            self.controller.selectedIntakeJob["sourceRoot"],
+            str(self.source.parent.resolve()),
+        )
+        self.assertEqual(
+            self.controller.selectedIntakeJob["itemLimitLabel"],
+            "All discovered files",
+        )
+        self.assertEqual(
+            self.controller.selectedIntakeJob["pendingCount"],
+            2,
+        )
+        connection = sqlite3.connect(self.db)
+        try:
+            item_limit, requested_by = connection.execute(
+                """
+                SELECT item_limit, requested_by FROM intake_jobs
+                ORDER BY created_at DESC LIMIT 1
+                """
+            ).fetchone()
+        finally:
+            connection.close()
+        self.assertIsNone(item_limit)
+        self.assertEqual(requested_by, "human total intake")
+
+    def test_analysis_readiness_exposes_total_general_and_granular_scopes(
+        self,
+    ) -> None:
+        readiness = self.controller.analysisReadiness
+        self.assertEqual(readiness["assets"], 1)
+        self.assertEqual(readiness["generalScopes"]["other"]["assets"], 1)
+        self.assertEqual(readiness["selectedScope"]["assets"], 1)
+        self.assertEqual(
+            readiness["selectedAssetId"],
+            self.cataloged.asset_id,
+        )
+
     def test_selected_folder_intake_recurses_with_limit(self) -> None:
         nested = self.source.parent / "chosen-folder" / "nested"
         nested.mkdir(parents=True)
@@ -652,7 +716,15 @@ window = engine.rootObjects()[0]
 composer = window.findChild(QObject, "shellBeaconComposer")
 dock = window.findChild(QObject, "beaconShellDock")
 stage = window.findChild(QObject, "analysisStageLine")
-if composer is None or dock is None or stage is None:
+intake_scope = window.findChild(QObject, "newIntakeDialog")
+analysis_scope = window.findChild(QObject, "localAnalysisDialog")
+if (
+    composer is None
+    or dock is None
+    or stage is None
+    or intake_scope is None
+    or analysis_scope is None
+):
     raise SystemExit(31)
 
 def navigate():
@@ -672,6 +744,12 @@ def verify():
         return
     if controller.selectedBeaconThread.get("subject") != "Persistent shell thread":
         app.exit(34)
+        return
+    if intake_scope.property("scopeMode") != "total":
+        app.exit(35)
+        return
+    if analysis_scope.property("scopeMode") != "total":
+        app.exit(36)
         return
     app.exit(0)
 

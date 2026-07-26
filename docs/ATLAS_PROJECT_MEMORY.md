@@ -9,6 +9,11 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
 
 ### Next phase
 
+- Analysis job `c687374f-97c0-4147-8a73-ce9d81623a22` is the current live
+  production job. It was still `running` with 128 publishable items complete,
+  92 pending, one running, and zero failures when the 0.22.0 candidate was
+  packaged. Do not stop Beacon or activate the candidate until this job is
+  terminal; re-check durable state rather than relying on this progress count.
 - Intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` completed all 157
   snapshotted items with no failures. Two newer intake jobs also completed;
   the latest, `38fc99f1-cc62-41ef-929c-a89b3c1d11c6`, completed 500/500.
@@ -27,11 +32,44 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
 - GitHub CLI 2.96.0 is authenticated as `randolphcv`, `.gitignore` is
   hardened, and the tracked-history audit found no detected secrets, runtime
   databases, executables, model files, archives, or personal-media binaries.
-- All 113 unit tests pass; two real-FFprobe acceptance tests remain explicitly
-  skipped unless `BEACON_FFPROBE` is supplied.
+- All 119 tests pass, including real-FFprobe acceptance.
 - Run representative live Beacon query testing.
 - The canonical starting prompt is
   `docs\NEXT_PHASE_HANDOFF_PROMPT.md`.
+
+### Beacon 0.22.0 scalable one-shot scopes
+
+- Intake and Analysis now share an explicit **Granular / General / Total**
+  hierarchy. Total is the visible default for both workflows.
+- Total Intake creates an uncapped durable click-time snapshot of every
+  regular file currently below the configured approved Inbox root. General
+  retains an approved recursive folder and optional cap; Granular retains
+  exact multi-file selection.
+- Total Analysis snapshots every currently eligible unanalyzed catalog asset.
+  General can isolate visual, audio-only, camera RAW, or other bounded content;
+  Granular targets the current catalog asset. Existing-candidate reanalysis
+  remains explicit.
+- All scopes preserve deterministic membership, restart/retry behavior,
+  project/support-file exclusions, local-only inference, and the existing
+  managed-operation boundaries. No schema migration was required.
+- Continuous open operation is deliberately separate from scope. Its next
+  milestone must add copy stability, burst coalescing, backpressure,
+  disconnect/restart recovery, intake-to-analysis orchestration, and an
+  explicit foreground/background lifecycle without enlarging active snapshots.
+- All 119 tests pass, including real FFprobe acceptance. The rendered native
+  Analysis dialog fits at 1360x840 with Total selected by default. Packaged
+  0.22.0 isolated smoke exits 0 and the capability audit reports zero blocked
+  files.
+- Candidate executable:
+  `C:\Development\ATLAS\dist\releases\0.22.0\ATLAS Beacon\ATLAS Beacon.exe`.
+  SHA-256:
+  `54a455fa4c70adba18ade5e23a0aac1f48206c292d5f8c64c65297eacc82116f`.
+- Candidate ZIP:
+  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.22.0-win64.zip`.
+  SHA-256:
+  `6831c560870764a872132a91e8d2f507df33e677a044e0de40efb5791e94e23f`.
+- The candidate is packaged but not activated because the live 0.21.5 process
+  owns an active production analysis job.
 
 ### Beacon 0.21.5 analysis failure closure
 

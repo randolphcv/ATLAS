@@ -107,16 +107,33 @@
 - native Overview progress, current-path, cancel, resume, and retry controls
 - app-close pause and interrupted-session recovery without repeating completed
   items
-- bounded 25-file default with an explicit blank field required for full scope
+- bounded representative batches plus uncapped deterministic snapshots
 - exact packaged synthetic completion with source hashes unchanged
 
-## Next — bounded live Inbox pilot
+## Completed — scalable one-shot scope controls
 
-- create, but do not exceed, a 25-file `J:\Inbox` snapshot
-- start, cancel between files, and resume the same durable job
-- confirm no completed item is repeated and no source path is changed
-- reconcile asset/location/event deltas and schema-7 integrity
-- stop for human review before full-Inbox processing or AI analysis
+- shared Granular, General, and Total scope language for Intake and Analysis
+- Total as the visible default for normal full-scope operation
+- uncapped Total Intake against the configured approved Inbox root
+- Total Analysis across every currently eligible unanalyzed catalog asset
+- General folder/cap Intake and visual, audio, RAW, or other Analysis scopes
+- Granular exact-file Intake and current-catalog-asset Analysis
+- no schema change, silent dynamic scope growth, cloud fallback, or watcher
+- durable snapshot, cancel, retry, restart, and inference-lane boundaries
+  preserved
+
+## Next — continuous open operation
+
+- observe only configured approved roots while Beacon remains open
+- require copy stability before creating ordinary intake job items
+- debounce and coalesce arrival bursts without mutating an existing snapshot
+- enforce backpressure and one active intake runner
+- start Analysis only after the corresponding Intake scope is terminal and
+  the local inference lane is free
+- persist watcher checkpoints, drive-disconnected state, retry policy, and
+  shutdown/restart recovery
+- define foreground, taskbar, and eventual Windows background lifecycle
+  separately from filesystem correctness
 
 ## Next — repeatable local intelligence
 

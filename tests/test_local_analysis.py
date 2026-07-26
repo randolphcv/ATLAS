@@ -156,6 +156,86 @@ class LocalAnalysisJobTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_general_scopes_partition_total_analysis_without_batch_caps(
+        self,
+    ) -> None:
+        image = self.sources / "frame.jpg"
+        image.write_bytes(b"synthetic image scope")
+        raw = self.sources / "negative.cr3"
+        raw.write_bytes(b"synthetic raw scope")
+        audio = self.sources / "recording.wav"
+        audio.write_bytes(b"synthetic audio scope")
+        for source in (image, raw, audio):
+            catalog_file(
+                source,
+                self.db,
+                stability_seconds=0,
+                include_media_probe=False,
+                include_thumbnail_generation=False,
+            )
+        connection = sqlite3.connect(self.db)
+        try:
+            connection.execute(
+                """
+                UPDATE assets SET media_metadata_json=?
+                WHERE id=(
+                    SELECT asset_id FROM locations WHERE path=?
+                )
+                """,
+                (
+                    json.dumps(
+                        {
+                            "streams": [
+                                {
+                                    "codec_type": "audio",
+                                    "codec_name": "pcm_s16le",
+                                }
+                            ]
+                        }
+                    ),
+                    str(audio.resolve()),
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        self.assertEqual(analysis_scope_preview(self.db)["assets"], 5)
+        self.assertEqual(
+            analysis_scope_preview(self.db, scope_kind="visual")["assets"],
+            2,
+        )
+        self.assertEqual(
+            analysis_scope_preview(self.db, scope_kind="raw")["assets"],
+            1,
+        )
+        self.assertEqual(
+            analysis_scope_preview(self.db, scope_kind="audio")["assets"],
+            1,
+        )
+        self.assertEqual(
+            analysis_scope_preview(self.db, scope_kind="other")["assets"],
+            2,
+        )
+
+        job_id = create_local_analysis_job(
+            self.db,
+            model="fixture-model",
+            scope_kind="audio",
+        )
+        connection = sqlite3.connect(self.db)
+        try:
+            rows = connection.execute(
+                """
+                SELECT source_path FROM local_analysis_items
+                WHERE job_id=?
+                """,
+                (job_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        self.assertEqual(rows, [(str(audio.resolve()),)])
+
     def test_support_files_are_excluded_from_analysis_scope(self) -> None:
         sidecar = self.sources / "camera-settings.xmp"
         sidecar.write_text("<x:xmpmeta>fixture</x:xmpmeta>", encoding="utf-8")

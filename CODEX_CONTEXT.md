@@ -35,15 +35,18 @@ history after Connor explicitly accepted the audited machine-specific paths
 in tracked documentation and screenshots. Local `main` tracks `origin/main`;
 do not rewrite the published history.
 
-The next product priority is grounded live Beacon query testing: evaluate
-usefulness, exact and semantic retrieval, requested counts, distinct results,
-clarification, explicit no-search behavior, correction memory, and attachment
-of only Qwen-selected grounded cards.
+Beacon 0.22.0 is packaged as a verified candidate with shared
+Granular / General / Total scope controls for Intake and Analysis. Total is
+the default uncapped click-time snapshot. Do not activate it while the current
+0.21.5 production analysis job is running. After that job is terminal,
+activate and verify the candidate, then resume grounded live Beacon query
+testing.
 
 The handed-off 157-item intake and two newer intake jobs completed. The latest
-analysis job is terminal `complete` with 488 publishable results, two excluded
-editable project files, and zero failures. Beacon 0.21.5 is live with grounded
-abstract-visual/audio evidence handling and project-file scope exclusions.
+completed analysis job has 488 publishable results, two excluded editable
+project files, and zero failures. A newer 221-item production analysis job,
+`c687374f-97c0-4147-8a73-ce9d81623a22`, was still running when the 0.22.0
+candidate was packaged. Beacon 0.21.5 remains live until that job is terminal.
 
 ## How Connor Likes Codex to Work
 

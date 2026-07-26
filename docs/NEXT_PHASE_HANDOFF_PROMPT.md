@@ -25,6 +25,9 @@ Before changing anything:
 
 Current verified baseline:
 
+- Beacon 0.22.0 is packaged and isolated-smoke verified but is not active.
+  It adds shared Granular / General / Total scope controls, with Total as the
+  default uncapped click-time snapshot for Intake and Analysis;
 - Beacon 0.21.5 is live from
   `C:\Development\ATLAS\dist\releases\0.21.5\ATLAS Beacon\ATLAS Beacon.exe`;
 - schema 16 is healthy with zero foreign-key violations;
@@ -36,7 +39,10 @@ Current verified baseline:
 - latest analysis job `ea673da9-6ed6-4e18-a83a-8b4cc9df2e37` is terminal
   `complete` with 488 publishable results, two excluded project files, and
   zero failures;
-- all 116 tests pass, including real FFprobe acceptance;
+- newer analysis job `c687374f-97c0-4147-8a73-ce9d81623a22` was still
+  `running` when 0.22.0 was packaged; re-check it and do not stop Beacon or
+  activate the candidate until it is terminal;
+- all 119 tests pass, including real FFprobe acceptance;
 - `main` includes the immediate native-video-preview correction;
 - the public repository is live at `https://github.com/randolphcv/ATLAS`,
   and local `main` tracks `origin/main`; do not rewrite published history;
@@ -47,13 +53,16 @@ Current verified baseline:
 
 Next priorities, in order:
 
-1. Run representative Beacon conversation tests against the live catalog.
+1. When analysis job `c687374f-97c0-4147-8a73-ce9d81623a22` is terminal,
+   re-check integrity and foreign keys, activate the verified 0.22.0 release,
+   and verify the Total defaults plus one synthetic/safe representative scope.
+2. Run representative Beacon conversation tests against the live catalog.
    Cover exact retrieval, semantic retrieval, requested result counts,
    distinct/unique results, explicit no-search turns, relevant clarification,
    correction memory, and attachment of only Qwen-selected grounded cards.
    Record the prompt, observed cards, durable worker state, and whether the
    response was actually useful. Diagnose failures before changing behavior.
-2. Maintain the shared Markdown bridge after meaningful milestones. Ultron
+3. Maintain the shared Markdown bridge after meaningful milestones. Ultron
    writes only `J:\ULTRON_CONTEXT.md`, reads Jarvis's file without editing it,
    and uses atomic same-directory replacement.
 

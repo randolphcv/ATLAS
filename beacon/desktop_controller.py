@@ -56,9 +56,11 @@ from .intake import (
     run_intake_job,
 )
 from .local_analysis import (
+    NON_CONTENT_PROJECT_EXTENSIONS,
     LocalAnalysisRunResult,
-    analysis_scope_preview,
+    analysis_scope_previews,
     create_local_analysis_job,
+    create_selected_local_analysis_job,
     list_local_analysis_jobs,
     local_runtime_status,
     recover_local_analysis_jobs,
@@ -233,12 +235,14 @@ class _IntakeCreateWorker(QRunnable):
         source_root: Path,
         allowed_roots: tuple[Path, ...],
         item_limit: int | None,
+        requested_by: str = "human",
     ) -> None:
         super().__init__()
         self.db_path = db_path
         self.source_root = source_root
         self.allowed_roots = allowed_roots
         self.item_limit = item_limit
+        self.requested_by = requested_by
         self.signals = _IntakeCreateSignals()
 
     @Slot()
@@ -249,7 +253,7 @@ class _IntakeCreateWorker(QRunnable):
                 source_root=self.source_root,
                 allowed_roots=self.allowed_roots,
                 item_limit=self.item_limit,
-                requested_by="human",
+                requested_by=self.requested_by,
             )
             self.signals.succeeded.emit(job_id)
         except Exception as error:
@@ -1257,6 +1261,50 @@ class DesktopController(QObject):
 
     @Slot(str, str)
     def createIntakeJob(self, source_root: str, limit_text: str) -> None:
+        self._create_intake_snapshot(
+            source_root,
+            limit_text,
+            requested_by="human general intake",
+        )
+
+    @Slot(str, str, str)
+    def createScopedIntakeJob(
+        self,
+        scope_mode: str,
+        source_root: str,
+        limit_text: str,
+    ) -> None:
+        normalized_mode = scope_mode.strip().lower()
+        if normalized_mode == "total":
+            if not self.defaultIntakeRoot:
+                self._set_status(
+                    "No approved total-intake root is configured.", "error"
+                )
+                return
+            self._create_intake_snapshot(
+                self.defaultIntakeRoot,
+                "",
+                requested_by="human total intake",
+            )
+            return
+        if normalized_mode == "general":
+            self._create_intake_snapshot(
+                source_root,
+                limit_text,
+                requested_by="human general intake",
+            )
+            return
+        self._set_status(
+            "Choose exact files for a granular intake.", "error"
+        )
+
+    def _create_intake_snapshot(
+        self,
+        source_root: str,
+        limit_text: str,
+        *,
+        requested_by: str,
+    ) -> None:
         if self._busy:
             return
         try:
@@ -1277,6 +1325,7 @@ class DesktopController(QObject):
             Path(source_root.strip()),
             self.settings.allowed_intake_roots,
             item_limit,
+            requested_by,
         )
         self._workers.append(worker)
         worker.signals.succeeded.connect(
@@ -1427,10 +1476,62 @@ class DesktopController(QObject):
     @Slot()
     def refreshAnalysisReadiness(self) -> None:
         runtime = local_runtime_status()
-        scope = analysis_scope_preview(self.settings.db_path)
-        full_scope = analysis_scope_preview(
+        scopes = analysis_scope_previews(self.settings.db_path)
+        full_scopes = analysis_scope_previews(
             self.settings.db_path, include_analyzed=True
         )
+        scope = scopes["all"]
+        full_scope = full_scopes["all"]
+        general_scopes: dict[str, dict[str, Any]] = {}
+        for scope_kind in ("visual", "audio", "other", "raw"):
+            scoped = scopes[scope_kind]
+            full_scoped = full_scopes[scope_kind]
+            general_scopes[scope_kind] = {
+                **scoped,
+                "assetsLabel": f"{scoped['assets']:,}",
+                "bytesLabel": format_bytes(int(scoped["bytes"])),
+                "visualLabel": f"{scoped['visual']:,}",
+                "audioLabel": f"{scoped['audio']:,}",
+                "otherLabel": f"{scoped['other']:,}",
+                "allAssetsLabel": f"{full_scoped['assets']:,}",
+                "allBytesLabel": format_bytes(int(full_scoped["bytes"])),
+                "allVisualLabel": f"{full_scoped['visual']:,}",
+                "allAudioLabel": f"{full_scoped['audio']:,}",
+                "allOtherLabel": f"{full_scoped['other']:,}",
+                "allAssets": int(full_scoped["assets"]),
+                "allBytes": int(full_scoped["bytes"]),
+            }
+        selected_id = str(self._selected_asset.get("id") or "")
+        selected_path = Path(
+            str(self._selected_asset.get("primary_path") or "")
+        )
+        selected_excluded = (
+            selected_path.suffix.lower() in NON_CONTENT_PROJECT_EXTENSIONS
+        )
+        selected_bucket = str(
+            self._selected_asset.get("previewKind") or "other"
+        )
+        if selected_bucket in {"image", "video"}:
+            selected_bucket = "visual"
+        elif selected_bucket != "audio":
+            selected_bucket = "other"
+        selected_scope = {
+            "assets": 1 if selected_id else 0,
+            "assetsLabel": "1" if selected_id else "0",
+            "bytesLabel": (
+                format_bytes(int(self._selected_asset.get("size_bytes") or 0))
+                if selected_id else "0 B"
+            ),
+            "visualLabel": (
+                "1" if selected_id and selected_bucket == "visual" else "0"
+            ),
+            "audioLabel": (
+                "1" if selected_id and selected_bucket == "audio" else "0"
+            ),
+            "otherLabel": (
+                "1" if selected_id and selected_bucket == "other" else "0"
+            ),
+        }
         jobs = list_local_analysis_jobs(self.settings.db_path, limit=1)
         latest_job = jobs[0] if jobs else None
         analysis_total = int(
@@ -1465,6 +1566,14 @@ class DesktopController(QObject):
             "allVisualLabel": f"{full_scope['visual']:,}",
             "allAudioLabel": f"{full_scope['audio']:,}",
             "allOtherLabel": f"{full_scope['other']:,}",
+            "generalScopes": general_scopes,
+            "selectedScope": selected_scope,
+            "selectedAssetId": selected_id,
+            "selectedAssetLabel": str(
+                self._selected_asset.get("filename")
+                or "No catalog asset selected"
+            ),
+            "selectedAssetExcluded": selected_excluded,
             "analysisHasJob": bool(latest_job),
             "analysisJobId": (
                 str(latest_job.get("id") or "") if latest_job else ""
@@ -1524,14 +1633,37 @@ class DesktopController(QObject):
             and scope["assets"] > 0,
             "canReanalyze": runtime.available and bool(models)
             and full_scope["assets"] > 0,
+            "canAnalyzeSelected": (
+                runtime.available
+                and bool(models)
+                and bool(selected_id)
+                and not selected_excluded
+            ),
         }
         self.analysisReadinessChanged.emit()
 
-    @Slot(str, bool)
+    @Slot(str, str, str, bool)
     def startLocalCatalogAnalysis(
-        self, model: str, include_analyzed: bool
+        self,
+        model: str,
+        scope_mode: str,
+        scope_kind: str,
+        include_analyzed: bool,
     ) -> None:
         if self._busy:
+            return
+        latest_jobs = list_local_analysis_jobs(
+            self.settings.db_path, limit=1
+        )
+        if (
+            latest_jobs
+            and str(latest_jobs[0].get("state") or "")
+            in {"queued", "running"}
+        ):
+            self._set_status(
+                "Finish or cancel the active analysis before starting another.",
+                "error",
+            )
             return
         runtime = local_runtime_status()
         if not runtime.available:
@@ -1545,14 +1677,57 @@ class DesktopController(QObject):
             self._set_status("Choose an installed local model.", "error")
             self.refreshAnalysisReadiness()
             return
+        normalized_mode = scope_mode.strip().lower()
+        normalized_kind = scope_kind.strip().lower()
         try:
-            job_id = create_local_analysis_job(
-                self.settings.db_path,
-                model=model,
-                include_analyzed=include_analyzed,
-                requested_by="human",
-            )
-        except ValueError as error:
+            if normalized_mode == "granular":
+                selected_id = str(self._selected_asset.get("id") or "")
+                if not selected_id:
+                    raise ValueError(
+                        "Select a catalog asset for granular analysis."
+                    )
+                selected_path = Path(
+                    str(self._selected_asset.get("primary_path") or "")
+                )
+                if (
+                    selected_path.suffix.lower()
+                    in NON_CONTENT_PROJECT_EXTENSIONS
+                ):
+                    raise ValueError(
+                        "Editable Premiere and After Effects projects stay "
+                        "cataloged but are excluded from contextual analysis."
+                    )
+                job_id = create_selected_local_analysis_job(
+                    self.settings.db_path,
+                    asset_ids=[selected_id],
+                    model=model,
+                    requested_by="human granular analysis",
+                )
+            elif normalized_mode == "general":
+                if normalized_kind not in {
+                    "visual", "audio", "other", "raw"
+                }:
+                    raise ValueError("Choose a general analysis category.")
+                job_id = create_local_analysis_job(
+                    self.settings.db_path,
+                    model=model,
+                    include_analyzed=include_analyzed,
+                    scope_kind=normalized_kind,
+                    requested_by=(
+                        f"human general {normalized_kind} analysis"
+                    ),
+                )
+            elif normalized_mode == "total":
+                job_id = create_local_analysis_job(
+                    self.settings.db_path,
+                    model=model,
+                    include_analyzed=include_analyzed,
+                    scope_kind="all",
+                    requested_by="human total analysis",
+                )
+            else:
+                raise ValueError("Choose an analysis scope.")
+        except (LookupError, ValueError) as error:
             self._set_status(str(error), "error")
             return
         self._busy = True
