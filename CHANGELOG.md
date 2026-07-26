@@ -10,6 +10,10 @@
   verified audio stream instead of failing as visually unreadable content.
 - When Qwen returns malformed structured analysis, the retry now gives Qwen
   its rejected output so the agent can reason over and correct its own answer.
+- Local content analysis uses a 32K context window so rich transcripts,
+  spectrogram context, schema constraints, and corrective turns remain intact.
+- Local endpoint failures preserve bounded HTTP response details, including
+  explicit context-limit diagnostics, instead of collapsing to a generic 400.
 - Treat Qwen's initial request goal as a revisable working interpretation.
   When a later Qwen tool decision conflicts, a focused Qwen reconciliation pass
   now revises or confirms the goal instead of allowing code to veto the action.

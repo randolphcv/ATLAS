@@ -405,6 +405,10 @@ class LocalAnalysisJobTests(unittest.TestCase):
         self.assertEqual(result["evidence_mode"], "text_content")
         self.assertEqual(request.call_count, 2)
         retry_messages = request.call_args_list[1].args[2]["messages"]
+        self.assertEqual(
+            request.call_args_list[1].args[2]["options"]["num_ctx"],
+            32768,
+        )
         self.assertEqual(retry_messages[-2]["role"], "assistant")
         self.assertEqual(retry_messages[-2]["content"], "{not-json")
         self.assertIn("Correct your own output", retry_messages[-1]["content"])

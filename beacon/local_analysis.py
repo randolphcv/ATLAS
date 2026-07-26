@@ -186,6 +186,15 @@ def _request_json(
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             value = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        try:
+            detail = error.read().decode("utf-8", errors="replace").strip()
+        except OSError:
+            detail = ""
+        suffix = f": {detail[:1000]}" if detail else ""
+        raise ConnectionError(
+            f"local model endpoint returned HTTP {error.code}{suffix}"
+        ) from error
     except (OSError, UnicodeError, json.JSONDecodeError, urllib.error.URLError) as error:
         raise ConnectionError(f"local model endpoint unavailable: {error}") from error
     if not isinstance(value, dict):
@@ -899,6 +908,7 @@ def _default_analyzer(
                         "stream": False,
                         "options": {
                             "temperature": 0 if attempt == 1 else 0.1,
+                            "num_ctx": 32768,
                             "num_predict": 4096,
                         },
                     },
