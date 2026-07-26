@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Editable Premiere Pro and After Effects project files remain cataloged and
+  searchable but are excluded from contextual content inference.
+- Qwen now receives an explicit grounded contract for abstract visual samples
+  and audio-derived spectrograms, preventing decodable abstract MP4s and
+  near-black audio-bearing clips from failing on evidence-mode disagreement.
 - Ordinary non-Apple 59.94/60 fps H.264 MP4 files now play directly instead
   of being misclassified as slow-motion media and blocked on transcoding.
 - Compatibility previews never suppress the readable source: native playback

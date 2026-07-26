@@ -1,5 +1,53 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-07-26 Beacon 0.21.5 analysis failure closure
+
+The latest 490-item analysis job
+`ea673da9-6ed6-4e18-a83a-8b4cc9df2e37` is terminal `complete`: 488
+publishable results, two excluded production project files, zero failures,
+and zero pending items.
+
+The two non-content failures were an After Effects `.aep` project and a
+Premiere Pro `.prproj` project. Beacon now excludes `.aep`, `.aepx`, and
+`.prproj` from ordinary contextual-analysis scopes while retaining catalog and
+search identity. Explicitly selected project files also terminalize as
+excluded without calling Qwen.
+
+The four MP4 failures were evidence-contract mismatches rather than decoder
+failures. Three abstract but decodable clips now instruct Qwen to describe
+grounded form, color, light, texture, composition, and movement as
+`visual_content`. One uniformly near-black clip correctly fell through to
+audio, and its spectrogram is now labeled as audio-derived supplemental
+evidence rather than a visual scene. The retry produced three grounded visual
+candidates and one grounded audio candidate.
+
+The existing checksum-verified placement policy then moved only those four
+newly analyzed MP4s from `J:\Inbox\COTR\...` to their matching preserved
+`J:\Projects\COTR\...` hierarchy. The excluded project files remained
+cataloged in place.
+
+Pre-retry backup:
+
+- path:
+  `C:\ProgramData\ATLAS\Beacon\backups\beacon-20260726T175508.834916Z.db`
+- SHA-256:
+  `7e80a87b721d30badf4ad11a5c29b3b256784fe4af00bb1fd2dce20713785a8c`
+- integrity: `ok`
+
+All 116 tests pass, including real FFprobe acceptance. Packaged 0.21.5 smoke
+exits 0. Live release:
+
+- executable:
+  `C:\Development\ATLAS\dist\releases\0.21.5\ATLAS Beacon\ATLAS Beacon.exe`
+- executable SHA-256:
+  `abb116c179318bfe2ca45362032cf01e1cff059d0a4e7b7e57456d8aba67ec0b`
+- ZIP:
+  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.21.5-win64.zip`
+- ZIP SHA-256:
+  `145b8bcaa24d84f2704f7c309a7535c694b078db9b855870e93fcf2102d5a578`
+
+Post-activation schema 16 integrity is `ok` with zero foreign-key violations.
+
 ## 2026-07-26 GitHub preparation and Ultron/Jarvis bridge
 
 The live safety baseline was rechecked before changes. `main` was clean at

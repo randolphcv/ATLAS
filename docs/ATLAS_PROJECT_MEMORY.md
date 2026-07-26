@@ -13,9 +13,8 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
   snapshotted items with no failures. Two newer intake jobs also completed;
   the latest, `38fc99f1-cc62-41ef-929c-a89b3c1d11c6`, completed 500/500.
 - The latest analysis job,
-  `ea673da9-6ed6-4e18-a83a-8b4cc9df2e37`, is terminal `partial` with 484
-  publishable results and six failures. No intake or analysis job was active
-  during the 2026-07-26 next-phase verification.
+  `ea673da9-6ed6-4e18-a83a-8b4cc9df2e37`, is terminal `complete` with 488
+  publishable results, two excluded project files, and zero failures.
 - The Ultron/Jarvis Markdown bridge is established. Ultron atomically owns
   `J:\ULTRON_CONTEXT.md`; Jarvis atomically owns
   `J:\JARVIS_CONTEXT.md`. Ultron read and acknowledged
@@ -33,6 +32,34 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
 - Run representative live Beacon query testing.
 - The canonical starting prompt is
   `docs\NEXT_PHASE_HANDOFF_PROMPT.md`.
+
+### Beacon 0.21.5 analysis failure closure
+
+- Analysis job `ea673da9-6ed6-4e18-a83a-8b4cc9df2e37` completed in place:
+  488 publishable results, two excluded editable production project files,
+  zero failures, and zero pending items.
+- `.aep`, `.aepx`, and `.prproj` assets remain cataloged and searchable but
+  are excluded from ordinary contextual-analysis scopes. Targeted jobs also
+  exclude them without a model call.
+- Qwen now receives a binding evidence contract for decodable abstract visual
+  samples and audio-derived spectrograms. Three abstract MP4s completed as
+  grounded `visual_content`; one uniformly near-black MP4 correctly completed
+  as grounded `audio_content`.
+- The existing checksum-verified placement policy moved only the four newly
+  analyzed MP4s from their preserved `J:\Inbox\COTR\...` hierarchy to the
+  matching `J:\Projects\COTR\...` hierarchy. The excluded project files
+  remained cataloged in place.
+- Verified pre-retry backup:
+  `C:\ProgramData\ATLAS\Beacon\backups\beacon-20260726T175508.834916Z.db`,
+  SHA-256
+  `7e80a87b721d30badf4ad11a5c29b3b256784fe4af00bb1fd2dce20713785a8c`.
+- All 116 tests pass, including real FFprobe acceptance. Packaged 0.21.5
+  smoke exits 0. The live desktop is:
+  `C:\Development\ATLAS\dist\releases\0.21.5\ATLAS Beacon\ATLAS Beacon.exe`.
+  Executable SHA-256:
+  `abb116c179318bfe2ca45362032cf01e1cff059d0a4e7b7e57456d8aba67ec0b`.
+  ZIP SHA-256:
+  `145b8bcaa24d84f2704f7c309a7535c694b078db9b855870e93fcf2102d5a578`.
 
 ### Beacon 0.21.4 immediate native video preview
 

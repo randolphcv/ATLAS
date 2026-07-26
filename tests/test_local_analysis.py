@@ -168,6 +168,13 @@ class LocalAnalysisJobTests(unittest.TestCase):
         )
         preview_cache.parent.mkdir(parents=True)
         preview_cache.write_bytes(b"generated preview cache")
+        project_files = [
+            self.sources / "edit.prproj",
+            self.sources / "graphics.aep",
+            self.sources / "graphics-text.aepx",
+        ]
+        for project_file in project_files:
+            project_file.write_bytes(b"editable production project fixture")
         catalog_file(
             sidecar,
             self.db,
@@ -182,8 +189,35 @@ class LocalAnalysisJobTests(unittest.TestCase):
             include_media_probe=False,
             include_thumbnail_generation=False,
         )
+        for project_file in project_files:
+            catalog_file(
+                project_file,
+                self.db,
+                stability_seconds=0,
+                include_media_probe=False,
+                include_thumbnail_generation=False,
+            )
         preview = analysis_scope_preview(self.db)
         self.assertEqual(preview["assets"], 2)
+        job_id = create_local_analysis_job(self.db, model="fixture-model")
+        connection = sqlite3.connect(self.db)
+        try:
+            job_paths = [
+                row[0]
+                for row in connection.execute(
+                    """
+                    SELECT source_path FROM local_analysis_items
+                    WHERE job_id=? ORDER BY source_path
+                    """,
+                    (job_id,),
+                )
+            ]
+        finally:
+            connection.close()
+        self.assertEqual(
+            {Path(path).suffix.lower() for path in job_paths},
+            {".txt"},
+        )
 
     def test_selected_analysis_job_contains_only_explicit_assets(self) -> None:
         connection = sqlite3.connect(self.db)
@@ -412,6 +446,116 @@ class LocalAnalysisJobTests(unittest.TestCase):
         self.assertEqual(retry_messages[-2]["role"], "assistant")
         self.assertEqual(retry_messages[-2]["content"], "{not-json")
         self.assertIn("Correct your own output", retry_messages[-1]["content"])
+
+    def test_abstract_visual_content_is_reinforced_on_retry(self) -> None:
+        source = self.sources / "abstract.jpg"
+        source.write_bytes(b"source fixture")
+        thumbnail = self.root / "abstract-frame.jpg"
+        Image.new("RGB", (80, 48), "#392B6E").save(thumbnail)
+        unreadable = {
+            "title": "Unreadable Visual",
+            "description": "The supplied image was treated as unreadable.",
+            "content_observations": ["No subject was recognized."],
+            "evidence_mode": "unreadable",
+            "media_category": "abstract",
+            "tags": ["abstract"],
+            "privacy_flags": [],
+            "organization_suggestion": "Projects/Abstract",
+            "stock_metadata": {},
+            "confidence": 0.3,
+        }
+        valid = {
+            **unreadable,
+            "title": "Abstract Violet Light",
+            "description": "Abstract violet forms and soft light fill the frame.",
+            "content_observations": [
+                "Soft violet forms create a dark abstract composition."
+            ],
+            "evidence_mode": "visual_content",
+            "confidence": 0.7,
+        }
+        with patch(
+            "beacon.local_analysis._request_json",
+            side_effect=[
+                {"message": {"content": json.dumps(unreadable)}},
+                {"message": {"content": json.dumps(valid)}},
+            ],
+        ) as request:
+            result = _default_analyzer(
+                "http://127.0.0.1:11434",
+                "fixture-model",
+                {
+                    "source_path": str(source),
+                    "media_metadata": {"beacon_kind": "image"},
+                    "thumbnail_path": str(thumbnail),
+                    "size_bytes": source.stat().st_size,
+                },
+            )
+
+        self.assertEqual(result["evidence_mode"], "visual_content")
+        retry_system_prompt = request.call_args_list[1].args[2]["messages"][0][
+            "content"
+        ]
+        self.assertIn(
+            "Abstract, dark, blurred, defocused, or textural imagery",
+            retry_system_prompt,
+        )
+
+    def test_audio_spectrogram_is_not_labeled_as_visual_evidence(self) -> None:
+        source = self.sources / "black-with-audio.mp4"
+        source.write_bytes(b"source fixture")
+        temporary_root = self.root / "audio-context"
+        temporary_root.mkdir()
+        spectrum = temporary_root / "audio-spectrum.png"
+        Image.new("RGB", (64, 48), "#A36B35").save(spectrum)
+        valid = {
+            "title": "Audio Content",
+            "description": "Audio-derived content from the supplied evidence.",
+            "content_observations": ["The audio spectrum contains changing energy."],
+            "evidence_mode": "audio_content",
+            "media_category": "audio",
+            "tags": ["audio"],
+            "privacy_flags": [],
+            "organization_suggestion": "Audio",
+            "stock_metadata": {},
+            "confidence": 0.7,
+        }
+        context = {
+            "expected_evidence_mode": "audio_content",
+            "spectrogram": "full-file local frequency/time visualization",
+        }
+        with (
+            patch(
+                "beacon.local_analysis._prepare_media_context",
+                return_value=(context, [spectrum], temporary_root),
+            ),
+            patch(
+                "beacon.local_analysis._request_json",
+                return_value={"message": {"content": json.dumps(valid)}},
+            ) as request,
+        ):
+            result = _default_analyzer(
+                "http://127.0.0.1:11434",
+                "fixture-model",
+                {
+                    "source_path": str(source),
+                    "media_metadata": {
+                        "streams": [
+                            {"codec_type": "video"},
+                            {"codec_type": "audio"},
+                        ]
+                    },
+                    "thumbnail_path": "",
+                    "size_bytes": source.stat().st_size,
+                },
+            )
+
+        self.assertEqual(result["evidence_mode"], "audio_content")
+        user_context = json.loads(
+            request.call_args.args[2]["messages"][1]["content"]
+        )["local_media_context"]
+        self.assertFalse(user_context["visual_evidence_supplied"])
+        self.assertTrue(user_context["supplemental_image_evidence_supplied"])
 
     def test_pipeline_stage_is_durable_and_clears_at_completion(self) -> None:
         observed: list[tuple[str, str | None]] = []
@@ -648,6 +792,34 @@ class LocalAnalysisJobTests(unittest.TestCase):
         analyzer = patch(
             "beacon.local_analysis._default_analyzer"
         )
+        with analyzer as mocked:
+            result = run_local_analysis_job(self.db, job_id)
+
+        mocked.assert_not_called()
+        self.assertEqual(result.state, "complete")
+        self.assertEqual(result.completed, 0)
+        self.assertEqual(result.excluded, 1)
+        self.assertEqual(result.failed, 0)
+
+    def test_selected_production_project_is_excluded_without_model_call(
+        self,
+    ) -> None:
+        project = self.sources / "edit.prproj"
+        project.write_bytes(b"editable production project fixture")
+        cataloged = catalog_file(
+            project,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        job_id = create_selected_local_analysis_job(
+            self.db,
+            asset_ids=[cataloged.asset_id],
+            model="fixture-model",
+        )
+
+        analyzer = patch("beacon.local_analysis._default_analyzer")
         with analyzer as mocked:
             result = run_local_analysis_job(self.db, job_id)
 

@@ -41,8 +41,9 @@ clarification, explicit no-search behavior, correction memory, and attachment
 of only Qwen-selected grounded cards.
 
 The handed-off 157-item intake and two newer intake jobs completed. The latest
-analysis job is terminal `partial` with 484 completed items and six failures;
-no intake or analysis job was active during the 2026-07-26 verification.
+analysis job is terminal `complete` with 488 publishable results, two excluded
+editable project files, and zero failures. Beacon 0.21.5 is live with grounded
+abstract-visual/audio evidence handling and project-file scope exclusions.
 
 ## How Connor Likes Codex to Work
 

@@ -38,6 +38,7 @@ from .transcripts import get_asset_transcript, save_asset_transcript
 DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
 POLICY_VERSION = "beacon-local-content-v4"
 _WHISPER_MODEL: Any = None
+NON_CONTENT_PROJECT_EXTENSIONS = frozenset({".aep", ".aepx", ".prproj"})
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,16 @@ def _utc_now() -> str:
 
 def _canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _project_scope_sql(column: str) -> tuple[str, list[str]]:
+    predicates = [
+        f"lower({column}) NOT LIKE ?"
+        for _ in sorted(NON_CONTENT_PROJECT_EXTENSIONS)
+    ]
+    return " AND ".join(predicates), [
+        f"%{suffix}" for suffix in sorted(NON_CONTENT_PROJECT_EXTENSIONS)
+    ]
 
 
 def _is_still_image(source: Path, metadata: dict[str, Any]) -> bool:
@@ -228,12 +239,17 @@ def analysis_scope_preview(
     with connect(db_path) as connection:
         migrate(connection)
         visible_predicate, parameters = support_path_sql("locations.path")
+        project_predicate, project_parameters = _project_scope_sql(
+            "locations.path"
+        )
         where = """
             WHERE lower(locations.path) NOT LIKE '%.ds_store'
               AND lower(locations.path) NOT LIKE '%\\desktop.ini'
               AND lower(locations.path) NOT LIKE '%\\thumbs.db'
         """
         where += f" AND ({visible_predicate})"
+        where += f" AND ({project_predicate})"
+        parameters.extend(project_parameters)
         if not include_analyzed:
             where += """
               AND NOT EXISTS (
@@ -316,9 +332,14 @@ def create_local_analysis_job(
         visible_predicate, visible_parameters = support_path_sql(
             "locations.path"
         )
+        project_predicate, project_parameters = _project_scope_sql(
+            "locations.path"
+        )
         support_clause = f" AND ({visible_predicate})"
+        project_clause = f" AND ({project_predicate})"
         scope_parameters: list[object] = [
             *visible_parameters,
+            *project_parameters,
             int(include_analyzed),
         ]
         if scope_kind == "raw":
@@ -338,6 +359,7 @@ def create_local_analysis_job(
               AND lower(locations.path) NOT LIKE '%\\desktop.ini'
               AND lower(locations.path) NOT LIKE '%\\thumbs.db'
               {support_clause}
+              {project_clause}
               AND (? OR NOT EXISTS (
                 SELECT 1 FROM analysis_results result
                 WHERE result.asset_id = assets.id
@@ -716,6 +738,12 @@ def _validate_content_candidate(
 
 
 def _artifact_exclusion_reason(source_path: str | Path) -> str | None:
+    source = Path(source_path)
+    if source.suffix.lower() in NON_CONTENT_PROJECT_EXTENSIONS:
+        return (
+            "Excluded editable production project file from contextual content "
+            "inference; the project remains cataloged and searchable."
+        )
     if not is_hidden_support_path(source_path):
         return None
     return (
@@ -761,8 +789,16 @@ def _default_analyzer(
         "speech topics, sound sources, music character, and likely B-roll uses. "
         "Do not identify an unnamed person, invent dialogue, rights, relationships, "
         "or events. Make visual claims only from supplied images. If supplied "
-        "visual evidence cannot be interpreted, set evidence_mode to "
-        "'unreadable' instead of inventing or falling back to specifications. "
+        "images are decodable but abstract, blurred, dark, defocused, dominated "
+        "by light or texture, or lack a recognizable subject, that is still "
+        "visual content: describe only the visible forms, colors, light, texture, "
+        "composition, and movement cues and use evidence_mode 'visual_content'. "
+        "Use 'unreadable' only when supplied image bytes cannot be interpreted at "
+        "all. The required_evidence_mode field is binding and describes the "
+        "content evidence that must ground the response. A supplied spectrogram "
+        "is audio-derived evidence, not a photographed scene; when "
+        "required_evidence_mode is 'audio_content', use that mode and ground "
+        "claims in the transcript, sound, music features, or spectrogram. "
         "If no image is supplied, limit claims to supplied audio-derived or "
         "text-derived content. Never manufacture a content result from technical "
         "context alone. "
@@ -838,8 +874,13 @@ def _default_analyzer(
         stage_callback(
             "visually_observing" if image_paths else "analyzing_context"
         )
-    media_context["visual_evidence_supplied"] = bool(image_paths)
     expected_mode = str(media_context.get("expected_evidence_mode") or "")
+    media_context["visual_evidence_supplied"] = bool(
+        image_paths and expected_mode == "visual_content"
+    )
+    media_context["supplemental_image_evidence_supplied"] = bool(
+        image_paths and expected_mode != "visual_content"
+    )
     if expected_mode not in CONTENT_EVIDENCE_MODES:
         shutil.rmtree(temporary_root, ignore_errors=True)
         raise ValueError(
@@ -871,8 +912,11 @@ def _default_analyzer(
                 retry_note = (
                     "\nA previous response was rejected: "
                     f"{str(last_error)[:500]}. Re-observe the supplied content "
-                    "and return a complete schema-valid JSON object. Do not "
-                    "substitute technical metadata."
+                    "and return a complete schema-valid JSON object using the "
+                    "required_evidence_mode. Abstract, dark, blurred, defocused, "
+                    "or textural imagery is still visual content when decodable. "
+                    "A spectrogram is audio-derived evidence. Do not substitute "
+                    "technical metadata."
                 )
             messages: list[dict[str, Any]] = [
                 {
@@ -945,9 +989,14 @@ def _default_analyzer(
                             f"local model returned an empty {key}"
                         )
                 observations = result.get("content_observations")
+                actual_mode = str(result.get("evidence_mode") or "")
+                if actual_mode != expected_mode:
+                    raise ValueError(
+                        "local model returned evidence mode "
+                        f"{actual_mode or 'missing'}; {expected_mode} was required"
+                    )
                 if (
-                    result.get("evidence_mode") != expected_mode
-                    or not isinstance(observations, list)
+                    not isinstance(observations, list)
                     or not observations
                     or any(
                         not isinstance(item, str) or not item.strip()
@@ -955,8 +1004,8 @@ def _default_analyzer(
                     )
                 ):
                     raise ValueError(
-                        "local model did not produce "
-                        f"{expected_mode.replace('_', '-')} evidence"
+                        "local model did not produce concrete "
+                        f"{expected_mode.replace('_', '-')} observations"
                     )
                 return result
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:

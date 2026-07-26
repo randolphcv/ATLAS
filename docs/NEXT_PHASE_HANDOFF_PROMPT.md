@@ -25,8 +25,8 @@ Before changing anything:
 
 Current verified baseline:
 
-- Beacon 0.21.4 is live from
-  `C:\Development\ATLAS\dist\releases\0.21.4\ATLAS Beacon\ATLAS Beacon.exe`;
+- Beacon 0.21.5 is live from
+  `C:\Development\ATLAS\dist\releases\0.21.5\ATLAS Beacon\ATLAS Beacon.exe`;
 - schema 16 is healthy with zero foreign-key violations;
 - intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` completed 157/157, and
   the latest intake `38fc99f1-cc62-41ef-929c-a89b3c1d11c6` completed 500/500;
@@ -34,8 +34,9 @@ Current verified baseline:
   408 publishable results, 177 excluded generated artifacts, and zero
   failures;
 - latest analysis job `ea673da9-6ed6-4e18-a83a-8b4cc9df2e37` is terminal
-  `partial` with 484 completed items and six failures;
-- all 113 tests pass;
+  `complete` with 488 publishable results, two excluded project files, and
+  zero failures;
+- all 116 tests pass, including real FFprobe acceptance;
 - `main` includes the immediate native-video-preview correction;
 - the public repository is live at `https://github.com/randolphcv/ATLAS`,
   and local `main` tracks `origin/main`; do not rewrite published history;
