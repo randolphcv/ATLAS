@@ -37,6 +37,8 @@ Current verified baseline:
   `partial` with 484 completed items and six failures;
 - all 113 tests pass;
 - `main` includes the immediate native-video-preview correction;
+- the public repository is live at `https://github.com/randolphcv/ATLAS`,
+  and local `main` tracks `origin/main`; do not rewrite published history;
 - the Ultron/Jarvis bridge is live at `J:\ULTRON_CONTEXT.md` and
   `J:\JARVIS_CONTEXT.md`; preserve separate ownership and atomic replacement;
 - do not treat generated derivatives, runtime databases, backups, personal
@@ -44,19 +46,15 @@ Current verified baseline:
 
 Next priorities, in order:
 
-1. Complete the `randolphcv/ATLAS` GitHub setup with the existing `main`
-   history only after Connor explicitly confirms public publication. GitHub
-   CLI is installed and `.gitignore` plus tracked history have been audited.
-   Do not rewrite history or publish anything unexpected.
-2. Maintain the shared Markdown bridge after meaningful milestones. Ultron
-   writes only `J:\ULTRON_CONTEXT.md`, reads Jarvis's file without editing it,
-   and uses atomic same-directory replacement.
-3. Run representative Beacon conversation tests against the live catalog.
+1. Run representative Beacon conversation tests against the live catalog.
    Cover exact retrieval, semantic retrieval, requested result counts,
    distinct/unique results, explicit no-search turns, relevant clarification,
    correction memory, and attachment of only Qwen-selected grounded cards.
    Record the prompt, observed cards, durable worker state, and whether the
    response was actually useful. Diagnose failures before changing behavior.
+2. Maintain the shared Markdown bridge after meaningful milestones. Ultron
+   writes only `J:\ULTRON_CONTEXT.md`, reads Jarvis's file without editing it,
+   and uses atomic same-directory replacement.
 
 Maintain local-first operation and the existing safety boundaries. Qwen should
 control conversational reasoning and retrieval choices; deterministic code is

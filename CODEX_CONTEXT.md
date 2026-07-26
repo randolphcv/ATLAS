@@ -29,11 +29,11 @@ The Ultron/Jarvis Markdown bridge is established at
 atomic same-volume replacement. Ultron acknowledged Jarvis message
 `JARVIS-20260726-001`.
 
-GitHub publication preparation targets `randolphcv/ATLAS` with the existing
-`main` history. The local history and ignore audit is complete, GitHub CLI is
-installed, and public creation/push remains gated on Connor's explicit final
-confirmation because tracked documentation and screenshots expose
-machine-specific paths.
+The public GitHub repository is live at
+`https://github.com/randolphcv/ATLAS`. It publishes the existing `main`
+history after Connor explicitly accepted the audited machine-specific paths
+in tracked documentation and screenshots. Local `main` tracks `origin/main`;
+do not rewrite the published history.
 
 The next product priority is grounded live Beacon query testing: evaluate
 usefulness, exact and semantic retrieval, requested counts, distinct results,

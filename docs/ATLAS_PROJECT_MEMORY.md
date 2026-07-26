@@ -20,15 +20,17 @@ Use this file for durable, low-noise context. Do not store raw logs, secrets, pe
   `J:\ULTRON_CONTEXT.md`; Jarvis atomically owns
   `J:\JARVIS_CONTEXT.md`. Ultron read and acknowledged
   `JARVIS-20260726-001` without editing Jarvis's file.
-- GitHub publication preparation targets `randolphcv/ATLAS` with the existing
-  `main` history. GitHub CLI 2.96.0 is installed, `.gitignore` is hardened,
-  and the tracked-history audit found no detected secrets, runtime databases,
-  executables, model files, archives, or personal-media binaries. Public
-  creation/push remains gated on Connor's explicit final confirmation because
-  tracked documentation and screenshots contain machine-specific paths.
+- The public GitHub repository is live at
+  `https://github.com/randolphcv/ATLAS` with default branch `main`. Connor
+  explicitly authorized publishing the full existing history after the path
+  exposure audit. Local `main` tracks `origin/main`; do not rewrite the
+  published history.
+- GitHub CLI 2.96.0 is authenticated as `randolphcv`, `.gitignore` is
+  hardened, and the tracked-history audit found no detected secrets, runtime
+  databases, executables, model files, archives, or personal-media binaries.
 - All 113 unit tests pass; two real-FFprobe acceptance tests remain explicitly
   skipped unless `BEACON_FFPROBE` is supplied.
-- After GitHub setup, run representative live Beacon query testing.
+- Run representative live Beacon query testing.
 - The canonical starting prompt is
   `docs\NEXT_PHASE_HANDOFF_PROMPT.md`.
 

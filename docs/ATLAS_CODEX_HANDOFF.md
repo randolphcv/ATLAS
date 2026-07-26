@@ -19,27 +19,28 @@ replacement. Jarvis's read-only peer file became visible at
 `J:\JARVIS_CONTEXT.md`; Ultron read it and acknowledged
 `JARVIS-20260726-001` without editing Jarvis's file.
 
-GitHub preparation targets owner `randolphcv`, repository `ATLAS`, and the
-existing `main` history. GitHub CLI 2.96.0 is installed. `.gitignore` now
-blocks runtime databases and journals, secrets and credential artifacts,
-generated derivatives, backups, model weights, packaged binaries, archives,
-and personal media while retaining intentional product screenshots under
-`docs/images`.
+The public GitHub repository is live at
+`https://github.com/randolphcv/ATLAS` with default branch `main`. Connor
+explicitly authorized publishing the full existing history after reviewing
+the path-exposure warning. Local `main` tracks `origin/main`; do not rewrite
+the published history. GitHub CLI 2.96.0 is authenticated as `randolphcv`.
+`.gitignore` blocks runtime databases and journals, secrets and credential
+artifacts, generated derivatives, backups, model weights, packaged binaries,
+archives, and personal media while retaining intentional product screenshots
+under `docs/images`.
 
 The full tracked-history audit found no detected secrets, runtime databases,
 executables, model files, archives, or personal-media binaries. Twelve product
 documentation PNGs are tracked. Some tracked documentation and screenshots
 contain machine-specific Windows and `J:\` paths, including the local Windows
-username. Because Connor described public visibility as tentative, repository
-creation and push remain gated on explicit final public-publication
-confirmation. Do not rewrite history.
+username. Connor explicitly accepted this exposure before publication.
 
 All 113 unit tests pass from the repository virtual environment through
 `python -m unittest discover`; the two real-FFprobe acceptance tests remain
 explicitly skipped unless `BEACON_FFPROBE` is supplied.
 
-After GitHub setup, run the representative live Beacon conversation matrix
-specified in `docs\NEXT_PHASE_HANDOFF_PROMPT.md`.
+Next, run the representative live Beacon conversation matrix specified in
+`docs\NEXT_PHASE_HANDOFF_PROMPT.md`.
 
 ## 2026-07-25 next phase queued
 
