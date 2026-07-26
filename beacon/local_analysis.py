@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .analysis import import_analysis_manifest
+from .analysis import import_analysis_manifest, validate_analysis_result
 from .catalog import sha256_file
 from .database import connect, migrate, record_event
 from .desk import seed_threads
@@ -25,12 +25,13 @@ from .managed_moves import commit_analyzed_file, placement_needs_clarification
 from .media import IMAGE_EXTENSIONS
 from .metadata import apply_analysis_metadata, apply_analysis_organization_path
 from .music_analysis import analyze_asset_music
-from .repository import SUPPORT_FILE_EXTENSIONS
+from .repository import is_hidden_support_path, support_path_sql
+from .text_preview import read_text_preview
 from .thumbnails import RAW_EXTENSIONS, ensure_thumbnail
 from .transcripts import get_asset_transcript, save_asset_transcript
 
 DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
-POLICY_VERSION = "beacon-local-content-v3"
+POLICY_VERSION = "beacon-local-content-v4"
 _WHISPER_MODEL: Any = None
 
 
@@ -48,6 +49,7 @@ class LocalAnalysisRunResult:
     state: str
     completed: int
     failed: int
+    excluded: int
     pending: int
     analysis_run_id: str | None
 
@@ -150,19 +152,13 @@ def analysis_scope_preview(
         raise ValueError("unsupported analysis scope")
     with connect(db_path) as connection:
         migrate(connection)
-        parameters: list[str] = []
+        visible_predicate, parameters = support_path_sql("locations.path")
         where = """
             WHERE lower(locations.path) NOT LIKE '%.ds_store'
               AND lower(locations.path) NOT LIKE '%\\desktop.ini'
               AND lower(locations.path) NOT LIKE '%\\thumbs.db'
         """
-        where += " AND NOT (" + " OR ".join(
-            "lower(locations.path) LIKE ?"
-            for _ in SUPPORT_FILE_EXTENSIONS
-        ) + ")"
-        parameters.extend(
-            f"%{suffix}" for suffix in sorted(SUPPORT_FILE_EXTENSIONS)
-        )
+        where += f" AND ({visible_predicate})"
         if not include_analyzed:
             where += """
               AND NOT EXISTS (
@@ -242,12 +238,12 @@ def create_local_analysis_job(
     now = _utc_now()
     with connect(db_path) as connection:
         scope_clause = ""
-        support_clause = " AND NOT (" + " OR ".join(
-            "lower(locations.path) LIKE ?"
-            for _ in SUPPORT_FILE_EXTENSIONS
-        ) + ")"
+        visible_predicate, visible_parameters = support_path_sql(
+            "locations.path"
+        )
+        support_clause = f" AND ({visible_predicate})"
         scope_parameters: list[object] = [
-            *(f"%{suffix}" for suffix in sorted(SUPPORT_FILE_EXTENSIONS)),
+            *visible_parameters,
             int(include_analyzed),
         ]
         if scope_kind == "raw":
@@ -439,14 +435,24 @@ def create_selected_local_analysis_job(
 
 
 def _counts(connection: Any, job_id: str) -> dict[str, int]:
-    values = {
-        row["state"]: int(row["count"])
-        for row in connection.execute(
-            "SELECT state, COUNT(*) count FROM local_analysis_items WHERE job_id=? GROUP BY state",
-            (job_id,),
-        )
+    row = connection.execute(
+        """
+        SELECT
+          SUM(CASE WHEN state='complete' AND excluded_reason IS NULL
+              THEN 1 ELSE 0 END) complete,
+          SUM(CASE WHEN state='complete' AND excluded_reason IS NOT NULL
+              THEN 1 ELSE 0 END) excluded,
+          SUM(CASE WHEN state='failed' THEN 1 ELSE 0 END) failed,
+          SUM(CASE WHEN state='pending' THEN 1 ELSE 0 END) pending,
+          SUM(CASE WHEN state='running' THEN 1 ELSE 0 END) running
+        FROM local_analysis_items WHERE job_id=?
+        """,
+        (job_id,),
+    ).fetchone()
+    return {
+        key: int(row[key] or 0)
+        for key in ("complete", "excluded", "failed", "pending", "running")
     }
-    return {key: values.get(key, 0) for key in ("complete", "failed", "pending", "running")}
 
 
 def list_local_analysis_jobs(db_path: Path, limit: int = 20) -> list[dict[str, Any]]:
@@ -455,7 +461,12 @@ def list_local_analysis_jobs(db_path: Path, limit: int = 20) -> list[dict[str, A
         rows = connection.execute(
             """
             SELECT jobs.*,
-              SUM(CASE WHEN items.state='complete' THEN 1 ELSE 0 END) completed_count,
+              SUM(CASE WHEN items.state='complete'
+                        AND items.excluded_reason IS NULL
+                  THEN 1 ELSE 0 END) completed_count,
+              SUM(CASE WHEN items.state='complete'
+                        AND items.excluded_reason IS NOT NULL
+                  THEN 1 ELSE 0 END) excluded_count,
               SUM(CASE WHEN items.state='failed' THEN 1 ELSE 0 END) failed_count,
               SUM(CASE WHEN items.state='pending' THEN 1 ELSE 0 END) pending_count,
               SUM(CASE WHEN items.state='running' THEN 1 ELSE 0 END) running_count,
@@ -558,7 +569,8 @@ def retry_local_analysis_failures(db_path: Path, job_id: str) -> int:
         cursor = connection.execute(
             """
             UPDATE local_analysis_items
-            SET state='pending',error=NULL,started_at=NULL,completed_at=NULL
+            SET state='pending',error=NULL,excluded_reason=NULL,
+                started_at=NULL,completed_at=NULL
             WHERE job_id=? AND state='failed'
             """,
             (job_id,),
@@ -568,10 +580,11 @@ def retry_local_analysis_failures(db_path: Path, job_id: str) -> int:
             UPDATE local_analysis_jobs
             SET state='paused',cancel_requested=0,current_asset_id=NULL,
                 current_stage=NULL,current_stage_updated_at=?,
-                completed_at=NULL,updated_at=?,error=NULL
+                completed_at=NULL,updated_at=?,error=NULL,
+                policy_version=?
             WHERE id=?
             """,
-            (_utc_now(), _utc_now(), job_id),
+            (_utc_now(), _utc_now(), POLICY_VERSION, job_id),
         )
         return int(cursor.rowcount)
 
@@ -590,18 +603,64 @@ def _set_job_stage(db_path: Path, job_id: str, stage: str) -> None:
         )
 
 
+CONTENT_EVIDENCE_MODES = {
+    "visual_content",
+    "audio_content",
+    "text_content",
+}
+
+
+def _validate_content_candidate(
+    candidate: dict[str, Any],
+    *,
+    expected_mode: str | None = None,
+) -> None:
+    """Reject speculative or incomplete local results before publication."""
+    validated = validate_analysis_result(candidate)
+    payload = validated["payload"]
+    mode = str(payload.get("evidence_mode") or "")
+    observations = payload.get("content_observations")
+    if mode not in CONTENT_EVIDENCE_MODES:
+        raise ValueError(
+            "local analysis did not produce content-derived evidence"
+        )
+    if expected_mode and mode != expected_mode:
+        raise ValueError(
+            f"local analysis returned {mode or 'no evidence'}; "
+            f"{expected_mode} was required"
+        )
+    if (
+        not isinstance(observations, list)
+        or not observations
+        or any(not isinstance(item, str) or not item.strip()
+               for item in observations)
+    ):
+        raise ValueError(
+            "local analysis must include concrete content observations"
+        )
+
+
+def _artifact_exclusion_reason(source_path: str | Path) -> str | None:
+    if not is_hidden_support_path(source_path):
+        return None
+    return (
+        "Excluded confidently generated cache, autosave, or sidecar artifact; "
+        "the original remains cataloged and can be shown as a hidden file."
+    )
+
+
 def _default_analyzer(
     endpoint: str, model: str, asset: dict[str, Any]
 ) -> dict[str, Any]:
     prompt = (
         "You are Beacon, a local archive and stock-footage metadata specialist. "
-        "Use all supplied sampled frames, transcript, spectrogram, filename, and "
-        "verified technical context. For visual media, the title, description, "
-        "tags, and stock metadata must describe only content actually visible in "
-        "the supplied images. Describe subjects, actions, setting, light, color, "
-        "composition, mood, and visible text concretely. Never use a filename, "
-        "extension, codec, resolution, duration, file size, path, frame rate, or "
-        "analysis mechanism as a substitute for visible content. Never call an "
+        "Use all supplied sampled frames, transcript, spectrogram, music features, "
+        "or extracted text. The title, description, tags, and stock metadata must "
+        "describe only content actually observed in that evidence. For visual "
+        "media, describe subjects, actions, setting, light, color, composition, "
+        "mood, and visible text concretely. Never use a filename, extension, codec, "
+        "resolution, duration, file size, path, frame rate, or analysis mechanism "
+        "as a substitute for observed content. Never call an "
         "ordinary still photograph a video frame or image sequence because of "
         "technical decoder metadata. Be highly descriptive and produce as many "
         "specific, relevant search tags as useful (up to 100): subjects, actions, "
@@ -613,8 +672,9 @@ def _default_analyzer(
         "or events. Make visual claims only from supplied images. If supplied "
         "visual evidence cannot be interpreted, set evidence_mode to "
         "'unreadable' instead of inventing or falling back to specifications. "
-        "If no image is supplied, explicitly limit the result to available audio "
-        "or technical context. "
+        "If no image is supplied, limit claims to supplied audio-derived or "
+        "text-derived content. Never manufacture a content result from technical "
+        "context alone. "
         "Distinguish observation from uncertainty. A managed archive move "
         "policy already exists, so provide a useful organization suggestion without "
         "asking for approval; analysis itself must never move or alter an original."
@@ -650,6 +710,7 @@ def _default_analyzer(
                 "enum": [
                     "visual_content",
                     "audio_content",
+                    "text_content",
                     "technical_only",
                     "unreadable",
                 ],
@@ -687,19 +748,21 @@ def _default_analyzer(
             "visually_observing" if image_paths else "analyzing_context"
         )
     media_context["visual_evidence_supplied"] = bool(image_paths)
+    expected_mode = str(media_context.get("expected_evidence_mode") or "")
+    if expected_mode not in CONTENT_EVIDENCE_MODES:
+        shutil.rmtree(temporary_root, ignore_errors=True)
+        raise ValueError(
+            "no decodable visual, audio, or text content evidence was available"
+        )
     request_context: dict[str, Any] = {
-        "asset_mode": "still_image" if is_still_image else "media",
+        "asset_mode": (
+            "still_image"
+            if is_still_image
+            else expected_mode.replace("_content", "")
+        ),
+        "required_evidence_mode": expected_mode,
         "local_media_context": media_context,
     }
-    if not is_still_image:
-        request_context.update(
-            {
-                "source_filename": source.name,
-                "source_path_context": str(source.parent),
-                "size_bytes": asset["size_bytes"],
-                "verified_media_metadata": asset["media_metadata"],
-            }
-        )
     content = _canonical_json(request_context)
     message: dict[str, Any] = {"role": "user", "content": content}
     encoded_images = []
@@ -708,38 +771,90 @@ def _default_analyzer(
             encoded_images.append(base64.b64encode(image_path.read_bytes()).decode("ascii"))
     if encoded_images:
         message["images"] = encoded_images
+    last_error: Exception | None = None
     try:
-        response = _request_json(
-            endpoint,
-            "/api/chat",
-            {
-                "model": model,
-                "messages": [{"role": "system", "content": prompt}, message],
-                "format": schema,
-                "stream": False,
-                "options": {"temperature": 0, "num_predict": 4096},
-            },
-            timeout=600,
-        )
+        for attempt in range(1, 4):
+            retry_note = ""
+            if last_error is not None:
+                retry_note = (
+                    "\nA previous response was rejected: "
+                    f"{str(last_error)[:500]}. Re-observe the supplied content "
+                    "and return a complete schema-valid JSON object. Do not "
+                    "substitute technical metadata."
+                )
+            try:
+                response = _request_json(
+                    endpoint,
+                    "/api/chat",
+                    {
+                        "model": model,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": prompt + retry_note,
+                            },
+                            message,
+                        ],
+                        "format": schema,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0 if attempt == 1 else 0.1,
+                            "num_predict": 4096,
+                        },
+                    },
+                    timeout=600,
+                )
+            except (ConnectionError, ValueError) as error:
+                last_error = error
+                continue
+            try:
+                response_message = response.get("message")
+                if (
+                    not isinstance(response_message, dict)
+                    or not isinstance(response_message.get("content"), str)
+                ):
+                    raise ValueError(
+                        "local model returned no structured message"
+                    )
+                result = json.loads(response_message["content"])
+                if not isinstance(result, dict):
+                    raise ValueError("local model result is not an object")
+                for key in (
+                    "title",
+                    "description",
+                    "media_category",
+                    "organization_suggestion",
+                ):
+                    if (
+                        not isinstance(result.get(key), str)
+                        or not str(result[key]).strip()
+                    ):
+                        raise ValueError(
+                            f"local model returned an empty {key}"
+                        )
+                observations = result.get("content_observations")
+                if (
+                    result.get("evidence_mode") != expected_mode
+                    or not isinstance(observations, list)
+                    or not observations
+                    or any(
+                        not isinstance(item, str) or not item.strip()
+                        for item in observations
+                    )
+                ):
+                    raise ValueError(
+                        "local model did not produce "
+                        f"{expected_mode.replace('_', '-')} evidence"
+                    )
+                return result
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+                last_error = error
     finally:
         shutil.rmtree(temporary_root, ignore_errors=True)
-    message = response.get("message")
-    if not isinstance(message, dict) or not isinstance(message.get("content"), str):
-        raise ValueError("local model returned no structured message")
-    result = json.loads(message["content"])
-    if not isinstance(result, dict):
-        raise ValueError("local model result is not an object")
-    if encoded_images:
-        observations = result.get("content_observations")
-        if (
-            result.get("evidence_mode") != "visual_content"
-            or not isinstance(observations, list)
-            or not any(str(item).strip() for item in observations)
-        ):
-            raise ValueError(
-                "local model did not produce visual-content evidence"
-            )
-    return result
+    raise ValueError(
+        "local model failed content validation after three attempts: "
+        f"{last_error}"
+    )
 
 
 def _duration_seconds(metadata: dict[str, Any]) -> float:
@@ -899,6 +1014,8 @@ def _prepare_media_context(
     temp_root = Path(tempfile.mkdtemp(prefix="beacon-analysis-"))
     if is_still_image:
         context["still_image_derivatives"] = len(images)
+        if images:
+            context["expected_evidence_mode"] = "visual_content"
     elif executable and "video" in kinds:
         if callable(stage_callback):
             stage_callback("preparing_visual_context")
@@ -923,7 +1040,23 @@ def _prepare_media_context(
             if completed.returncode == 0 and destination.is_file():
                 images.append(destination)
                 sampled.append(round(second, 3))
+        if not images:
+            destination = temp_root / "frame-fallback.jpg"
+            completed = subprocess.run(
+                [
+                    executable, "-hide_banner", "-loglevel", "error", "-y",
+                    "-i", str(source), "-frames:v", "1",
+                    "-vf", "scale=960:-2:force_original_aspect_ratio=decrease",
+                    str(destination),
+                ],
+                capture_output=True, timeout=120, check=False,
+            )
+            if completed.returncode == 0 and destination.is_file():
+                images.append(destination)
+                sampled.append(0.0)
         context["video_sample_seconds"] = sampled
+        if images:
+            context["expected_evidence_mode"] = "visual_content"
     elif executable and "audio" in kinds:
         if callable(stage_callback):
             stage_callback("preparing_audio_context")
@@ -956,6 +1089,9 @@ def _prepare_media_context(
         context["speech_analysis"]["transcript"] = speech.get(
             "analysis_excerpt", ""
         )
+        has_audio_evidence = bool(
+            images or str(speech.get("analysis_excerpt") or "").strip()
+        )
         if asset.get("db_path") and asset.get("asset_id"):
             try:
                 if callable(stage_callback):
@@ -977,6 +1113,7 @@ def _prepare_media_context(
                     for item in music.get("stems") or []
                     if item.get("kind")
                 ]
+                has_audio_evidence = True
             except ValueError:
                 raise
             except Exception as error:
@@ -984,10 +1121,25 @@ def _prepare_media_context(
                     "status": "failed",
                     "error": str(error)[:1000],
                 }
+        if has_audio_evidence:
+            context["expected_evidence_mode"] = "audio_content"
+    if "expected_evidence_mode" not in context:
+        preview = read_text_preview(source, max_bytes=64 * 1024)
+        if preview is not None and preview.text.strip():
+            excerpt, excerpted = _analysis_excerpt(
+                preview.text,
+                limit=16_000,
+            )
+            context["text_content"] = {
+                "encoding": preview.encoding,
+                "excerpt": excerpt,
+                "excerpted": excerpted or preview.truncated,
+            }
+            context["expected_evidence_mode"] = "text_content"
     return context, images, temp_root
 
 
-def run_local_analysis_job(
+def _run_local_analysis_job(
     db_path: Path,
     job_id: str,
     *,
@@ -1005,7 +1157,15 @@ def run_local_analysis_job(
         job = dict(job_row)
         if job["state"] == "complete":
             counts = _counts(connection, job_id)
-            return LocalAnalysisRunResult(job_id, "complete", counts["complete"], counts["failed"], counts["pending"], job["analysis_run_id"])
+            return LocalAnalysisRunResult(
+                job_id,
+                "complete",
+                counts["complete"],
+                counts["failed"],
+                counts["excluded"],
+                counts["pending"],
+                job["analysis_run_id"],
+            )
         connection.execute(
             """
             UPDATE local_analysis_jobs SET state='running',cancel_requested=0,
@@ -1033,7 +1193,15 @@ def run_local_analysis_job(
                     (_utc_now(), _utc_now(), job_id),
                 )
                 counts = _counts(connection, job_id)
-                return LocalAnalysisRunResult(job_id, "cancelled", counts["complete"], counts["failed"], counts["pending"], None)
+                return LocalAnalysisRunResult(
+                    job_id,
+                    "cancelled",
+                    counts["complete"],
+                    counts["failed"],
+                    counts["excluded"],
+                    counts["pending"],
+                    None,
+                )
             item_row = connection.execute(
                 "SELECT * FROM local_analysis_items WHERE job_id=? AND state='pending' ORDER BY source_path COLLATE NOCASE LIMIT 1",
                 (job_id,),
@@ -1059,7 +1227,12 @@ def run_local_analysis_job(
                 raise ValueError(f"catalog checksum changed for {item['asset_id']}")
             asset = dict(asset)
             connection.execute(
-                "UPDATE local_analysis_items SET state='running',attempts=attempts+1,started_at=?,error=NULL WHERE id=?",
+                """
+                UPDATE local_analysis_items
+                SET state='running',attempts=attempts+1,started_at=?,
+                    error=NULL,excluded_reason=NULL
+                WHERE id=?
+                """,
                 (_utc_now(), item["id"]),
             )
             connection.execute(
@@ -1071,6 +1244,21 @@ def run_local_analysis_job(
                 """,
                 (item["asset_id"], _utc_now(), _utc_now(), job_id),
             )
+        exclusion_reason = _artifact_exclusion_reason(item["source_path"])
+        if exclusion_reason:
+            with connect(db_path) as connection:
+                connection.execute(
+                    """
+                    UPDATE local_analysis_items
+                    SET state='complete',result_json=NULL,error=NULL,
+                        excluded_reason=?,completed_at=?
+                    WHERE id=?
+                    """,
+                    (exclusion_reason, _utc_now(), item["id"]),
+                )
+            if progress_callback:
+                progress_callback()
+            continue
         try:
             source = Path(item["source_path"])
             if not source.exists():
@@ -1123,8 +1311,7 @@ def run_local_analysis_job(
             )
             provenance_inputs = [
                 {"kind": "catalog_identity", "sha256": item["source_sha256"]},
-                {"kind": "verified_technical_metadata"},
-                {"kind": "source_path_context"},
+                {"kind": "verified_local_content_extraction"},
             ]
             if asset["thumbnail_path"]:
                 provenance_inputs.append(
@@ -1153,15 +1340,26 @@ def run_local_analysis_job(
             ]
             if notes:
                 candidate["provenance"]["normalizations"] = notes
+            _validate_content_candidate(candidate)
             with connect(db_path) as connection:
                 connection.execute(
-                    "UPDATE local_analysis_items SET state='complete',result_json=?,completed_at=? WHERE id=?",
+                    """
+                    UPDATE local_analysis_items
+                    SET state='complete',result_json=?,error=NULL,
+                        excluded_reason=NULL,completed_at=?
+                    WHERE id=?
+                    """,
                     (_canonical_json(candidate), _utc_now(), item["id"]),
                 )
         except Exception as error:
             with connect(db_path) as connection:
                 connection.execute(
-                    "UPDATE local_analysis_items SET state='failed',error=?,completed_at=? WHERE id=?",
+                    """
+                    UPDATE local_analysis_items
+                    SET state='failed',error=?,excluded_reason=NULL,
+                        completed_at=?
+                    WHERE id=?
+                    """,
                     (str(error)[:2000], _utc_now(), item["id"]),
                 )
                 if stop_on_item_error:
@@ -1185,13 +1383,15 @@ def run_local_analysis_job(
         if progress_callback:
             progress_callback()
 
+    _set_job_stage(db_path, job_id, "validating_results")
     with connect(db_path) as connection:
         job = dict(connection.execute(
             "SELECT * FROM local_analysis_jobs WHERE id=?", (job_id,)
         ).fetchone())
         completed_rows = connection.execute(
             """
-            SELECT id,asset_id,source_path,result_json FROM local_analysis_items
+            SELECT id,asset_id,source_path,result_json,excluded_reason
+            FROM local_analysis_items
             WHERE job_id=? AND state='complete' ORDER BY asset_id
             """,
             (job_id,),
@@ -1214,37 +1414,69 @@ def run_local_analysis_job(
         results = []
         candidates = []
         for row in completed_rows:
-            candidate = json.loads(row["result_json"])
-            confidence, normalization_note = _normalize_confidence(
-                candidate.get("confidence")
+            exclusion_reason = (
+                row["excluded_reason"]
+                or _artifact_exclusion_reason(row["source_path"])
             )
-            candidate["confidence"] = confidence
-            payload, payload_note = _normalize_payload(
-                candidate.get("payload")
-            )
-            candidate["payload"] = payload
-            if normalization_note:
-                candidate.setdefault("provenance", {}).setdefault(
-                    "normalizations", []
-                ).append(normalization_note)
-            if payload_note:
-                candidate.setdefault("provenance", {}).setdefault(
-                    "normalizations", []
-                ).append(payload_note)
-            if normalization_note or payload_note:
+            if exclusion_reason:
                 connection.execute(
                     """
-                    UPDATE local_analysis_items SET result_json=?
+                    UPDATE local_analysis_items SET excluded_reason=?,error=NULL
                     WHERE id=?
                     """,
-                    (_canonical_json(candidate), row["id"]),
+                    (exclusion_reason, row["id"]),
                 )
+                continue
+            try:
+                if not row["result_json"]:
+                    raise ValueError("completed item has no result")
+                candidate = json.loads(row["result_json"])
+                confidence, normalization_note = _normalize_confidence(
+                    candidate.get("confidence")
+                )
+                candidate["confidence"] = confidence
+                payload, payload_note = _normalize_payload(
+                    candidate.get("payload")
+                )
+                candidate["payload"] = payload
+                if normalization_note:
+                    candidate.setdefault("provenance", {}).setdefault(
+                        "normalizations", []
+                    ).append(normalization_note)
+                if payload_note:
+                    candidate.setdefault("provenance", {}).setdefault(
+                        "normalizations", []
+                    ).append(payload_note)
+                _validate_content_candidate(candidate)
+            except Exception as error:
+                connection.execute(
+                    """
+                    UPDATE local_analysis_items
+                    SET state='failed',error=?,excluded_reason=NULL
+                    WHERE id=?
+                    """,
+                    (
+                        "Completed result rejected before publication: "
+                        f"{str(error)[:1900]}",
+                        row["id"],
+                    ),
+                )
+                continue
+            connection.execute(
+                """
+                UPDATE local_analysis_items
+                SET result_json=?,error=NULL,excluded_reason=NULL
+                WHERE id=?
+                """,
+                (_canonical_json(candidate), row["id"]),
+            )
             candidates.append(candidate)
             if row["asset_id"] not in already_imported:
                 results.append(candidate)
         counts = _counts(connection, job_id)
     run_id = existing_run_id
     if results:
+        _set_job_stage(db_path, job_id, "publishing_results")
         imported = import_analysis_manifest(
             db_path,
             {
@@ -1259,6 +1491,15 @@ def run_local_analysis_job(
             },
         )
         run_id = imported.run_id
+        with connect(db_path) as connection:
+            connection.execute(
+                """
+                UPDATE local_analysis_jobs
+                SET analysis_run_id=?,updated_at=?
+                WHERE id=?
+                """,
+                (run_id, _utc_now(), job_id),
+            )
     if run_id:
         for candidate in candidates:
             with connect(db_path) as connection:
@@ -1338,7 +1579,14 @@ def run_local_analysis_job(
                     Path(last_move.destination_path).parent,
                     run_id=run_id,
                 )
-    state = "complete" if counts["failed"] == 0 else ("partial" if counts["complete"] else "failed")
+    state = (
+        "complete"
+        if counts["failed"] == 0
+        else ("partial" if counts["complete"] else "failed")
+    )
+    error = None
+    if state != "complete":
+        error = f"{counts['failed']} item(s) failed"
     with connect(db_path) as connection:
         connection.execute(
             """
@@ -1349,7 +1597,7 @@ def run_local_analysis_job(
             """,
             (
                 state, _utc_now(), _utc_now(), _utc_now(), run_id,
-                None if state == "complete" else f"{counts['failed']} item(s) failed",
+                error,
                 job_id,
             ),
         )
@@ -1360,4 +1608,90 @@ def run_local_analysis_job(
             message=f"Local-only analysis finished: {counts['complete']} candidates",
             details={"job_id": job_id, "analysis_run_id": run_id, **counts},
         )
-    return LocalAnalysisRunResult(job_id, state, counts["complete"], counts["failed"], counts["pending"], run_id)
+    return LocalAnalysisRunResult(
+        job_id,
+        state,
+        counts["complete"],
+        counts["failed"],
+        counts["excluded"],
+        counts["pending"],
+        run_id,
+    )
+
+
+def _terminalize_analysis_failure(
+    db_path: Path,
+    job_id: str,
+    error: Exception,
+) -> None:
+    """Never leave a failed worker impersonating a live analysis job."""
+    message = f"Analysis finalization failed: {str(error)[:1900]}"
+    with connect(db_path) as connection:
+        migrate(connection)
+        job = connection.execute(
+            "SELECT state,analysis_run_id FROM local_analysis_jobs WHERE id=?",
+            (job_id,),
+        ).fetchone()
+        if job is None or job["state"] in {
+            "complete",
+            "partial",
+            "failed",
+            "cancelled",
+        }:
+            return
+        run_id = job["analysis_run_id"]
+        if not run_id:
+            for row in connection.execute(
+                "SELECT id,scope_json FROM analysis_runs"
+            ):
+                try:
+                    scope = json.loads(row["scope_json"] or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if scope.get("job_id") == job_id:
+                    run_id = row["id"]
+                    break
+        state = "partial" if run_id else "failed"
+        now = _utc_now()
+        connection.execute(
+            """
+            UPDATE local_analysis_jobs
+            SET state=?,current_asset_id=NULL,current_stage=NULL,
+                current_stage_updated_at=?,completed_at=?,updated_at=?,
+                analysis_run_id=COALESCE(analysis_run_id,?),
+                error=?,worker_pid=NULL
+            WHERE id=?
+            """,
+            (state, now, now, now, run_id, message, job_id),
+        )
+        record_event(
+            connection,
+            kind="local_analysis_job",
+            state=state,
+            message=message,
+            details={"job_id": job_id, "analysis_run_id": run_id},
+        )
+
+
+def run_local_analysis_job(
+    db_path: Path,
+    job_id: str,
+    *,
+    analyzer: Callable[[str, str, dict[str, Any]], dict[str, Any]] = _default_analyzer,
+    progress_callback: Callable[[], None] | None = None,
+    stop_on_item_error: bool = False,
+) -> LocalAnalysisRunResult:
+    try:
+        return _run_local_analysis_job(
+            db_path,
+            job_id,
+            analyzer=analyzer,
+            progress_callback=progress_callback,
+            stop_on_item_error=stop_on_item_error,
+        )
+    except Exception as error:
+        try:
+            _terminalize_analysis_failure(db_path, job_id, error)
+        except Exception:
+            pass
+        raise

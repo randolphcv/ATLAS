@@ -36,6 +36,41 @@ SUPPORT_FILE_EXTENSIONS = {
     ".thm",
     ".xmp",
 }
+GENERATED_ARTIFACT_PATH_FRAGMENTS = {
+    "\\adobe premiere pro auto-save\\",
+    "\\adobe premiere pro audio previews\\",
+    "\\adobe premiere pro video previews\\",
+    "\\media cache files\\",
+    "\\peak files\\",
+}
+
+
+def is_hidden_support_path(path: str | Path) -> bool:
+    """Return true only for confidently generated support or cache artifacts."""
+    value = str(path).lower()
+    return (
+        Path(value).suffix.lower() in SUPPORT_FILE_EXTENSIONS
+        or any(fragment in value for fragment in GENERATED_ARTIFACT_PATH_FRAGMENTS)
+    )
+
+
+def support_path_sql(column: str) -> tuple[str, list[str]]:
+    """Build a parameterized SQL predicate for a visible, content-bearing path."""
+    predicates = [
+        *(f"lower({column}) NOT LIKE ?" for _ in SUPPORT_FILE_EXTENSIONS),
+        *(
+            f"lower({column}) NOT LIKE ?"
+            for _ in GENERATED_ARTIFACT_PATH_FRAGMENTS
+        ),
+    ]
+    parameters = [
+        *(f"%{suffix}" for suffix in sorted(SUPPORT_FILE_EXTENSIONS)),
+        *(
+            f"%{fragment}%"
+            for fragment in sorted(GENERATED_ARTIFACT_PATH_FRAGMENTS)
+        ),
+    ]
+    return " AND ".join(predicates), parameters
 
 
 def _media_summary(value: str | None) -> dict[str, Any]:
@@ -204,20 +239,16 @@ def search_assets(
     hidden_clause = ""
     hidden_parameters: list[str] = []
     if not include_hidden:
+        visible_predicate, hidden_parameters = support_path_sql("visible.path")
         hidden_clause = """
         AND EXISTS (
             SELECT 1 FROM locations visible
             WHERE visible.asset_id=a.id
-              AND NOT (
-        """ + " OR ".join(
-            "lower(visible.path) LIKE ?" for _ in SUPPORT_FILE_EXTENSIONS
-        ) + """
+              AND (
+        """ + visible_predicate + """
               )
         )
         """
-        hidden_parameters = [
-            f"%{suffix}" for suffix in sorted(SUPPORT_FILE_EXTENSIONS)
-        ]
     where = """
         WHERE (? = '%%'
            OR a.id LIKE ?
@@ -357,10 +388,7 @@ def library_folders(
         ).fetchall()
     for row in rows:
         path = str(row["path"])
-        if (
-            not include_hidden
-            and Path(path).suffix.lower() in SUPPORT_FILE_EXTENSIONS
-        ):
+        if not include_hidden and is_hidden_support_path(path):
             continue
         remainder = path[len(prefix):] if path.lower().startswith(prefix.lower()) else ""
         if "\\" not in remainder:

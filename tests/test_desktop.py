@@ -208,8 +208,25 @@ class DesktopControllerTests(unittest.TestCase):
     def test_support_files_are_hidden_until_explicitly_shown(self) -> None:
         sidecar = self.root / "fixtures" / "native-signal.xmp"
         sidecar.write_text("<x:xmpmeta>fixture</x:xmpmeta>", encoding="utf-8")
+        preview_cache = (
+            self.root
+            / "fixtures"
+            / "PROJECT"
+            / "Adobe Premiere Pro Video Previews"
+            / "sequence.prv"
+            / "rendered-cache.mpeg"
+        )
+        preview_cache.parent.mkdir(parents=True)
+        preview_cache.write_bytes(b"generated preview cache")
         catalog_file(
             sidecar,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        catalog_file(
+            preview_cache,
             self.db,
             stability_seconds=0,
             include_media_probe=False,
@@ -220,7 +237,7 @@ class DesktopControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.assets.rowCount(), 1)
         self.assertFalse(self.controller.showHiddenLibraryFiles)
         self.controller.setShowHiddenLibraryFiles(True)
-        self.assertEqual(self.controller.assets.rowCount(), 2)
+        self.assertEqual(self.controller.assets.rowCount(), 3)
 
     def test_library_navigation_moves_to_the_adjacent_asset(self) -> None:
         second = self.root / "fixtures" / "second.txt"

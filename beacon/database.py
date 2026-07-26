@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 
 @dataclass(frozen=True)
@@ -423,6 +423,17 @@ def migrate(connection: sqlite3.Connection) -> None:
             """
             ALTER TABLE local_analysis_jobs
             ADD COLUMN current_stage_updated_at TEXT
+            """
+        )
+    item_columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(local_analysis_items)")
+    }
+    if "excluded_reason" not in item_columns:
+        connection.execute(
+            """
+            ALTER TABLE local_analysis_items
+            ADD COLUMN excluded_reason TEXT
             """
         )
     if existing_version < 9:

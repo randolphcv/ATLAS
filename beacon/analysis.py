@@ -88,6 +88,39 @@ def _validate_provenance(value: object) -> dict[str, Any]:
     return value
 
 
+def validate_analysis_result(result: object) -> dict[str, Any]:
+    """Validate one candidate exactly as the durable importer will."""
+    if not isinstance(result, dict):
+        raise ValueError("each analysis result must be an object")
+    asset_id = _required_text(result, "asset_id", max_length=100)
+    source_sha256 = _required_text(
+        result, "source_sha256", max_length=64
+    ).lower()
+    if len(source_sha256) != 64 or any(
+        character not in "0123456789abcdef"
+        for character in source_sha256
+    ):
+        raise ValueError("source_sha256 must be a lowercase SHA-256 value")
+    analysis_kind = _required_text(
+        result, "analysis_kind", max_length=100
+    )
+    confidence = result.get("confidence")
+    if (
+        isinstance(confidence, bool)
+        or not isinstance(confidence, (int, float))
+        or not 0 <= float(confidence) <= 1
+    ):
+        raise ValueError("confidence must be a number from 0 through 1")
+    return {
+        "asset_id": asset_id,
+        "source_sha256": source_sha256,
+        "analysis_kind": analysis_kind,
+        "confidence": float(confidence),
+        "payload": _validate_payload(result.get("payload")),
+        "provenance": _validate_provenance(result.get("provenance")),
+    }
+
+
 def load_analysis_manifest(path: Path) -> dict[str, Any]:
     path = path.resolve(strict=True)
     if not path.is_file() or path.is_symlink():
@@ -146,43 +179,18 @@ def import_analysis_manifest(
     validated: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for result in results:
-        if not isinstance(result, dict):
-            raise ValueError("each analysis result must be an object")
-        asset_id = _required_text(result, "asset_id", max_length=100)
-        source_sha256 = _required_text(
-            result, "source_sha256", max_length=64
-        ).lower()
-        if len(source_sha256) != 64 or any(
-            character not in "0123456789abcdef"
-            for character in source_sha256
-        ):
-            raise ValueError("source_sha256 must be a lowercase SHA-256 value")
-        analysis_kind = _required_text(
-            result, "analysis_kind", max_length=100
+        candidate = validate_analysis_result(result)
+        identity = (
+            candidate["asset_id"],
+            candidate["analysis_kind"],
         )
-        identity = (asset_id, analysis_kind)
         if identity in seen:
             raise ValueError(
-                f"duplicate result for asset/kind: {asset_id}/{analysis_kind}"
+                "duplicate result for asset/kind: "
+                f"{candidate['asset_id']}/{candidate['analysis_kind']}"
             )
         seen.add(identity)
-        confidence = result.get("confidence")
-        if (
-            isinstance(confidence, bool)
-            or not isinstance(confidence, (int, float))
-            or not 0 <= float(confidence) <= 1
-        ):
-            raise ValueError("confidence must be a number from 0 through 1")
-        validated.append(
-            {
-                "asset_id": asset_id,
-                "source_sha256": source_sha256,
-                "analysis_kind": analysis_kind,
-                "confidence": float(confidence),
-                "payload": _validate_payload(result.get("payload")),
-                "provenance": _validate_provenance(result.get("provenance")),
-            }
-        )
+        validated.append(candidate)
 
     manifest_sha256 = _sha256_json(manifest)
     run_id = str(

@@ -91,6 +91,8 @@ ANALYSIS_STAGE_LABELS = {
     "analyzing_music": "ANALYZING MUSIC",
     "visually_observing": "VISUALLY OBSERVING",
     "analyzing_context": "ANALYZING CONTEXT",
+    "validating_results": "VALIDATING RESULTS",
+    "publishing_results": "PUBLISHING RESULTS",
     "writing_metadata": "WRITING METADATA",
     "moving_to_archive": "MOVING TO ARCHIVE",
 }
@@ -861,9 +863,11 @@ class DesktopController(QObject):
             self._active_local_analysis_job_id = str(running["id"])
             self._busy = True
             completed = int(running.get("completed_count") or 0)
+            excluded = int(running.get("excluded_count") or 0)
             total = int(running.get("total_items") or 0)
             self._set_status(
-                f"Local analysis running: {completed:,} of {total:,} complete.",
+                "Local analysis running: "
+                f"{completed + excluded:,} of {total:,} processed.",
                 "working",
             )
         elif previous_id:
@@ -871,10 +875,12 @@ class DesktopController(QObject):
             self._busy = False
             if latest:
                 completed = int(latest.get("completed_count") or 0)
+                excluded = int(latest.get("excluded_count") or 0)
                 failed = int(latest.get("failed_count") or 0)
                 self._set_status(
                     f"Local analysis {latest['state']}: "
-                    f"{completed:,} complete, {failed:,} failed.",
+                    f"{completed:,} published, {excluded:,} excluded, "
+                    f"{failed:,} failed.",
                     "success" if latest["state"] == "complete" else "working",
                 )
         if previous_id != self._active_local_analysis_job_id:
@@ -1422,7 +1428,12 @@ class DesktopController(QObject):
         analysis_failed = int(
             latest_job.get("failed_count") or 0
         ) if latest_job else 0
-        analysis_processed = analysis_complete + analysis_failed
+        analysis_excluded = int(
+            latest_job.get("excluded_count") or 0
+        ) if latest_job else 0
+        analysis_processed = (
+            analysis_complete + analysis_failed + analysis_excluded
+        )
         analysis_progress = (
             min(1.0, analysis_processed / analysis_total)
             if analysis_total else 0.0
@@ -1454,9 +1465,17 @@ class DesktopController(QObject):
             "analysisProgress": analysis_progress,
             "analysisProgressLabel": f"{analysis_progress:.0%}",
             "analysisCountLabel": (
-                f"{analysis_complete:,} complete / {analysis_total:,} assets"
+                f"{analysis_complete:,} published"
+                + (
+                    f" + {analysis_excluded:,} artifacts excluded"
+                    if analysis_excluded else ""
+                )
+                + f" / {analysis_total:,} assets"
             ),
-            "analysisFailedLabel": f"{analysis_failed:,} failed",
+            "analysisFailedLabel": (
+                f"{analysis_failed:,} retryable failure"
+                + ("" if analysis_failed == 1 else "s")
+            ),
             "analysisStageLabel": analysis_stage_status(latest_job),
             "analysisStageUpdatedAt": (
                 str(latest_job.get("current_stage_updated_at") or "")
@@ -1554,7 +1573,9 @@ class DesktopController(QObject):
         self._set_status(
             f"Local analysis {result.state}: {result.completed:,} candidate"
             + ("s" if result.completed != 1 else "")
-            + f", {result.failed:,} failed.",
+            + f", {result.excluded:,} generated artifact"
+            + ("" if result.excluded == 1 else "s")
+            + f" excluded, {result.failed:,} failed.",
             "success" if result.state == "complete" else "working",
         )
 

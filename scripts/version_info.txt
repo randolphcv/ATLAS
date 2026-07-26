@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'ATLAS'),
           StringStruct('FileDescription', 'ATLAS Beacon'),
-          StringStruct('FileVersion', '0.20.0'),
+          StringStruct('FileVersion', '0.21.0'),
           StringStruct('InternalName', 'ATLAS Beacon'),
           StringStruct('LegalCopyright', 'Copyright (c) Connor Voight'),
           StringStruct('OriginalFilename', 'ATLAS Beacon.exe'),
           StringStruct('ProductName', 'ATLAS — Adaptive Topological Library & Archive System'),
-          StringStruct('ProductVersion', '0.20.0')
+          StringStruct('ProductVersion', '0.21.0')
         ]
       )
     ]),

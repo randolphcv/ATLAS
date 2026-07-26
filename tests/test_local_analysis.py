@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import os
 import tempfile
@@ -20,6 +21,7 @@ from beacon.local_analysis import (
     retry_local_analysis_failures,
     request_local_analysis_cancel,
     run_local_analysis_job,
+    _default_analyzer,
     _prepare_media_context,
     _process_is_alive,
 )
@@ -88,6 +90,10 @@ class LocalAnalysisJobTests(unittest.TestCase):
         return {
             "title": Path(str(asset["source_path"])).stem.title(),
             "description": "Candidate derived from verified local context.",
+            "content_observations": [
+                "The bounded text fixture contains locally verified content."
+            ],
+            "evidence_mode": "text_content",
             "media_category": "text fixture",
             "tags": ["local", "fixture"],
             "privacy_flags": ["none detected from bounded context"],
@@ -152,8 +158,24 @@ class LocalAnalysisJobTests(unittest.TestCase):
     def test_support_files_are_excluded_from_analysis_scope(self) -> None:
         sidecar = self.sources / "camera-settings.xmp"
         sidecar.write_text("<x:xmpmeta>fixture</x:xmpmeta>", encoding="utf-8")
+        preview_cache = (
+            self.sources
+            / "PROJECT"
+            / "Adobe Premiere Pro Video Previews"
+            / "sequence.prv"
+            / "rendered-cache.mpeg"
+        )
+        preview_cache.parent.mkdir(parents=True)
+        preview_cache.write_bytes(b"generated preview cache")
         catalog_file(
             sidecar,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        catalog_file(
+            preview_cache,
             self.db,
             stability_seconds=0,
             include_media_probe=False,
@@ -223,6 +245,49 @@ class LocalAnalysisJobTests(unittest.TestCase):
             import shutil
 
             shutil.rmtree(temporary_root, ignore_errors=True)
+
+    def test_local_model_retries_invalid_structured_content(self) -> None:
+        source = self.sources / "retry-evidence.txt"
+        source.write_text(
+            "A local transcript about a sunrise over a lake.",
+            encoding="utf-8",
+        )
+        valid = {
+            "title": "Sunrise Over a Lake",
+            "description": "Text describing a sunrise over a lake.",
+            "content_observations": [
+                "The text discusses a sunrise over a lake."
+            ],
+            "evidence_mode": "text_content",
+            "media_category": "document",
+            "tags": ["sunrise", "lake"],
+            "privacy_flags": [],
+            "organization_suggestion": "Documents/Nature",
+            "stock_metadata": {},
+            "confidence": 0.8,
+        }
+        responses = [
+            {"message": {"content": "{not-json"}},
+            {"message": {"content": json.dumps(valid)}},
+        ]
+
+        with patch(
+            "beacon.local_analysis._request_json",
+            side_effect=responses,
+        ) as request:
+            result = _default_analyzer(
+                "http://127.0.0.1:11434",
+                "fixture-model",
+                {
+                    "source_path": str(source),
+                    "media_metadata": {},
+                    "thumbnail_path": "",
+                    "size_bytes": source.stat().st_size,
+                },
+            )
+
+        self.assertEqual(result["evidence_mode"], "text_content")
+        self.assertEqual(request.call_count, 2)
 
     def test_pipeline_stage_is_durable_and_clears_at_completion(self) -> None:
         observed: list[tuple[str, str | None]] = []
@@ -309,6 +374,120 @@ class LocalAnalysisJobTests(unittest.TestCase):
             self.assertIn("empty organization suggestion", provenance)
         finally:
             connection.close()
+
+    def test_invalid_candidate_fails_without_blocking_valid_publication(self) -> None:
+        calls = 0
+
+        def one_invalid(
+            endpoint: str, model: str, asset: dict[str, object]
+        ) -> dict:
+            nonlocal calls
+            calls += 1
+            result = self._analyzer(endpoint, model, asset)
+            if calls == 1:
+                result["title"] = ""
+            return result
+
+        job_id = create_local_analysis_job(self.db, model="fixture-model")
+        result = run_local_analysis_job(
+            self.db,
+            job_id,
+            analyzer=one_invalid,
+        )
+
+        self.assertEqual(result.state, "partial")
+        self.assertEqual(result.completed, 1)
+        self.assertEqual(result.failed, 1)
+        connection = sqlite3.connect(self.db)
+        try:
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM analysis_results"
+                ).fetchone()[0],
+                1,
+            )
+            state, worker_pid, stage = connection.execute(
+                """
+                SELECT state,worker_pid,current_stage
+                FROM local_analysis_jobs WHERE id=?
+                """,
+                (job_id,),
+            ).fetchone()
+            self.assertEqual(state, "partial")
+            self.assertIsNone(worker_pid)
+            self.assertIsNone(stage)
+        finally:
+            connection.close()
+
+    def test_finalization_failure_is_terminal_and_truthful(self) -> None:
+        job_id = create_local_analysis_job(self.db, model="fixture-model")
+
+        with patch(
+            "beacon.local_analysis.import_analysis_manifest",
+            side_effect=RuntimeError("synthetic publication failure"),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "synthetic publication failure",
+            ):
+                run_local_analysis_job(
+                    self.db,
+                    job_id,
+                    analyzer=self._analyzer,
+                )
+
+        connection = sqlite3.connect(self.db)
+        try:
+            state, worker_pid, stage, error = connection.execute(
+                """
+                SELECT state,worker_pid,current_stage,error
+                FROM local_analysis_jobs WHERE id=?
+                """,
+                (job_id,),
+            ).fetchone()
+            self.assertEqual(state, "failed")
+            self.assertIsNone(worker_pid)
+            self.assertIsNone(stage)
+            self.assertIn("synthetic publication failure", error)
+        finally:
+            connection.close()
+
+    def test_selected_generated_artifact_is_excluded_without_model_call(
+        self,
+    ) -> None:
+        cache = (
+            self.sources
+            / "PROJECT"
+            / "Adobe Premiere Pro Video Previews"
+            / "sequence.prv"
+            / "rendered-cache.mpeg"
+        )
+        cache.parent.mkdir(parents=True)
+        cache.write_bytes(b"generated preview cache")
+        cataloged = catalog_file(
+            cache,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        job_id = create_selected_local_analysis_job(
+            self.db,
+            asset_ids=[cataloged.asset_id],
+            model="fixture-model",
+        )
+
+        analyzer = patch(
+            "beacon.local_analysis._default_analyzer"
+        )
+        with analyzer as mocked:
+            result = run_local_analysis_job(self.db, job_id)
+
+        mocked.assert_not_called()
+        self.assertEqual(result.state, "complete")
+        self.assertEqual(result.completed, 0)
+        self.assertEqual(result.excluded, 1)
+        self.assertEqual(result.failed, 0)
 
     def test_interrupted_item_recovers_to_pending(self) -> None:
         job_id = create_local_analysis_job(self.db, model="fixture-model")
