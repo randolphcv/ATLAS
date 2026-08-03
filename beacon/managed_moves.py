@@ -131,16 +131,11 @@ def recover_interrupted_managed_moves(db_path: Path) -> int:
             recovered += 1
             continue
         if source_exists and not destination_exists:
-            source_matches = sha256_file(source) == expected_sha256
             _fail_move(
                 db_path,
                 row["id"],
-                (
-                    "Interrupted before the atomic rename; source remains "
-                    "verified and is safe to retry."
-                    if source_matches
-                    else "Interrupted move source checksum no longer matches."
-                ),
+                "Interrupted before the atomic rename; source remains present "
+                "and is safe to retry through normal checksum verification.",
             )
             recovered += 1
             continue
@@ -358,24 +353,20 @@ def move_cataloged_file(
             ),
         )
 
-    actual_sha256 = sha256_file(source)
-    if actual_sha256 != expected_sha256:
-        _fail_move(
-            db_path,
-            move_id,
-            f"Source checksum changed: expected {expected_sha256}, got {actual_sha256}",
-        )
-        raise RuntimeError("Source checksum no longer matches the catalog.")
-
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with connect(db_path) as connection:
-        connection.execute(
-            "UPDATE managed_moves SET state = 'running' WHERE id = ?",
-            (move_id,),
-        )
-
     moved = False
     try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        actual_sha256 = sha256_file(source)
+        if actual_sha256 != expected_sha256:
+            raise RuntimeError(
+                "Source checksum no longer matches the catalog: "
+                f"expected {expected_sha256}, got {actual_sha256}"
+            )
+        with connect(db_path) as connection:
+            connection.execute(
+                "UPDATE managed_moves SET state = 'running' WHERE id = ?",
+                (move_id,),
+            )
         os.replace(source, destination)
         moved = True
         destination_sha256 = sha256_file(destination)

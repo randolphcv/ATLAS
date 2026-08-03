@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from beacon.catalog import catalog_file, sha256_file
 from beacon.database import SCHEMA_VERSION, connect, database_integrity
@@ -298,6 +299,60 @@ class ManagedMoveTests(unittest.TestCase):
         self.assertTrue(self.source.exists())
         self.assertTrue(destination.exists())
 
+    def test_destination_creation_failure_is_recorded_immediately(self) -> None:
+        set_policy(
+            self.db,
+            "files.managed_moves.enabled",
+            True,
+            source_kind="test",
+        )
+
+        original_mkdir = Path.mkdir
+
+        def deny_destination(path: Path, *args: object, **kwargs: object) -> None:
+            if path == self.library / "Personal":
+                raise PermissionError("synthetic destination access denied")
+            original_mkdir(path, *args, **kwargs)
+
+        with (
+            patch.object(
+                Path,
+                "mkdir",
+                autospec=True,
+                side_effect=deny_destination,
+            ),
+            patch("beacon.managed_moves.sha256_file") as checksum,
+        ):
+            with self.assertRaisesRegex(PermissionError, "access denied"):
+                move_cataloged_file(
+                    self.db,
+                    asset_id=self.asset.asset_id,
+                    source_path=self.source,
+                    destination_directory=self.library / "Personal",
+                    requested_by="human",
+                    authorization="test authorization",
+                    approved_roots=(self.library,),
+                )
+        checksum.assert_not_called()
+
+        self.assertTrue(self.source.exists())
+        with connect(self.db) as connection:
+            state, error = connection.execute(
+                """
+                SELECT state,error FROM managed_moves
+                ORDER BY created_at DESC LIMIT 1
+                """
+            ).fetchone()
+            event_count = connection.execute(
+                """
+                SELECT COUNT(*) FROM system_events
+                WHERE kind='managed_move' AND state='failed'
+                """
+            ).fetchone()[0]
+        self.assertEqual(state, "failed")
+        self.assertIn("access denied", error)
+        self.assertEqual(event_count, 1)
+
     def test_interrupted_rename_is_completed_from_verified_destination(
         self,
     ) -> None:
@@ -338,7 +393,7 @@ class ManagedMoveTests(unittest.TestCase):
         self.assertEqual(location["path"], str(destination))
         self.assertEqual(sha256_file(destination), self.before)
 
-    def test_interrupted_plan_leaves_verified_source_for_retry(self) -> None:
+    def test_interrupted_plan_defers_checksum_until_retry(self) -> None:
         destination = self.library / "Personal" / self.source.name
         move_id = "00000000-0000-4000-8000-000000000002"
         with connect(self.db) as connection:
@@ -358,7 +413,9 @@ class ManagedMoveTests(unittest.TestCase):
                 ),
             )
 
-        self.assertEqual(recover_interrupted_managed_moves(self.db), 1)
+        with patch("beacon.managed_moves.sha256_file") as checksum:
+            self.assertEqual(recover_interrupted_managed_moves(self.db), 1)
+        checksum.assert_not_called()
 
         with connect(self.db) as connection:
             move = connection.execute(

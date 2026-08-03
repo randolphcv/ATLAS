@@ -5,9 +5,7 @@ observes and catalogs files without owning or changing originals.
 
 ## Current application
 
-Beacon 0.22.0 is the current packaged source candidate. The verified live
-0.21.5 desktop remains active until its in-flight catalog analysis is terminal;
-the candidate includes:
+Beacon 0.22.4 is the current packaged and live desktop release. It includes:
 
 - the verified Phase 1 read-only catalog;
 - a branded Qt Quick desktop shell with no embedded browser;
@@ -58,6 +56,11 @@ the candidate includes:
   places, client/project context, rights, notes, and organization directories;
 - checksum-verified managed moves bounded to approved ATLAS roots, with
   non-overwrite behavior, rollback attempts, location updates, and audit events;
+- zero-byte contextual-analysis exclusion without a model call;
+- per-destination placement blockers that cannot stop publication or metadata
+  finalization for the rest of an analysis run;
+- destination-directory preflight before expensive source checksum reads and
+  immediate recovery of interrupted planned moves;
 - an explicit **LIVE CATALOG** label and automatic refresh when another Beacon
   process updates that catalog;
 - a visible audit-event ledger;
@@ -79,8 +82,7 @@ API is not started by the desktop application.
 
 ## Run the Windows app
 
-1. Open `C:\Development\ATLAS\dist\releases\0.22.0\ATLAS Beacon\` after the
-   active production analysis has completed and the candidate is activated.
+1. Open `C:\Development\ATLAS\dist\releases\0.22.4\ATLAS Beacon\`.
 2. Double-click `ATLAS Beacon.exe`.
 3. Open Library, select an asset, and press Space (or click Preview).
 4. Press Space or Escape to close the temporary preview.
@@ -92,7 +94,7 @@ The app does not open a browser or listen on a network port. Keep the entire
 A ready-to-extract package is generated at:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.22.0-win64.zip
+C:\Development\ATLAS\dist\ATLAS-Beacon-0.22.4-win64.zip
 ```
 
 This private development build is not code-signed, so Windows may identify the

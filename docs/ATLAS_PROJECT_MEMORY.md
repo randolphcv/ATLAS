@@ -1,11 +1,52 @@
 # ATLAS — Project Memory and Decision Ledger
 
-Updated: 2026-07-26
+Updated: 2026-08-03
 Status: portable cross-machine handoff; verify live Windows state before treating recorded runtime details as current
 
 Use this file for durable, low-noise context. Do not store raw logs, secrets, personal media content, full transcripts, or speculative brainstorming here.
 
 ## Current Verified/Reported Baseline
+
+### Beacon 0.22.4 analysis and placement failure repair
+
+- Beacon 0.22.4 is live from
+  `C:\Development\ATLAS\dist\releases\0.22.4\ATLAS Beacon\ATLAS Beacon.exe`.
+  SHA-256:
+  `756a94858f54fee2923cd557bed46bd50dd3da1bba76edbd0936d2fb3ad3a938`.
+- Total analysis job `37d94efb-26bb-4701-8efe-782ae9687835` is terminal
+  `complete`: 2,896 publishable results, one excluded zero-byte file, zero
+  failures, and zero pending items. The empty asset remains cataloged and
+  searchable; Qwen was not called during its successful retry.
+- Placement errors no longer abort result publication or metadata finalization.
+  They create durable Beacon Desk blockers and are isolated by destination for
+  the remainder of the finalization pass.
+- Managed moves now record directory-creation failures immediately, preflight
+  destination directories before expensive source checksum reads, and recover
+  interrupted `planned` records without re-reading multi-gigabyte sources.
+  The normal move attempt still verifies the full source checksum before its
+  atomic rename.
+- The verified external cause is StableBit DrivePool mode
+  `PoolModeNoCreateDirectories` on `J:`. The volume is online, healthy, and not
+  read-only; ACLs grant the interactive account full control. StableBit's
+  documentation says this new-folder restriction occurs when its trial/license
+  is inactive. Connor must confirm/activate DrivePool in its UI; do not bypass
+  the pool by touching underlying pool-part folders.
+- This run completed 291 checksum-verified placements into existing Projects
+  destinations. Another 2,605 analyzed assets remain cataloged in Inbox. The
+  final pass recorded 31 placement failures, deferred 2,574 repeated attempts
+  under those blocked destinations, and created 31 durable blockers.
+- Pre-repair backup:
+  `C:\ProgramData\ATLAS\Beacon\backups\beacon-20260803T195436.918349Z.db`;
+  SHA-256
+  `8b73b1c80e6f9b0b292a96ee43cbb2cd8b135f47e73f1a51106856112fe6be9a`;
+  integrity `ok`.
+- Schema 16 integrity is `ok` with zero foreign-key violations. All 123 tests
+  pass; two opt-in real-FFprobe tests are skipped when `BEACON_FFPROBE` is not
+  supplied. Packaged smoke exits 0 and the capability audit reports zero
+  blocked files.
+- Release ZIP:
+  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.22.4-win64.zip`; SHA-256
+  `d9f60fede7f59933e68cd74388d92c56374b87fb50b48f7e6b642c4069f65b5e`.
 
 ### Next phase
 

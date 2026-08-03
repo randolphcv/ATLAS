@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from beacon.catalog import catalog_file
@@ -69,7 +70,13 @@ else:
         self.temp.cleanup()
 
     def test_runtime_analysis_is_verified_persistent_and_cached(self) -> None:
-        with patch.dict(os.environ, self.environment):
+        with (
+            patch.dict(os.environ, self.environment),
+            patch(
+                "beacon.music_analysis.shutil.disk_usage",
+                return_value=SimpleNamespace(free=20 * 1024**3),
+            ),
+        ):
             self.assertTrue(runtime_status()["available"])
             result = analyze_asset_music(
                 self.db,

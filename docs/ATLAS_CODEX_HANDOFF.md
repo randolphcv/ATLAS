@@ -1,5 +1,55 @@
 # ATLAS — Codex Project Handoff
 
+## 2026-08-03 Beacon 0.22.4 current-failure repair
+
+The current Total Analysis failure is closed at the content-analysis layer.
+Job `37d94efb-26bb-4701-8efe-782ae9687835` is terminal `complete` with 2,896
+publishable results, one excluded zero-byte `.DAT`, zero failures, and zero
+pending items. The empty asset remains cataloged/searchable and its retry made
+no Qwen call.
+
+Two coupled defects were corrected. Zero-byte assets now terminalize as
+confident exclusions. Managed placement is isolated per destination: a folder
+permission error creates a durable Beacon Desk blocker and no longer aborts
+publication, metadata finalization, or later candidates. Directory-creation
+errors are immediately written as failed managed moves. Missing destinations
+are preflighted before source hashing, and interrupted `planned` moves recover
+without re-reading large sources; actual moves retain full checksum verification
+before the atomic rename.
+
+The remaining organization blocker is external. `J:` is a healthy online
+StableBit DrivePool volume whose service log reports
+`PoolModeNoCreateDirectories`. ACLs grant full control and Windows Controlled
+Folder Access is disabled. StableBit documents this exact no-new-folder
+restriction for an inactive/expired trial or license. Connor must confirm and
+activate the DrivePool license in its UI. Do not bypass DrivePool or write to
+underlying pool-part folders.
+
+Live placement result: 291 analyzed assets moved through the normal
+checksum-verified boundary into existing destinations; 2,605 analyzed assets
+remain in Inbox. The final pass recorded 31 placement failures, deferred 2,574
+repeat attempts under blocked destinations, and created 31 durable blockers.
+
+Verification:
+
+- 123 tests pass; two opt-in real-FFprobe tests skipped without
+  `BEACON_FFPROBE`.
+- schema 16 integrity `ok`; zero foreign-key violations.
+- verified pre-repair backup:
+  `C:\ProgramData\ATLAS\Beacon\backups\beacon-20260803T195436.918349Z.db`
+  (`8b73b1c80e6f9b0b292a96ee43cbb2cd8b135f47e73f1a51106856112fe6be9a`).
+- live executable:
+  `C:\Development\ATLAS\dist\releases\0.22.4\ATLAS Beacon\ATLAS Beacon.exe`
+  (`756a94858f54fee2923cd557bed46bd50dd3da1bba76edbd0936d2fb3ad3a938`).
+- ZIP:
+  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.22.4-win64.zip`
+  (`d9f60fede7f59933e68cd74388d92c56374b87fb50b48f7e6b642c4069f65b5e`).
+- isolated packaged smoke exit 0; zero blocked capability files.
+
+Next: restore DrivePool directory creation, prove one approved destination,
+resume deferred managed placements, and then run the grounded Beacon
+conversation matrix.
+
 ## 2026-07-26 Beacon 0.22.0 scalable scope candidate
 
 Intake and Analysis now use the same explicit **Granular / General / Total**

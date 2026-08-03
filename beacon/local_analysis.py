@@ -22,6 +22,7 @@ from .catalog import sha256_file
 from .database import connect, migrate, record_event
 from .desk import seed_threads
 from .managed_moves import (
+    analysis_placement_for,
     commit_analyzed_file,
     placement_needs_clarification,
     recover_interrupted_managed_moves,
@@ -39,6 +40,7 @@ DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
 POLICY_VERSION = "beacon-local-content-v4"
 _WHISPER_MODEL: Any = None
 NON_CONTENT_PROJECT_EXTENSIONS = frozenset({".aep", ".aepx", ".prproj"})
+EMPTY_FILE_SHA256 = hashlib.sha256(b"").hexdigest()
 ANALYSIS_SCOPE_KINDS = frozenset(
     {"all", "visual", "audio", "other", "raw"}
 )
@@ -754,8 +756,18 @@ def _validate_content_candidate(
         )
 
 
-def _artifact_exclusion_reason(source_path: str | Path) -> str | None:
+def _artifact_exclusion_reason(
+    source_path: str | Path,
+    *,
+    size_bytes: int | None = None,
+    source_sha256: str | None = None,
+) -> str | None:
     source = Path(source_path)
+    if size_bytes == 0 and source_sha256 == EMPTY_FILE_SHA256:
+        return (
+            "Excluded empty file from contextual content inference; the "
+            "zero-byte catalog identity remains searchable."
+        )
     if source.suffix.lower() in NON_CONTENT_PROJECT_EXTENSIONS:
         return (
             "Excluded editable production project file from contextual content "
@@ -767,6 +779,23 @@ def _artifact_exclusion_reason(source_path: str | Path) -> str | None:
         "Excluded confidently generated cache, autosave, or sidecar artifact; "
         "the original remains cataloged and can be shown as a hidden file."
     )
+
+
+def _complete_analysis_exclusion(
+    db_path: Path,
+    item_id: str,
+    reason: str,
+) -> None:
+    with connect(db_path) as connection:
+        connection.execute(
+            """
+            UPDATE local_analysis_items
+            SET state='complete',result_json=NULL,error=NULL,
+                excluded_reason=?,completed_at=?
+            WHERE id=?
+            """,
+            (reason, _utc_now(), item_id),
+        )
 
 
 def _analysis_metadata_applied(
@@ -783,6 +812,73 @@ def _analysis_metadata_applied(
             """,
             (asset_id, f"analysis_run:{run_id}"),
         ).fetchone() is not None
+
+
+def _analysis_placement_seed_key(
+    kind: str,
+    run_id: str,
+    asset_id: str,
+    source_path: Path,
+) -> str:
+    path_fingerprint = hashlib.sha256(
+        str(source_path).encode("utf-8")
+    ).hexdigest()[:16]
+    return f"analysis-placement-{kind}:{run_id}:{asset_id}:{path_fingerprint}"
+
+
+def _record_analysis_placement_failure(
+    db_path: Path,
+    *,
+    run_id: str,
+    asset_id: str,
+    source_path: Path,
+    error: Exception,
+) -> None:
+    error_text = str(error)[:1900]
+    source_present = source_path.is_file()
+    with connect(db_path) as connection:
+        record_event(
+            connection,
+            kind="local_analysis_placement",
+            state="failed",
+            message="Analyzed file placement requires attention",
+            asset_id=asset_id,
+            location_path=str(source_path),
+            details={
+                "analysis_run_id": run_id,
+                "error": error_text,
+                "source_present": source_present,
+            },
+        )
+    source_state = (
+        "Beacon confirmed that the source is still present at its cataloged "
+        "path."
+        if source_present
+        else (
+            "Beacon could not confirm the source at its cataloged path; "
+            "inspect the managed-move record before retrying."
+        )
+    )
+    seed_threads(
+        db_path,
+        [
+            {
+                "seed_key": _analysis_placement_seed_key(
+                    "error", run_id, asset_id, source_path
+                ),
+                "subject": "Beacon could not place an analyzed file",
+                "body": (
+                    "Contextual analysis completed, but the managed archive "
+                    f"placement failed for {source_path}. {source_state} "
+                    f"Error: {error_text}"
+                ),
+                "kind": "blocker",
+                "priority": "important",
+                "requires_approval": False,
+                "asset_id": asset_id,
+            }
+        ],
+    )
 
 
 def _default_analyzer(
@@ -1499,16 +1595,11 @@ def _run_local_analysis_job(
             )
         exclusion_reason = _artifact_exclusion_reason(item["source_path"])
         if exclusion_reason:
-            with connect(db_path) as connection:
-                connection.execute(
-                    """
-                    UPDATE local_analysis_items
-                    SET state='complete',result_json=NULL,error=NULL,
-                        excluded_reason=?,completed_at=?
-                    WHERE id=?
-                    """,
-                    (exclusion_reason, _utc_now(), item["id"]),
-                )
+            _complete_analysis_exclusion(
+                db_path,
+                str(item["id"]),
+                exclusion_reason,
+            )
             if progress_callback:
                 progress_callback()
             continue
@@ -1518,6 +1609,20 @@ def _run_local_analysis_job(
                 raise FileNotFoundError(str(source))
             if sha256_file(source) != item["source_sha256"]:
                 raise ValueError("source bytes changed since cataloging")
+            exclusion_reason = _artifact_exclusion_reason(
+                source,
+                size_bytes=int(asset["size_bytes"]),
+                source_sha256=str(item["source_sha256"]),
+            )
+            if exclusion_reason:
+                _complete_analysis_exclusion(
+                    db_path,
+                    str(item["id"]),
+                    exclusion_reason,
+                )
+                if progress_callback:
+                    progress_callback()
+                continue
             media_metadata = json.loads(
                 asset.get("media_metadata_json") or "{}"
             )
@@ -1760,6 +1865,9 @@ def _run_local_analysis_job(
                 """,
                 (run_id, _utc_now(), job_id),
             )
+    placement_failures: list[dict[str, str]] = []
+    blocked_placement_directories: set[str] = set()
+    deferred_placements = 0
     if run_id:
         for candidate in candidates:
             with connect(db_path) as connection:
@@ -1803,24 +1911,61 @@ def _run_local_analysis_job(
             last_move = None
             for location in locations:
                 source_path = Path(location["source_path"])
-                if not str(source_path).lower().startswith("j:\\inbox\\"):
+                placement = analysis_placement_for(source_path)
+                destination_key = (
+                    str(placement.destination_directory).casefold()
+                    if placement.destination_directory is not None
+                    else None
+                )
+                if (
+                    destination_key is not None
+                    and destination_key in blocked_placement_directories
+                ):
+                    deferred_placements += 1
                     continue
                 _set_job_stage(db_path, job_id, "moving_to_archive")
-                moved, placement_reason = commit_analyzed_file(
-                    db_path,
-                    asset_id=candidate["asset_id"],
-                    source_path=source_path,
-                    confidence=float(candidate["confidence"]),
-                    analysis_run_id=run_id,
-                )
+                try:
+                    moved, placement_reason = commit_analyzed_file(
+                        db_path,
+                        asset_id=candidate["asset_id"],
+                        source_path=source_path,
+                        confidence=float(candidate["confidence"]),
+                        analysis_run_id=run_id,
+                    )
+                except Exception as placement_error:
+                    if (
+                        isinstance(placement_error, PermissionError)
+                        and destination_key is not None
+                    ):
+                        blocked_placement_directories.add(destination_key)
+                    placement_failures.append(
+                        {
+                            "asset_id": str(candidate["asset_id"]),
+                            "source_path": str(source_path),
+                            "error": str(placement_error)[:1900],
+                        }
+                    )
+                    try:
+                        _record_analysis_placement_failure(
+                            db_path,
+                            run_id=run_id,
+                            asset_id=str(candidate["asset_id"]),
+                            source_path=source_path,
+                            error=placement_error,
+                        )
+                    except Exception:
+                        pass
+                    continue
                 if moved is None and placement_needs_clarification(source_path):
                     seed_threads(
                         db_path,
                         [
                             {
-                                "seed_key": (
-                                    f"analysis-placement:{run_id}:"
-                                    f"{candidate['asset_id']}:{source_path}"
+                                "seed_key": _analysis_placement_seed_key(
+                                    "clarification",
+                                    run_id,
+                                    str(candidate["asset_id"]),
+                                    source_path,
                                 ),
                                 "subject": "Where should this analyzed file live?",
                                 "body": (
@@ -1871,7 +2016,13 @@ def _run_local_analysis_job(
             kind="local_analysis_job",
             state=state,
             message=f"Local-only analysis finished: {counts['complete']} candidates",
-            details={"job_id": job_id, "analysis_run_id": run_id, **counts},
+            details={
+                "job_id": job_id,
+                "analysis_run_id": run_id,
+                "placement_failures": len(placement_failures),
+                "deferred_placements": deferred_placements,
+                **counts,
+            },
         )
     return LocalAnalysisRunResult(
         job_id,

@@ -6,6 +6,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from PIL import Image
@@ -844,6 +845,71 @@ class LocalAnalysisJobTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_placement_failure_is_durable_and_does_not_block_analysis(self) -> None:
+        job_id = create_local_analysis_job(self.db, model="fixture-model")
+
+        with (
+            patch(
+                "beacon.local_analysis.analysis_placement_for",
+                return_value=SimpleNamespace(
+                    destination_directory=Path(r"J:\Projects\Test\Blocked")
+                ),
+            ),
+            patch(
+                "beacon.local_analysis.commit_analyzed_file",
+                side_effect=PermissionError(
+                    "synthetic destination access denied"
+                ),
+            ) as commit,
+        ):
+            result = run_local_analysis_job(
+                self.db,
+                job_id,
+                analyzer=self._analyzer,
+            )
+
+        self.assertEqual(commit.call_count, 1)
+        self.assertEqual(result.state, "complete")
+        self.assertEqual(result.completed, 2)
+        self.assertEqual(result.failed, 0)
+        connection = sqlite3.connect(self.db)
+        try:
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM asset_metadata_revisions"
+                ).fetchone()[0],
+                2,
+            )
+            subject, kind, priority = connection.execute(
+                """
+                SELECT subject,kind,priority FROM beacon_threads
+                WHERE seed_key LIKE 'analysis-placement-error:%'
+                """
+            ).fetchone()
+            self.assertEqual(subject, "Beacon could not place an analyzed file")
+            self.assertEqual(kind, "blocker")
+            self.assertEqual(priority, "important")
+            placement_failures = connection.execute(
+                """
+                SELECT COUNT(*) FROM system_events
+                WHERE kind='local_analysis_placement' AND state='failed'
+                """
+            ).fetchone()[0]
+            self.assertEqual(placement_failures, 1)
+            event_details = json.loads(
+                connection.execute(
+                    """
+                    SELECT details_json FROM system_events
+                    WHERE kind='local_analysis_job' AND state='complete'
+                    ORDER BY created_at DESC LIMIT 1
+                    """
+                ).fetchone()[0]
+            )
+            self.assertEqual(event_details["placement_failures"], 1)
+            self.assertEqual(event_details["deferred_placements"], 1)
+        finally:
+            connection.close()
+
     def test_selected_generated_artifact_is_excluded_without_model_call(
         self,
     ) -> None:
@@ -908,6 +974,70 @@ class LocalAnalysisJobTests(unittest.TestCase):
         self.assertEqual(result.completed, 0)
         self.assertEqual(result.excluded, 1)
         self.assertEqual(result.failed, 0)
+
+    def test_selected_empty_file_is_excluded_without_model_call(self) -> None:
+        empty = self.sources / "empty.dat"
+        empty.write_bytes(b"")
+        cataloged = catalog_file(
+            empty,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        job_id = create_selected_local_analysis_job(
+            self.db,
+            asset_ids=[cataloged.asset_id],
+            model="fixture-model",
+        )
+
+        analyzer = patch("beacon.local_analysis._default_analyzer")
+        with analyzer as mocked:
+            result = run_local_analysis_job(self.db, job_id)
+
+        mocked.assert_not_called()
+        self.assertEqual(result.state, "complete")
+        self.assertEqual(result.completed, 0)
+        self.assertEqual(result.excluded, 1)
+        self.assertEqual(result.failed, 0)
+        connection = sqlite3.connect(self.db)
+        try:
+            reason = connection.execute(
+                """
+                SELECT excluded_reason FROM local_analysis_items
+                WHERE job_id=?
+                """,
+                (job_id,),
+            ).fetchone()[0]
+            self.assertIn("empty file", reason.lower())
+        finally:
+            connection.close()
+
+    def test_empty_file_exclusion_requires_current_checksum_identity(self) -> None:
+        source = self.sources / "changed-empty.dat"
+        source.write_bytes(b"")
+        cataloged = catalog_file(
+            source,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        job_id = create_selected_local_analysis_job(
+            self.db,
+            asset_ids=[cataloged.asset_id],
+            model="fixture-model",
+        )
+        source.write_bytes(b"content arrived after the analysis snapshot")
+
+        analyzer = patch("beacon.local_analysis._default_analyzer")
+        with analyzer as mocked:
+            result = run_local_analysis_job(self.db, job_id)
+
+        mocked.assert_not_called()
+        self.assertEqual(result.state, "failed")
+        self.assertEqual(result.excluded, 0)
+        self.assertEqual(result.failed, 1)
 
     def test_interrupted_item_recovers_to_pending(self) -> None:
         job_id = create_local_analysis_job(self.db, model="fixture-model")

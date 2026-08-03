@@ -1,6 +1,6 @@
 # ATLAS — Connor Context and Product Direction
 
-Updated: 2026-07-26
+Updated: 2026-08-03
 Purpose: portable context for **Ultron**, the Codex environment on the Windows
 ATLAS workstation. The separate MacBook Codex environment is **Jarvis**.
 
@@ -24,29 +24,23 @@ This document captures the working preferences and design language that should r
 
 ## Next Working Phase
 
-The Ultron/Jarvis Markdown bridge is established at
-`J:\ULTRON_CONTEXT.md` and `J:\JARVIS_CONTEXT.md` with separate ownership and
-atomic same-volume replacement. Ultron acknowledged Jarvis message
-`JARVIS-20260726-001`.
+Beacon 0.22.4 is live. Total analysis job
+`37d94efb-26bb-4701-8efe-782ae9687835` is terminal `complete` with 2,896
+publishable results, one excluded zero-byte file, and zero failures. The live
+schema remains 16 with integrity `ok` and zero foreign-key violations.
 
-The public GitHub repository is live at
-`https://github.com/randolphcv/ATLAS`. It publishes the existing `main`
-history after Connor explicitly accepted the audited machine-specific paths
-in tracked documentation and screenshots. Local `main` tracks `origin/main`;
-do not rewrite the published history.
+`J:` is a StableBit DrivePool volume currently reporting
+`PoolModeNoCreateDirectories`. Its NTFS ACL and health are normal, but new
+folders are denied. This is consistent with StableBit's inactive/expired
+license restriction and must be confirmed in the DrivePool UI. Beacon moved
+291 analyzed assets into existing destinations, left 2,605 source locations
+in Inbox, and created 31 durable placement blockers without failing analysis.
+Never bypass DrivePool by writing directly to pool-part folders.
 
-Beacon 0.22.0 is packaged as a verified candidate with shared
-Granular / General / Total scope controls for Intake and Analysis. Total is
-the default uncapped click-time snapshot. Do not activate it while the current
-0.21.5 production analysis job is running. After that job is terminal,
-activate and verify the candidate, then resume grounded live Beacon query
-testing.
-
-The handed-off 157-item intake and two newer intake jobs completed. The latest
-completed analysis job has 488 publishable results, two excluded editable
-project files, and zero failures. A newer 221-item production analysis job,
-`c687374f-97c0-4147-8a73-ce9d81623a22`, was still running when the 0.22.0
-candidate was packaged. Beacon 0.21.5 remains live until that job is terminal.
+The public GitHub repository and Ultron/Jarvis Markdown bridge remain live.
+After Connor restores DrivePool directory creation, verify one approved folder
+creation and resume the deferred checksum-verified placements. Then continue
+the representative grounded Beacon conversation matrix.
 
 ## How Connor Likes Codex to Work
 

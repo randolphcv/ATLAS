@@ -25,25 +25,20 @@ Before changing anything:
 
 Current verified baseline:
 
-- Beacon 0.22.0 is packaged and isolated-smoke verified but is not active.
-  It adds shared Granular / General / Total scope controls, with Total as the
-  default uncapped click-time snapshot for Intake and Analysis;
-- Beacon 0.21.5 is live from
-  `C:\Development\ATLAS\dist\releases\0.21.5\ATLAS Beacon\ATLAS Beacon.exe`;
+- Beacon 0.22.4 is live from
+  `C:\Development\ATLAS\dist\releases\0.22.4\ATLAS Beacon\ATLAS Beacon.exe`;
 - schema 16 is healthy with zero foreign-key violations;
-- intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` completed 157/157, and
-  the latest intake `38fc99f1-cc62-41ef-929c-a89b3c1d11c6` completed 500/500;
-- analysis job `a6f80068-0b86-42dd-887b-0fc8f5b62265` is complete with
-  408 publishable results, 177 excluded generated artifacts, and zero
-  failures;
-- latest analysis job `ea673da9-6ed6-4e18-a83a-8b4cc9df2e37` is terminal
-  `complete` with 488 publishable results, two excluded project files, and
-  zero failures;
-- newer analysis job `c687374f-97c0-4147-8a73-ce9d81623a22` was still
-  `running` when 0.22.0 was packaged; re-check it and do not stop Beacon or
-  activate the candidate until it is terminal;
-- all 119 tests pass, including real FFprobe acceptance;
-- `main` includes the immediate native-video-preview correction;
+- latest intake `4ff7f10f-e72a-4762-88ae-b6264e4e8567` completed 3,830/3,830;
+- Total Analysis job `37d94efb-26bb-4701-8efe-782ae9687835` is complete with
+  2,896 publishable results, one excluded zero-byte file, zero failures, and
+  zero pending items;
+- 291 analyzed assets completed checksum-verified placement into existing
+  destinations; 2,605 remain in Inbox behind 31 durable placement blockers;
+- `J:` is a healthy StableBit DrivePool volume currently reporting
+  `PoolModeNoCreateDirectories`, consistent with an inactive/expired DrivePool
+  license; do not bypass the pool or touch pool-part folders;
+- all 123 tests pass; two opt-in real-FFprobe tests skip unless
+  `BEACON_FFPROBE` is supplied;
 - the public repository is live at `https://github.com/randolphcv/ATLAS`,
   and local `main` tracks `origin/main`; do not rewrite published history;
 - the Ultron/Jarvis bridge is live at `J:\ULTRON_CONTEXT.md` and
@@ -53,9 +48,9 @@ Current verified baseline:
 
 Next priorities, in order:
 
-1. When analysis job `c687374f-97c0-4147-8a73-ce9d81623a22` is terminal,
-   re-check integrity and foreign keys, activate the verified 0.22.0 release,
-   and verify the Total defaults plus one synthetic/safe representative scope.
+1. Have Connor confirm/activate the StableBit DrivePool license. Verify one
+   approved missing Projects destination can be created before resuming the
+   deferred checksum-verified placements. Do not modify ACLs or pool parts.
 2. Run representative Beacon conversation tests against the live catalog.
    Cover exact retrieval, semantic retrieval, requested result counts,
    distinct/unique results, explicit no-search turns, relevant clarification,
