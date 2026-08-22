@@ -1,5 +1,8 @@
 # ATLAS Roadmap
 
+> This document asserts no facts about current state.
+> `docs/ATLAS_PROJECT_MEMORY.md` is the single state record.
+
 ## Completed — dependable synthetic catalog
 
 - synthetic read-only intake

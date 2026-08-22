@@ -1,5 +1,54 @@
 # ATLAS — Codex Project Handoff
 
+> Historical handoff log. Entries are dated and were true when written.
+> This document asserts nothing about the present.
+> `docs/ATLAS_PROJECT_MEMORY.md` is the single state record.
+
+## 2026-08-04 Beacon 0.22.7 complete post-analysis Inbox placement
+
+Successful analysis now performs a second contextual placement pass for files
+that intentionally receive no content inference: sidecars, editable project
+files, autosaves, generated previews/caches, and zero-byte catalog identities.
+The pass is allowed only when analyzed files in the same client/project tree
+already establish the destination under `<ARCHIVE_ROOT>\Projects`; it preserves the full
+relative folder structure and uses the existing per-file checksum, atomic
+rename, catalog update, and audit journal. Empty Inbox directories are removed
+only after their contents have moved.
+
+The live pass moved all 934 remaining files (4.82 GB), removed 27 empty
+directories, and reported zero skipped or failed files. `<INBOX>` now has zero
+files, zero subdirectories, and zero catalog locations. There are zero active
+managed moves; schema 16 integrity is `ok` with zero foreign-key violations.
+The pre-change verified backup is
+`beacon-20260804T181633.430082Z.db` (SHA-256
+`15cb8103f31c55f3b4944caeed019f508e66f1ea42831beb931e5fda5bf26ba8`).
+All 128 tests pass (two opt-in real-media probes skipped).
+
+## 2026-08-04 Beacon 0.22.6 reply activation and placement recovery
+
+Sending a Beacon Desk reply now wakes the local conversation worker when the
+inference lane is free. A reply received while Beacon is already answering
+remains durably queued, and completion of the earlier turn cannot overwrite
+the newer queued human message. The desktop drains queued replies one at a
+time. Conversation remains read-only and cannot directly authorize file
+actions.
+
+All 126 tests pass. The packaged 0.22.6 smoke exits 0, and the live desktop is
+running from `<REPO>\dist\releases\0.22.6\ATLAS Beacon`.
+
+DrivePool directory creation is restored. The exact blocker reply asset passed
+a full checksum-verified placement proof into
+`<ARCHIVE_ROOT>\Projects\<CLIENT>\<PROJECT>\<CAMERA_ROLL>`. The remaining restartable placement
+batch selected 2,604 analyzed Inbox locations and completed through the same
+managed-move boundary. A transient RAW-file sharing violation was incorrectly
+treated as a destination-wide permission problem in the first recovery pass.
+Beacon 0.22.6 now isolates WinError 32 as a retryable single-file lock and
+reserves directory blocking for true WinError 5 access denial. After closing
+the desktop preview reader, the final 12-file retry completed with zero
+failures. The live catalog has zero analyzed Inbox locations, zero open
+blockers, and zero planned/running managed moves. Schema 16 integrity is `ok`
+with zero foreign-key violations.
+
 ## 2026-08-03 Beacon 0.22.4 current-failure repair
 
 The current Total Analysis failure is closed at the content-analysis layer.
@@ -17,11 +66,11 @@ are preflighted before source hashing, and interrupted `planned` moves recover
 without re-reading large sources; actual moves retain full checksum verification
 before the atomic rename.
 
-The remaining organization blocker is external. `J:` is a healthy online
+The remaining organization blocker is external. `<ARCHIVE_ROOT>` is a healthy online
 StableBit DrivePool volume whose service log reports
 `PoolModeNoCreateDirectories`. ACLs grant full control and Windows Controlled
 Folder Access is disabled. StableBit documents this exact no-new-folder
-restriction for an inactive/expired trial or license. Connor must confirm and
+restriction for an inactive/expired trial or license. the owner must confirm and
 activate the DrivePool license in its UI. Do not bypass DrivePool or write to
 underlying pool-part folders.
 
@@ -36,13 +85,13 @@ Verification:
   `BEACON_FFPROBE`.
 - schema 16 integrity `ok`; zero foreign-key violations.
 - verified pre-repair backup:
-  `C:\ProgramData\ATLAS\Beacon\backups\beacon-20260803T195436.918349Z.db`
+  `<RUNTIME_ROOT>\backups\beacon-20260803T195436.918349Z.db`
   (`8b73b1c80e6f9b0b292a96ee43cbb2cd8b135f47e73f1a51106856112fe6be9a`).
 - live executable:
-  `C:\Development\ATLAS\dist\releases\0.22.4\ATLAS Beacon\ATLAS Beacon.exe`
+  `<REPO>\dist\releases\0.22.4\ATLAS Beacon\ATLAS Beacon.exe`
   (`756a94858f54fee2923cd557bed46bd50dd3da1bba76edbd0936d2fb3ad3a938`).
 - ZIP:
-  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.22.4-win64.zip`
+  `<REPO>\dist\ATLAS-Beacon-0.22.4-win64.zip`
   (`d9f60fede7f59933e68cd74388d92c56374b87fb50b48f7e6b642c4069f65b5e`).
 - isolated packaged smoke exit 0; zero blocked capability files.
 
@@ -82,11 +131,11 @@ Verification:
 - Packaged 0.22.0 isolated smoke exits 0.
 - The packaged capability audit found zero blocked files.
 - executable:
-  `C:\Development\ATLAS\dist\releases\0.22.0\ATLAS Beacon\ATLAS Beacon.exe`
+  `<REPO>\dist\releases\0.22.0\ATLAS Beacon\ATLAS Beacon.exe`
 - executable SHA-256:
   `54a455fa4c70adba18ade5e23a0aac1f48206c292d5f8c64c65297eacc82116f`
 - ZIP:
-  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.22.0-win64.zip`
+  `<REPO>\dist\ATLAS-Beacon-0.22.0-win64.zip`
 - ZIP SHA-256:
   `6831c560870764a872132a91e8d2f507df33e677a044e0de40efb5791e94e23f`
 
@@ -119,14 +168,14 @@ evidence rather than a visual scene. The retry produced three grounded visual
 candidates and one grounded audio candidate.
 
 The existing checksum-verified placement policy then moved only those four
-newly analyzed MP4s from `J:\Inbox\COTR\...` to their matching preserved
-`J:\Projects\COTR\...` hierarchy. The excluded project files remained
+newly analyzed MP4s from `<INBOX>\COTR\...` to their matching preserved
+`<ARCHIVE_ROOT>\Projects\COTR\...` hierarchy. The excluded project files remained
 cataloged in place.
 
 Pre-retry backup:
 
 - path:
-  `C:\ProgramData\ATLAS\Beacon\backups\beacon-20260726T175508.834916Z.db`
+  `<RUNTIME_ROOT>\backups\beacon-20260726T175508.834916Z.db`
 - SHA-256:
   `7e80a87b721d30badf4ad11a5c29b3b256784fe4af00bb1fd2dce20713785a8c`
 - integrity: `ok`
@@ -135,17 +184,17 @@ All 116 tests pass, including real FFprobe acceptance. Packaged 0.21.5 smoke
 exits 0. Live release:
 
 - executable:
-  `C:\Development\ATLAS\dist\releases\0.21.5\ATLAS Beacon\ATLAS Beacon.exe`
+  `<REPO>\dist\releases\0.21.5\ATLAS Beacon\ATLAS Beacon.exe`
 - executable SHA-256:
   `abb116c179318bfe2ca45362032cf01e1cff059d0a4e7b7e57456d8aba67ec0b`
 - ZIP:
-  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.21.5-win64.zip`
+  `<REPO>\dist\ATLAS-Beacon-0.21.5-win64.zip`
 - ZIP SHA-256:
   `145b8bcaa24d84f2704f7c309a7535c694b078db9b855870e93fcf2102d5a578`
 
 Post-activation schema 16 integrity is `ok` with zero foreign-key violations.
 
-## 2026-07-26 GitHub preparation and Ultron/Jarvis bridge
+## 2026-07-26 GitHub preparation and operator-environment bridge
 
 The live safety baseline was rechecked before changes. `main` was clean at
 `2dc4b1b`; Beacon 0.21.4 was running from the verified release executable with
@@ -158,14 +207,14 @@ intakes also completed, including the latest 500-item job
 The latest analysis `ea673da9-6ed6-4e18-a83a-8b4cc9df2e37` is terminal
 `partial` with 484 completed items and six failures.
 
-Ultron's persistent bridge file is live at `J:\ULTRON_CONTEXT.md`. It is
+the workstation environment's persistent bridge file is live at `<ARCHIVE_ROOT>\<OPERATOR_A>_CONTEXT.md`. It is
 written through a complete same-directory temporary file followed by atomic
-replacement. Jarvis's read-only peer file became visible at
-`J:\JARVIS_CONTEXT.md`; Ultron read it and acknowledged
-`JARVIS-20260726-001` without editing Jarvis's file.
+replacement. the secondary environment's read-only peer file became visible at
+`<ARCHIVE_ROOT>\<OPERATOR_B>_CONTEXT.md`; the workstation environment read it and acknowledged
+`<OPERATOR_B>-20260726-001` without editing the secondary environment's file.
 
 The public GitHub repository is live at
-`https://github.com/randolphcv/ATLAS` with default branch `main`. Connor
+`https://github.com/randolphcv/ATLAS` with default branch `main`. the owner
 explicitly authorized publishing the full existing history after reviewing
 the path-exposure warning. Local `main` tracks `origin/main`; do not rewrite
 the published history. GitHub CLI 2.96.0 is authenticated as `randolphcv`.
@@ -177,8 +226,8 @@ under `docs/images`.
 The full tracked-history audit found no detected secrets, runtime databases,
 executables, model files, archives, or personal-media binaries. Twelve product
 documentation PNGs are tracked. Some tracked documentation and screenshots
-contain machine-specific Windows and `J:\` paths, including the local Windows
-username. Connor explicitly accepted this exposure before publication.
+contain machine-specific Windows and `<ARCHIVE_ROOT>` paths, including the local Windows
+username. the owner explicitly accepted this exposure before publication.
 
 All 113 unit tests pass from the repository virtual environment through
 `python -m unittest discover`; the two real-FFprobe acceptance tests remain
@@ -189,7 +238,7 @@ Next, run the representative live Beacon conversation matrix specified in
 
 ## 2026-07-25 next phase queued
 
-Connor started intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` with 157
+the owner started intake job `43bc6778-69e1-4432-a937-bd367acc0a7e` with 157
 snapshotted items. It was actively running at handoff. The next task must
 inspect its durable state first and must not interrupt active intake, migrate
 the live database, or begin analysis while intake is running.
@@ -198,8 +247,8 @@ The next three priorities are:
 
 1. create the ATLAS GitHub repository after confirming its owner, name,
    visibility, authentication, and exact publish scope;
-2. implement Connor's prepared prompt for a shared Markdown collaboration
-   file used by Ultron and Jarvis;
+2. implement the owner's prepared prompt for a shared Markdown collaboration
+   file used by the workstation environment and the secondary environment;
 3. run representative live Beacon query tests, preserving prompts, grounded
    cards, durable worker outcomes, and useful failure evidence.
 
@@ -225,11 +274,11 @@ Windows console windows.
 All 113 tests pass and packaged smoke exits 0. Live release:
 
 - executable:
-  `C:\Development\ATLAS\dist\releases\0.21.4\ATLAS Beacon\ATLAS Beacon.exe`
+  `<REPO>\dist\releases\0.21.4\ATLAS Beacon\ATLAS Beacon.exe`
 - executable SHA-256:
   `5edb0d43d84990a3259a16b46b96ce3ff3a7c424d4bb88183b36a13d863c32cb`
 - ZIP:
-  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.21.4-win64.zip`
+  `<REPO>\dist\ATLAS-Beacon-0.21.4-win64.zip`
 - ZIP SHA-256:
   `4b9be2bd514bcc35cce221abc02091a48707111dec5a15bb49722f851dab57ab`
 
@@ -255,15 +304,15 @@ foreign-key errors. All 110 tests pass and the packaged smoke exits 0.
 Release:
 
 - executable:
-  `C:\Development\ATLAS\dist\releases\0.21.3\ATLAS Beacon\ATLAS Beacon.exe`
+  `<REPO>\dist\releases\0.21.3\ATLAS Beacon\ATLAS Beacon.exe`
 - executable SHA-256:
   `800e025f389a9b01e012ae10b4bddce3a234c31ec1c07b8ff29e6cc545843cc`
 - ZIP:
-  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.21.3-win64.zip`
+  `<REPO>\dist\ATLAS-Beacon-0.21.3-win64.zip`
 - ZIP SHA-256:
   `667948494f79ed2415197487c97c961fcbef38dc25dcd3e49b50cf19210bbd42`
 - pre-retry backup:
-  `C:\ProgramData\ATLAS\Beacon\backups\beacon-20260726T015647.539560Z.db`
+  `<RUNTIME_ROOT>\backups\beacon-20260726T015647.539560Z.db`
 - backup SHA-256:
   `3a5c9449aee2c36c454e7cfc166ea6218c62b3b2d395a08f30d6c47791cf844e`
 
@@ -287,11 +336,11 @@ All 89 tests pass. Packaged 0.18.1 smoke and capability audit pass. The
 Release:
 
 - executable:
-  `C:\Development\ATLAS\dist\releases\0.18.1\ATLAS Beacon\ATLAS Beacon.exe`
+  `<REPO>\dist\releases\0.18.1\ATLAS Beacon\ATLAS Beacon.exe`
 - executable SHA-256:
   `2b9b7c178ca474ff58756b66f8b8aa877b0ffc3de8ee982f5a600bae6023baca`
 - ZIP:
-  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.18.1-win64.zip`
+  `<REPO>\dist\ATLAS-Beacon-0.18.1-win64.zip`
 - ZIP SHA-256:
   `eb9719dc6cf11657d578bde19ccd6a7b13ee5f5f1b58a140af0e7cd2f8fe657a`
 
@@ -308,7 +357,7 @@ captures. A focused final Qwen pass selects the exact grounded cards and writes
 the answer. Thread-scoped correction memory is also identified by Qwen from
 conversation context.
 
-All 87 tests pass. Isolated real-Qwen acceptance passed Connor-and-Jules exact
+All 87 tests pass. Isolated real-Qwen acceptance passed two-name exact
 retrieval, an explicit no-search turn, and three distinct food images.
 Packaged 0.18.0 smoke and capability audit pass. The verified 0.18.0 desktop
 and watch worker are live on schema 15; a live three-food-image request returned
@@ -318,23 +367,23 @@ violations.
 Release:
 
 - executable:
-  `C:\Development\ATLAS\dist\releases\0.18.0\ATLAS Beacon\ATLAS Beacon.exe`
+  `<REPO>\dist\releases\0.18.0\ATLAS Beacon\ATLAS Beacon.exe`
 - executable SHA-256:
   `0c236690208069283e57522e4942c9be797bf4b78abb033bfd41233044f62631`
 - ZIP:
-  `C:\Development\ATLAS\dist\ATLAS-Beacon-0.18.0-win64.zip`
+  `<REPO>\dist\ATLAS-Beacon-0.18.0-win64.zip`
 - ZIP SHA-256:
   `67a5db721412ba2f29a7294af244e3c12f27d92ca13a8cb9030f9f8201370b57`
 - pre-activation backup:
-  `C:\ProgramData\ATLAS\Beacon\backups\beacon-20260724T225332.693652Z.db`
+  `<RUNTIME_ROOT>\backups\beacon-20260724T225332.693652Z.db`
 
 ## 2026-07-24 Beacon 0.17.2 positive retrieval trigger hotfix
 
 The first user test exposed a separate false-negative: Qwen planned
-`Find me an image of Connor and Jules` as no search despite one matching live
+`Find me an image of <PERSON_A> and <PERSON_B>` as no search despite one matching live
 asset. Beacon now deterministically recognizes explicit media-retrieval verbs
 and uses all-terms matching for conjoined names. The live proof resolves only
-`Connor and Jules in Colorado Springs`.
+`<PERSON_A> and <PERSON_B> in <PLACE>`.
 
 All 84 tests pass. Packaged 0.17.2 smoke and capability audit pass, and the
 0.17.2 desktop plus corrected watch worker are running on healthy schema 15.
@@ -421,13 +470,13 @@ ATLAS is a modular, long-term media storage and intelligence platform designed t
 
 ### Environment names
 
-- **Ultron** is Codex on the Windows ATLAS workstation.
-- **Jarvis** is Codex on Connor's MacBook.
+- **the workstation environment** is Codex on the Windows ATLAS workstation.
+- **the secondary environment** is Codex on the owner's MacBook.
 - **Beacon** is the product/runtime and future persistent local agent, not a
-  Codex subagent and not another name for Ultron.
+  Codex subagent and not another name for the workstation environment.
 
-The Windows hostname was still `DESKTOP-8B4OJIR` when verified on 2026-07-23.
-Connor intends to rename it to `Ultron`, effective only after a later restart.
+The Windows hostname was still `<WORKSTATION_HOST>` when verified on 2026-07-23.
+the owner intends to rename it to `the workstation environment`, effective only after a later restart.
 
 > Current implementation note (2026-07-24): Beacon 0.16.0 is a packaged native
 > Windows app, not a browser-first dashboard. Schema 12 adds persistent,
@@ -472,7 +521,7 @@ session and monitor durable progress, failures, and available storage.
 
 ### ATLAS Storage Pool
 - StableBit DrivePool
-- Pool drive: `J:`
+- Pool drive: `<ARCHIVE_ROOT>`
 - Approximate usable raw capacity: 15.5 TB
 - Physical drives:
   - `ATLAS1` — 4 TB
@@ -504,7 +553,7 @@ The active Git repository should **NOT** live on the ATLAS storage pool.
 Recommended location:
 
 ```text
-C:\Development\ATLAS\
+<REPO>\
 ```
 
 (or `C:\Code\ATLAS\`)
@@ -520,7 +569,7 @@ Reasoning:
 During development, Beacon should keep its live runtime data on the local NVMe:
 
 ```text
-C:\ProgramData\ATLAS\Beacon\
+<RUNTIME_ROOT>\
 ├── beacon.db
 ├── logs\
 ├── cache\
@@ -530,10 +579,10 @@ C:\ProgramData\ATLAS\Beacon\
 Beacon should periodically back up important runtime data to:
 
 ```text
-J:\System\Backups\Beacon\
+<ARCHIVE_ROOT>\System\Backups\Beacon\
 ```
 
-The ATLAS pool (`J:`) should primarily contain managed media, user assets, derivatives, and long-term system backups—not the active source repository.
+The ATLAS pool (`<ARCHIVE_ROOT>`) should primarily contain managed media, user assets, derivatives, and long-term system backups—not the active source repository.
 
 
 ## Core Design Principles
@@ -610,10 +659,10 @@ ATLAS
 
 ## Proposed Root Folder Structure
 
-The current DrivePool root is `J:\`.
+The current DrivePool root is `<ARCHIVE_ROOT>`.
 
 ```text
-J:\
+<ARCHIVE_ROOT>\
 ├── Inbox\
 ├── Library\
 │   ├── Clients\
@@ -726,7 +775,7 @@ Codex must follow these rules during development:
 - Treat network shares as potentially unavailable.
 - Handle interrupted copies and partially written files safely.
 - Avoid indexing DrivePool internal `PoolPart.*` folders directly.
-- Operate only through the pooled `J:\` path unless specifically instructed otherwise.
+- Operate only through the pooled `<ARCHIVE_ROOT>` path unless specifically instructed otherwise.
 
 ---
 
@@ -809,9 +858,9 @@ Create a local Beacon prototype that catalogs files placed into a test folder wi
 
 ### Suggested Test Paths
 ```text
-J:\Beacon\TestInbox\
-J:\Beacon\Database\beacon.db
-J:\Beacon\Logs\
+<ARCHIVE_ROOT>\Beacon\TestInbox\
+<ARCHIVE_ROOT>\Beacon\Database\beacon.db
+<ARCHIVE_ROOT>\Beacon\Logs\
 ```
 
 ### Acceptance Criteria
@@ -831,7 +880,7 @@ J:\Beacon\Logs\
 
 ## Questions Codex Must Resolve Before Expanding Scope
 
-1. Repository location has been decided: keep the Git repository on the local NVMe (e.g. C:\Development\ATLAS\).
+1. Repository location has been decided: keep the Git repository on the local NVMe (e.g. <REPO>\).
 2. Should Beacon run as a Windows service, scheduled task, Docker container, or ordinary application during development?
 3. How should interrupted network copies be detected reliably?
 4. Which metadata belongs in SQLite versus sidecar JSON files?

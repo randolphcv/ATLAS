@@ -4,7 +4,7 @@ Use the prompt below to begin the next ATLAS task.
 
 ---
 
-Continue ATLAS from `C:\Development\ATLAS` on `main`. Use one primary agent.
+Continue ATLAS from `<REPO>` on `main`. Use one primary agent.
 
 Read, in order:
 
@@ -23,55 +23,43 @@ Before changing anything:
 - if tonight's intake is still active, do not interrupt it, migrate the live
   database, or start catalog analysis.
 
-Current verified baseline:
+This document asserts no facts about current state.
+`docs/ATLAS_PROJECT_MEMORY.md` is the single state record. Read the current
+state section there and verify it against live state before acting.
 
-- Beacon 0.22.4 is live from
-  `C:\Development\ATLAS\dist\releases\0.22.4\ATLAS Beacon\ATLAS Beacon.exe`;
-- schema 16 is healthy with zero foreign-key violations;
-- latest intake `4ff7f10f-e72a-4762-88ae-b6264e4e8567` completed 3,830/3,830;
-- Total Analysis job `37d94efb-26bb-4701-8efe-782ae9687835` is complete with
-  2,896 publishable results, one excluded zero-byte file, zero failures, and
-  zero pending items;
-- 291 analyzed assets completed checksum-verified placement into existing
-  destinations; 2,605 remain in Inbox behind 31 durable placement blockers;
-- `J:` is a healthy StableBit DrivePool volume currently reporting
-  `PoolModeNoCreateDirectories`, consistent with an inactive/expired DrivePool
-  license; do not bypass the pool or touch pool-part folders;
-- all 123 tests pass; two opt-in real-FFprobe tests skip unless
-  `BEACON_FFPROBE` is supplied;
-- the public repository is live at `https://github.com/randolphcv/ATLAS`,
-  and local `main` tracks `origin/main`; do not rewrite published history;
-- the Ultron/Jarvis bridge is live at `J:\ULTRON_CONTEXT.md` and
-  `J:\JARVIS_CONTEXT.md`; preserve separate ownership and atomic replacement;
-- do not treat generated derivatives, runtime databases, backups, personal
-  media, model files, secrets, or `J:\` content as Git source.
+Verify for yourself, and do not carry an earlier answer forward:
+
+- the packaged version on disk and the version declared in source;
+- schema version, `integrity_check`, and `foreign_key_check`;
+- the latest intake and analysis job states, and any non-terminal job;
+- storage mode and whether directory creation works, from service logs rather
+  than from a note;
+- open Beacon Desk threads awaiting a human.
+
+Standing constraints:
+
+- do not rewrite published history;
+- do not bypass the storage layer or touch its underlying parts;
+- do not treat generated derivatives, runtime databases, backups, media, model
+  files, secrets, or archive-root content as Git source;
+- record evidence in structural form only, per `AGENTS.md` section 7.
 
 Next priorities, in order:
 
-1. Have Connor confirm/activate the StableBit DrivePool license. Verify one
-   approved missing Projects destination can be created before resuming the
-   deferred checksum-verified placements. Do not modify ACLs or pool parts.
-2. Run representative Beacon conversation tests against the live catalog.
+1. Add input validation at the metadata-normalization boundary so an
+   over-length model-generated tag cannot raise an unhandled exception and end
+   an analysis job `partial`. This is the most recent known crash.
+2. Decide what to do with the long-paused intake job and the Beacon Desk
+   clarification thread that has awaited an answer for over two weeks.
+3. Add MXF test coverage. The format is handled end to end and has none.
+4. Run representative Beacon conversation tests against the live catalog.
    Cover exact retrieval, semantic retrieval, requested result counts,
    distinct/unique results, explicit no-search turns, relevant clarification,
-   correction memory, and attachment of only Qwen-selected grounded cards.
+   correction memory, and attachment of only model-selected grounded cards.
    Record the prompt, observed cards, durable worker state, and whether the
    response was actually useful. Diagnose failures before changing behavior.
-3. Maintain the shared Markdown bridge after meaningful milestones. Ultron
-   writes only `J:\ULTRON_CONTEXT.md`, reads Jarvis's file without editing it,
-   and uses atomic same-directory replacement.
 
-Maintain local-first operation and the existing safety boundaries. Qwen should
-control conversational reasoning and retrieval choices; deterministic code is
-for safety, grounding, resource limits, and verified tools—not a phrase router
-or substitute personality. Never move, delete, or rewrite source media outside
-the existing checksum-verified managed-operation boundaries.
-
-If a task genuinely needs Sol High or Ultra, tell Connor before starting and
-pause for the model change.
-
-Finish with a clean, intentional commit on `main`, relevant verification
-results, and updated durable handoff documentation only after live
-verification.
+   The storage-licensing item that previously led this list has been removed.
+   Live evidence does not support it, and directory creation works.
 
 ---

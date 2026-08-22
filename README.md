@@ -1,11 +1,18 @@
 # ATLAS
 
-ATLAS is a local-first creative archive. Beacon is its replaceable librarian: it
-observes and catalogs files without owning or changing originals.
+ATLAS is a local-first creative archive platform. Modules provide capability on
+top of it. **Beacon** is the librarian module: it observes and catalogs files
+without owning or changing originals.
 
-## Current application
+ATLAS is not a drive, a volume, or anyone's files. A deployment is one
+installation with its own configuration and its own archive roots.
 
-Beacon 0.22.4 is the current packaged and live desktop release. It includes:
+`AGENTS.md` is doctrine for anyone changing this repository. Current live state
+lives only in `docs/ATLAS_PROJECT_MEMORY.md`.
+
+## Capabilities
+
+Beacon provides:
 
 - the verified Phase 1 read-only catalog;
 - a branded Qt Quick desktop shell with no embedded browser;
@@ -69,20 +76,19 @@ Beacon 0.22.4 is the current packaged and live desktop release. It includes:
 - a windowed, icon-branded Windows application bundle;
 - an optional localhost FastAPI adapter for integrations and development.
 
-Development-environment names are deliberately separate from the product:
-**Ultron** is Codex on the Windows ATLAS workstation, **Jarvis** is Codex on
-Connor's MacBook, and **Beacon** remains the ATLAS application and future
-persistent librarian agent.
+Agent-environment names are deployment data and are recorded per deployment in
+an untracked `OPERATOR.local.md`, never here. **Beacon** is the module name and
+is never an agent-environment name.
 
-No cloud service, continuous watcher against `J:\`, or Windows service is
-enabled. Continuous open operation is a separate planned lifecycle mode; the
+No cloud service, continuous watcher against an archive root, or Windows
+service is enabled. Continuous open operation is a separate planned lifecycle mode; the
 API is not started by the desktop application.
 
 ![ATLAS Beacon Desk on the native Overview](docs/images/beacon-desk.png)
 
 ## Run the Windows app
 
-1. Open `C:\Development\ATLAS\dist\releases\0.22.4\ATLAS Beacon\`.
+1. Open `<REPO>\dist\releases\0.22.4\ATLAS Beacon\`.
 2. Double-click `ATLAS Beacon.exe`.
 3. Open Library, select an asset, and press Space (or click Preview).
 4. Press Space or Escape to close the temporary preview.
@@ -94,7 +100,7 @@ The app does not open a browser or listen on a network port. Keep the entire
 A ready-to-extract package is generated at:
 
 ```text
-C:\Development\ATLAS\dist\ATLAS-Beacon-0.22.4-win64.zip
+<REPO>\dist\ATLAS-Beacon-0.22.4-win64.zip
 ```
 
 This private development build is not code-signed, so Windows may identify the
@@ -103,7 +109,7 @@ publisher as unknown.
 ## Developer workflow
 
 ```powershell
-cd C:\Development\ATLAS
+cd <REPO>
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe -m beacon.desktop
 ```

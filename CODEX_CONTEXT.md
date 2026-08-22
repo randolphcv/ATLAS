@@ -1,48 +1,36 @@
-# ATLAS — Connor Context and Product Direction
+# ATLAS — Owner Context and Product Direction
 
-Updated: 2026-08-03
-Purpose: portable context for **Ultron**, the Codex environment on the Windows
-ATLAS workstation. The separate MacBook Codex environment is **Jarvis**.
+Purpose: portable working context for agent environments contributing to ATLAS.
+It captures preferences and design language that should stay consistent as the
+platform evolves. It is a curated guide, not a transcript archive, and not
+permission to expand scope.
 
-## Codex Environment Identity
+`AGENTS.md` is doctrine and outranks this file. Read it first.
 
-- **Ultron**: Codex running locally on the Windows ATLAS workstation. This
-  repository, the Beacon runtime, Ollama, Qwen, faster-whisper, the live SQLite
-  catalog, and `J:\` operations are currently local to Ultron's machine.
-- **Jarvis**: Codex running on Connor's MacBook. Jarvis may work through the
-  SMB share or a separate repository/session and must verify Windows runtime
-  state rather than assuming it.
-- **Beacon**: the ATLAS librarian application and future persistent local
-  agent. Beacon is not another name for Ultron and is not currently a spawned
-  Codex subagent.
+## This document makes no claims about current state
 
-Connor will address the Windows Codex as Ultron and the MacBook Codex as
-Jarvis. The current Windows hostname remains `DESKTOP-8B4OJIR`; a rename to
-`Ultron` is pending a later restart and must be verified afterward.
+`docs/ATLAS_PROJECT_MEMORY.md` is the single record of current live state.
+Anything here about versions, jobs, storage, or health would drift. Look there.
 
-This document captures the working preferences and design language that should remain consistent as ATLAS evolves. It is a curated guide, not a transcript archive and not permission to expand scope.
+## Operator environments
 
-## Next Working Phase
+Agent environments are named per deployment in `OPERATOR.local.md`, which is
+untracked, and in the deployment's own documentation. This repository refers to
+them generically:
 
-Beacon 0.22.4 is live. Total analysis job
-`37d94efb-26bb-4701-8efe-782ae9687835` is terminal `complete` with 2,896
-publishable results, one excluded zero-byte file, and zero failures. The live
-schema remains 16 with integrity `ok` and zero foreign-key violations.
+- **the workstation environment** — the agent environment on the machine that
+  holds the repository, the Beacon runtime, the local inference stack, the
+  catalog, and the archive root.
+- **the secondary environment** — an agent environment on another machine. It
+  reaches the deployment over a share or a separate session, and must verify
+  live state rather than assume it.
+- **Beacon** — the ATLAS librarian module and future persistent local agent.
+  Beacon is never an agent-environment name.
 
-`J:` is a StableBit DrivePool volume currently reporting
-`PoolModeNoCreateDirectories`. Its NTFS ACL and health are normal, but new
-folders are denied. This is consistent with StableBit's inactive/expired
-license restriction and must be confirmed in the DrivePool UI. Beacon moved
-291 analyzed assets into existing destinations, left 2,605 source locations
-in Inbox, and created 31 durable placement blockers without failing analysis.
-Never bypass DrivePool by writing directly to pool-part folders.
+Operator environments exchange context through files at the archive root, each
+writing only its own file and reading the other's without editing it.
 
-The public GitHub repository and Ultron/Jarvis Markdown bridge remain live.
-After Connor restores DrivePool directory creation, verify one approved folder
-creation and resume the deferred checksum-verified placements. Then continue
-the representative grounded Beacon conversation matrix.
-
-## How Connor Likes Codex to Work
+## How the owner Likes Codex to Work
 
 ### Lead with the outcome
 
@@ -54,8 +42,8 @@ Inspect first, make reasonable low-risk assumptions, implement the requested cha
 
 ### Flag model escalation before starting
 
-If a task genuinely warrants Sol High or Ultra, tell Connor before beginning
-and pause for the model change. Connor prefers that interruption over
+If a task genuinely warrants Sol High or Ultra, tell the owner before beginning
+and pause for the model change. the owner prefers that interruption over
 continuing substantial work on an underpowered model.
 
 ### Use live artifacts as truth
@@ -64,7 +52,7 @@ Prefer the current filesystem, Git state, tests, service status, database conten
 
 ### Reproduce demonstrated workflows faithfully
 
-Once Connor shows an exact workflow, preserve its sequence and acceptance shape. Do not replace it with a theoretically clever shortcut unless Connor agrees to the change.
+Once the owner shows an exact workflow, preserve its sequence and acceptance shape. Do not replace it with a theoretically clever shortcut unless the owner agrees to the change.
 
 ### Prove one representative case before batching
 
@@ -77,7 +65,7 @@ For risky automation, transfers, migrations, metadata writes, or media processin
 
 ### Protect creative and personal judgment
 
-Automate repetitive preparation, indexing, derivatives, organization suggestions, and retrieval. Connor retains aesthetic judgment, storytelling, pacing, cultural judgment, publishing decisions, and final approval.
+Automate repetitive preparation, indexing, derivatives, organization suggestions, and retrieval. the owner retains aesthetic judgment, storytelling, pacing, cultural judgment, publishing decisions, and final approval.
 
 ### Keep durable memory compact
 
@@ -85,7 +73,7 @@ Record canonical paths, decisions, invariants, verification commands, current st
 
 ## Structural Preferences
 
-Connor's projects work best when they have:
+the owner's projects work best when they have:
 
 - one clear source of truth for each type of data;
 - a documented root structure;
@@ -255,7 +243,7 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 - Beacon conversation now has a compact application-shell dock backed by the
   existing local Beacon Desk authority. Its draft and active thread survive
   page navigation; page or asset context is attached only explicitly.
-- Future thumbnail derivatives live under `J:\Beacon\Thumbnails` for the live
+- Future thumbnail derivatives live under `<ARCHIVE_ROOT>\Beacon\Thumbnails` for the live
   catalog; C: remains the fast runtime/model/temp tier.
 - After the next Personal-files analysis completes, diagnose HEIC support and
   Apple slow-motion playback that holds the first video frame while audio
@@ -270,13 +258,13 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 - Keep proprietary intelligence replaceable and preserve ordinary-file access.
 - Optimize only after measuring the real bottleneck.
 - Keep Beacon's music models in the isolated Python 3.11 runtime under
-  `C:\ProgramData\ATLAS\MusicRuntime`; do not fold CUDA/TensorFlow dependencies
+  `<MUSIC_RUNTIME>`; do not fold CUDA/TensorFlow dependencies
   into the packaged Python 3.12 application.
 - Keep source, runtime state, derivatives, backups, and originals in clearly different locations.
 
 ## Privacy and Authority Boundaries
 
-- Personal and unpublished media stays local unless Connor explicitly authorizes a specific upload, share, generation, or publication.
+- Personal and unpublished media stays local unless the owner explicitly authorizes a specific upload, share, generation, or publication.
 - An installed connector or available model is not automatic permission to send data to it.
 - Do not persist secrets or direct personal/private content in documentation or memory.
 - Index content only after the intended scope and exclusions are explicit.
@@ -310,7 +298,7 @@ Do not let the first prototype drift into:
 - premature multi-user or multi-tenant architecture;
 - elaborate animation before operational states are correct;
 - product branding that obscures system safety;
-- indexing every byte of `J:\` before a small sandbox is proven.
+- indexing every byte of `<ARCHIVE_ROOT>` before a small sandbox is proven.
 
 The early product promise is simple:
 

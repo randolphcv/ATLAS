@@ -1,5 +1,8 @@
 # Beacon Desk
 
+> This document asserts no facts about current state.
+> `docs/ATLAS_PROJECT_MEMORY.md` is the single state record.
+
 Beacon Desk is the durable conversation surface between the human archivist and
 Beacon. Its detailed management surface lives on the native Overview page, and
 its compact conversation dock lives in the application shell. Both persist

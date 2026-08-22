@@ -1,13 +1,17 @@
 # ATLAS Architecture
 
+> This document asserts no facts about current state.
+> `docs/ATLAS_PROJECT_MEMORY.md` is the single state record.
+
 ## Boundaries
 
 - **Originals:** ordinary user files; Beacon opens them read-only.
 - **Catalog:** SQLite facts about content and observed locations.
 - **Derivatives:** verified thumbnails today; future proxies and transcripts;
   never originals.
-- **Runtime:** local NVMe state under `C:\ProgramData\ATLAS\Beacon`.
-- **Archive:** protected managed storage exposed through `J:\`.
+- **Runtime:** local, disposable state at the configured runtime root.
+- **Archive root:** a configured managed location, `<ARCHIVE_ROOT>`. Home of
+  record for originals, derivative content, and the catalog.
 - **Desktop:** native Qt Quick observation and recovery interface.
 - **Beacon Desk:** durable local human/Beacon conversations and queue state;
   never a file-operation interpreter.
@@ -34,8 +38,8 @@ semantics are deliberately decided.
 
 ## Desktop and API
 
-Beacon 0.9.0 is a foreground native Windows application built with Qt Quick/QML
-and Qt Multimedia.
+Beacon's desktop client is a foreground native Windows application built with
+Qt Quick/QML and Qt Multimedia.
 Python repository modules feed explicit Qt list models and properties; the
 desktop client reads catalog facts directly and never becomes a second metadata
 authority. Backup work runs outside the UI thread and only reports success
@@ -96,7 +100,7 @@ updates the catalog location and audit ledger. A post-move failure triggers a
 best-effort rollback.
 
 The default double-click launch always opens the live catalog at
-`C:\ProgramData\ATLAS\Beacon\beacon.db`. Custom and isolated use-test databases
+`<RUNTIME_ROOT>\beacon.db`. Custom and isolated use-test databases
 must be supplied explicitly. The Library labels the active context as Live,
 Isolated, or Custom and watches the database/WAL signature so externally
 committed catalog updates appear without making a full integrity pass on every

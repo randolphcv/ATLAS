@@ -1,15 +1,18 @@
 # Operations
 
+> This document asserts no facts about current state.
+> `docs/ATLAS_PROJECT_MEMORY.md` is the single state record.
+
 ## Safety mode
 
 The catalog remains synthetic and read-only. Do not point the CLI or desktop app
-at `J:\Inbox` or another real-media directory without an explicitly approved
+at `<INBOX>` or another real-media directory without an explicitly approved
 pilot scope.
 
 ## Runtime layout
 
 ```text
-C:\ProgramData\ATLAS\Beacon\
+<RUNTIME_ROOT>\
 ├── beacon.db
 ├── backups\
 ├── derivatives\thumbnails\
@@ -39,14 +42,14 @@ Run from source:
 Or double-click:
 
 ```text
-C:\Development\ATLAS\dist\releases\0.9.0\ATLAS Beacon\ATLAS Beacon.exe
+<REPO>\dist\releases\0.9.0\ATLAS Beacon\ATLAS Beacon.exe
 ```
 
 The desktop app has its own Windows window. It does not open a browser, start a
 server, or listen on a port. Closing the window stops it.
 
 A normal double-click opens the **Live catalog** at
-`C:\ProgramData\ATLAS\Beacon\beacon.db`. An explicitly supplied `--db` path is
+`<RUNTIME_ROOT>\beacon.db`. An explicitly supplied `--db` path is
 visibly labeled **Isolated use test** or **Custom catalog**. Beacon checks for
 database/WAL changes every five seconds and refreshes only after a change.
 
@@ -72,12 +75,12 @@ metadata promotion. **Resolve** is a separate explicit action.
 
 The UI says `SAVED LOCALLY` because every message is committed before local
 inference begins. Queued replies survive app interruption. The active
-`J:\Inbox` transfer is not inspected merely by opening the Desk.
+`<INBOX>` transfer is not inspected merely by opening the Desk.
 
 ## Archive intake
 
 The Overview includes **Archive Intake** for explicit recursive catalog jobs.
-**New intake** defaults to `J:\Inbox` and a 25-file representative scope.
+**New intake** defaults to `<INBOX>` and a 25-file representative scope.
 Creating a snapshot does not start it. Review the displayed root, file count,
 byte count, and snapshot prefix, then choose **Start**.
 
@@ -105,7 +108,7 @@ existing Inbox hierarchy makes the destination unambiguous. The operation:
 1. requires the exact selected asset and observed source path;
 2. checks the recorded managed-moves policy;
 3. re-hashes the source against the catalog;
-4. permits only `J:\Library`, `J:\Assets`, or `J:\Projects`;
+4. permits only `<ARCHIVE_ROOT>\Library`, `<ARCHIVE_ROOT>\Assets`, or `<ARCHIVE_ROOT>\Projects`;
 5. rejects reparse-point traversal and silent overwrite/duplicate merging;
 6. performs a same-volume move and verifies the destination hash;
 7. updates the location and audit records only after verification;
@@ -118,8 +121,8 @@ An explicitly approved analysis manifest can be imported with:
 
 ```powershell
 .\.venv\Scripts\python.exe -m beacon.cli analysis-import `
-  C:\ProgramData\ATLAS\Beacon\analysis-runs\<manifest>.json `
-  --db C:\ProgramData\ATLAS\Beacon\beacon.db
+  <RUNTIME_ROOT>\analysis-runs\<manifest>.json `
+  --db <RUNTIME_ROOT>\beacon.db
 ```
 
 The complete manifest is rejected if an asset is missing, a source SHA-256 has
@@ -167,16 +170,16 @@ no-move fallback rather than invalidating an otherwise complete batch.
 The System view can create a verified database backup after explicit
 confirmation. Restore and backup deletion are intentionally absent.
 
-For a large transfer that is still being written into `J:\Inbox`, use the
+For a large transfer that is still being written into `<INBOX>`, use the
 settled-Inbox runner instead of cataloging a moving source:
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.run_settled_inbox `
-  --db C:\ProgramData\ATLAS\Beacon\beacon.db `
-  --backup-dir C:\ProgramData\ATLAS\Beacon\backups `
-  --inbox J:\Inbox `
+  --db <RUNTIME_ROOT>\beacon.db `
+  --backup-dir <RUNTIME_ROOT>\backups `
+  --inbox <INBOX> `
   --model qwen2.5vl:7b `
-  --log C:\ProgramData\ATLAS\Beacon\logs\settled-inbox.jsonl
+  --log <RUNTIME_ROOT>\logs\settled-inbox.jsonl
 ```
 
 The runner requires five consecutive unchanged one-minute snapshots with no
