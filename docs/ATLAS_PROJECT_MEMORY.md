@@ -183,8 +183,8 @@ not as a description of the present.
   grounded `visual_content`; one uniformly near-black MP4 correctly completed
   as grounded `audio_content`.
 - The existing checksum-verified placement policy moved only the four newly
-  analyzed MP4s from their preserved `<INBOX>\COTR\...` hierarchy to the
-  matching `<ARCHIVE_ROOT>\Projects\COTR\...` hierarchy. The excluded project files
+  analyzed MP4s from their preserved `<INBOX>\<PROJECT>\...` hierarchy to the
+  matching `<ARCHIVE_ROOT>\Projects\<PROJECT>\...` hierarchy. The excluded project files
   remained cataloged in place.
 - Verified pre-retry backup:
   `<RUNTIME_ROOT>\backups\beacon-20260726T175508.834916Z.db`,
