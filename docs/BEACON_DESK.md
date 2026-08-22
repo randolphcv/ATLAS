@@ -36,10 +36,11 @@ auditable operation designed for that exact action.
 
 ## Worker boundary
 
-Beacon Desk is currently a local handoff queue. It does not claim that an AI
-worker is always online. The UI labels messages `SAVED LOCALLY`; a deliberate
-Beacon analysis session can consume queued threads and append Beacon messages
-through the repository boundary.
+Beacon Desk is a durable local queue. Sending a reply wakes the local
+conversation worker when its inference lane is free; a reply sent while Beacon
+is already answering remains queued and is consumed next. The UI labels
+messages `SAVED LOCALLY` because persistence happens before inference. If the
+local model is unavailable, the reply remains queued instead of being lost.
 
 The compact shell dock is a second view of this same durable authority. It
 keeps the selected thread, draft, and message scroll position alive while page

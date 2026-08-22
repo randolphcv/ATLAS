@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Completed analysis now archives excluded project companions and generated
+  support artifacts when analyzed files in the same client/project tree have
+  already established the destination. Beacon preserves their relative folder
+  structure, uses the normal checksum-and-audit move boundary, and removes
+  empty Inbox directories afterward.
+- Windows sharing violations now remain isolated, retryable single-file
+  placement failures. Beacon blocks the rest of a destination only for an
+  actual access denial, rather than deferring the directory when one source is
+  temporarily open in another process.
+- Sending a Beacon Desk reply now wakes the local conversation worker
+  immediately. Replies received while Beacon is busy remain durably queued,
+  and the desktop drains queued conversations one at a time without losing a
+  newer human message when an earlier response completes.
 - Editable Premiere Pro and After Effects project files remain cataloged and
   searchable but are excluded from contextual content inference.
 - Qwen now receives an explicit grounded contract for abstract visual samples

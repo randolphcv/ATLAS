@@ -64,14 +64,15 @@ clarification only when placement logic is genuinely unclear.
 
 The Overview includes **Beacon Desk**. Questions, approval requests, blockers,
 clarifications, and human-started requests persist in the live SQLite catalog.
-Replying changes an open thread to `queued_for_beacon`; it does not execute a
-scan, upload, rename, move, delete, or metadata promotion. **Resolve** is a
-separate explicit action.
+Replying changes an open thread to `queued_for_beacon` and wakes the local
+conversation worker when the inference lane is free. If Beacon is already
+answering, the newer reply remains durably queued and is processed next.
+Conversation still does not execute a scan, upload, rename, move, delete, or
+metadata promotion. **Resolve** is a separate explicit action.
 
-Beacon Desk is currently a durable handoff surface, not a continuously running
-AI worker. The UI says `SAVED LOCALLY`; queued messages are reviewed when a
-Beacon analysis session is deliberately run. The active `J:\Inbox` transfer is
-not inspected by opening the Desk.
+The UI says `SAVED LOCALLY` because every message is committed before local
+inference begins. Queued replies survive app interruption. The active
+`J:\Inbox` transfer is not inspected merely by opening the Desk.
 
 ## Archive intake
 
@@ -143,6 +144,12 @@ verified facts. Analysis-complete placement re-hashes the source, stays within
 approved roots, rejects reparse traversal and collisions, verifies destination
 bytes, and rolls back when a post-move check fails.
 
+After a failure-free analysis finalization, Beacon also places excluded project
+companions and generated support artifacts. This pass requires an analyzed file
+in the same client/project archive tree as destination evidence, preserves the
+remaining relative folders, and sends every file through the same managed-move
+journal. It removes only directories that are empty after verified placement.
+
 The local model receives bounded path context and verified technical metadata.
 Video analysis samples six points across the timeline for detailed stock and
 B-roll context. Audio analysis combines a persistent checksum-bound full speech
@@ -159,6 +166,23 @@ no-move fallback rather than invalidating an otherwise complete batch.
 
 The System view can create a verified database backup after explicit
 confirmation. Restore and backup deletion are intentionally absent.
+
+For a large transfer that is still being written into `J:\Inbox`, use the
+settled-Inbox runner instead of cataloging a moving source:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.run_settled_inbox `
+  --db C:\ProgramData\ATLAS\Beacon\beacon.db `
+  --backup-dir C:\ProgramData\ATLAS\Beacon\backups `
+  --inbox J:\Inbox `
+  --model qwen2.5vl:7b `
+  --log C:\ProgramData\ATLAS\Beacon\logs\settled-inbox.jsonl
+```
+
+The runner requires five consecutive unchanged one-minute snapshots with no
+zero-byte files. It then creates a verified database backup, freezes and runs a
+durable intake job, runs local analysis, and exits nonzero unless the Inbox is
+empty. It also refuses to start while another intake or analysis job is active.
 
 ## Optional API
 
