@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+from beacon.config import inbox_root, projects_root
 from beacon.catalog import catalog_file, sha256_file
 from beacon.database import SCHEMA_VERSION, connect, database_integrity
 from beacon.managed_moves import (
     analysis_placement_for,
+    archive_contextual_inbox_companions,
+    contextual_companion_placement_for,
+    destination_directory_blocked,
     move_cataloged_file,
     placement_needs_clarification,
     recover_interrupted_managed_moves,
@@ -22,6 +28,18 @@ from beacon.metadata import (
     set_policy,
 )
 from beacon.repository import asset_detail, search_assets
+
+
+class ManagedMoveErrorTests(unittest.TestCase):
+    def test_only_actual_access_denial_blocks_a_destination(self) -> None:
+        access_denied = PermissionError("access denied")
+        access_denied.winerror = 5
+        sharing_violation = PermissionError("file in use")
+        sharing_violation.winerror = 32
+
+        self.assertTrue(destination_directory_blocked(access_denied))
+        self.assertFalse(destination_directory_blocked(sharing_violation))
+        self.assertFalse(destination_directory_blocked(FileNotFoundError()))
 
 
 class EditableMetadataTests(unittest.TestCase):
@@ -187,21 +205,26 @@ class EditableMetadataTests(unittest.TestCase):
 
 class ManagedMoveTests(unittest.TestCase):
     def test_analysis_placement_preserves_project_hierarchy(self) -> None:
+        inbox = inbox_root()
+        projects = projects_root()
         decision = analysis_placement_for(
-            Path(r"J:\Inbox\Anna King\2021 Naked Retreat\AUDIO\take.wav")
+            inbox / "fixture_client_a" / "project_alpha" / "AUDIO" / "take.wav"
         )
         self.assertEqual(
             decision.destination_directory,
-            Path(r"J:\Projects\Anna King\2021 Naked Retreat\AUDIO"),
+            projects / "fixture_client_a" / "project_alpha" / "AUDIO",
         )
-        ambiguous = analysis_placement_for(Path(r"J:\Inbox\loose.wav"))
+        shallow_project = analysis_placement_for(
+            inbox / "project_beta" / "SAMPLE_0001.CR3"
+        )
+        self.assertEqual(
+            shallow_project.destination_directory,
+            projects / "project_beta",
+        )
+        ambiguous = analysis_placement_for(inbox / "loose.wav")
         self.assertIsNone(ambiguous.destination_directory)
-        self.assertTrue(
-            placement_needs_clarification(Path(r"J:\Inbox\loose.wav"))
-        )
-        self.assertFalse(
-            placement_needs_clarification(Path(r"J:\Inbox\.DS_Store"))
-        )
+        self.assertTrue(placement_needs_clarification(inbox / "loose.wav"))
+        self.assertFalse(placement_needs_clarification(inbox / ".DS_Store"))
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -298,6 +321,78 @@ class ManagedMoveTests(unittest.TestCase):
             )
         self.assertTrue(self.source.exists())
         self.assertTrue(destination.exists())
+
+    def test_contextual_companion_inherits_analyzed_project_tree(self) -> None:
+        inbox = self.root / "context-inbox"
+        projects = self.root / "context-projects"
+        source = inbox / "Client" / "Project" / "Sidecars" / "frame.xmp"
+        source.parent.mkdir(parents=True)
+        source.write_text("sidecar", encoding="utf-8")
+        companion = catalog_file(
+            source, self.db, stability_seconds=0, include_media_probe=False
+        )
+        anchor_path = projects / "Client" / "Project" / "Media" / "frame.jpg"
+        anchor_path.parent.mkdir(parents=True)
+        anchor_path.write_text("analyzed", encoding="utf-8")
+        anchor = catalog_file(
+            anchor_path, self.db, stability_seconds=0, include_media_probe=False
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        run_id = str(uuid.uuid4())
+        with connect(self.db) as connection:
+            connection.execute(
+                """INSERT INTO analysis_runs VALUES
+                (?, ?, 'test', '1', 'test', 'local', 0, 'test',
+                 'complete', '{}', ?, ?, NULL)""",
+                (run_id, str(uuid.uuid4()), now, now),
+            )
+            connection.execute(
+                """INSERT INTO analysis_results VALUES
+                (?, ?, ?, ?, 'contextual_metadata', ?, '{}', '{}',
+                 1.0, 'candidate', ?, NULL)""",
+                (
+                    str(uuid.uuid4()), run_id, anchor.asset_id, anchor.sha256,
+                    str(uuid.uuid4()), now,
+                ),
+            )
+        set_policy(
+            self.db, "files.managed_moves.enabled", True, source_kind="test"
+        )
+        with (
+            patch("beacon.managed_moves.INBOX_ROOT", inbox),
+            patch("beacon.managed_moves.PROJECTS_ROOT", projects),
+        ):
+            decision = contextual_companion_placement_for(self.db, source)
+            self.assertEqual(
+                decision.destination_directory,
+                projects / "Client" / "Project" / "Sidecars",
+            )
+            result = archive_contextual_inbox_companions(self.db)
+        destination = projects / "Client" / "Project" / "Sidecars" / "frame.xmp"
+        self.assertEqual(result.moved, 1)
+        self.assertEqual(result.failed, 0)
+        self.assertFalse(source.exists())
+        self.assertTrue(destination.exists())
+        self.assertFalse((inbox / "Client").exists())
+
+    def test_contextual_companion_requires_analyzed_archive_neighbor(self) -> None:
+        inbox = self.root / "context-inbox"
+        projects = self.root / "context-projects"
+        source = inbox / "Client" / "Unknown" / "Sidecars" / "frame.xmp"
+        source.parent.mkdir(parents=True)
+        source.write_text("sidecar", encoding="utf-8")
+        catalog_file(source, self.db, stability_seconds=0, include_media_probe=False)
+        set_policy(
+            self.db, "files.managed_moves.enabled", True, source_kind="test"
+        )
+        with (
+            patch("beacon.managed_moves.INBOX_ROOT", inbox),
+            patch("beacon.managed_moves.PROJECTS_ROOT", projects),
+        ):
+            result = archive_contextual_inbox_companions(self.db)
+        self.assertEqual(result.moved, 0)
+        self.assertEqual(result.skipped, 1)
+        self.assertTrue(source.exists())
 
     def test_destination_creation_failure_is_recorded_immediately(self) -> None:
         set_policy(

@@ -12,8 +12,7 @@ from typing import Sequence
 import uvicorn
 
 from .api import AppSettings, create_app
-
-DEFAULT_RUNTIME = Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "ATLAS" / "Beacon"
+from .config import backups_dir, catalog_path
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -21,14 +20,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--db",
         type=Path,
-        default=Path(os.environ.get("BEACON_DB", DEFAULT_RUNTIME / "beacon.db")),
+        default=catalog_path(),
     )
     parser.add_argument(
         "--backup-dir",
         type=Path,
-        default=Path(
-            os.environ.get("BEACON_BACKUP_DIR", DEFAULT_RUNTIME / "backups")
-        ),
+        default=backups_dir(),
     )
     parser.add_argument("--port", type=int, default=8765)
     browser = parser.add_mutually_exclusive_group()

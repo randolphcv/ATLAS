@@ -19,6 +19,7 @@ from typing import Any
 
 from .analysis import import_analysis_manifest, validate_analysis_result
 from .catalog import sha256_file
+from .config import archive_tier_when_sql, inbox_root, runtime_root
 from .database import connect, migrate, record_event
 from .desk import seed_threads
 from .managed_moves import (
@@ -469,12 +470,9 @@ def create_selected_local_analysis_job(
                                      AND managed.state='complete'
                                )
                                THEN 0
-                               WHEN lower(preferred.path) LIKE 'j:\\library\\%'
-                                 OR lower(preferred.path) LIKE 'j:\\assets\\%'
-                                 OR lower(preferred.path) LIKE 'j:\\projects\\%'
-                               THEN 1
-                               WHEN lower(preferred.path) LIKE 'j:\\inbox\\%'
-                               THEN 2
+                """
+                + archive_tier_when_sql("preferred.path", 1)
+                + f"""
                                ELSE 3
                            END,
                            preferred.observed_at DESC
@@ -1189,8 +1187,7 @@ def _transcribe_audio(
     if _WHISPER_MODEL is None:
         model_name = os.environ.get("BEACON_WHISPER_MODEL", "small")
         model_root = (
-            Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData"))
-            / "ATLAS" / "Beacon" / "models" / "whisper"
+            runtime_root() / "models" / "whisper"
         )
         model_root.mkdir(parents=True, exist_ok=True)
         _WHISPER_MODEL = WhisperModel(
@@ -1905,7 +1902,7 @@ def _run_local_analysis_job(
                     """,
                     (
                         candidate["asset_id"],
-                        r"J:\Inbox\%",
+                        f"{inbox_root()}{os.sep}%",
                     ),
                 ).fetchall()
             if not locations:

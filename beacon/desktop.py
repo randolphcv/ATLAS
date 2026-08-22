@@ -15,11 +15,11 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from . import __version__
+from . import __version__, config
 from .desktop_controller import DesktopController, DesktopSettings
 
 DEFAULT_RUNTIME = (
-    Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "ATLAS" / "Beacon"
+    config.runtime_root()
 )
 
 

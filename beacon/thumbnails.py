@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import sha256_file
+from .config import catalog_path, thumbnails_dir
 from .database import connect, migrate, record_event
 from .media import probe
 from .processes import hidden_creation_flags
@@ -45,18 +46,15 @@ def _utc_now() -> str:
 
 
 def _thumbnail_directory(db_path: Path) -> Path:
-    configured = os.environ.get("BEACON_THUMBNAIL_ROOT")
-    if configured:
-        return Path(configured)
-    program_data = Path(
-        os.environ.get("PROGRAMDATA", r"C:\ProgramData")
-    ) / "ATLAS" / "Beacon" / "beacon.db"
-    archive_root = Path(r"J:\Beacon\Thumbnails")
-    try:
-        if db_path.resolve() == program_data.resolve() and archive_root.parent.is_dir():
-            return archive_root
-    except OSError:
-        pass
+    """Where thumbnails go for this catalog.
+
+    Thumbnails are derivative content, so the configured location beneath the
+    archive root wins (AGENTS.md section 4). An isolated or custom catalog
+    keeps its derivatives beside itself so a test database never writes into
+    the deployment's archive.
+    """
+    if db_path.resolve() == catalog_path().resolve():
+        return thumbnails_dir()
     return db_path.resolve().parent / "derivatives" / "thumbnails"
 
 

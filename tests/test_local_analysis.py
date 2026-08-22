@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
+from beacon.config import projects_root
 from beacon.catalog import catalog_file
 from beacon.database import SCHEMA_VERSION, database_integrity
 from beacon.local_analysis import (
@@ -853,7 +854,7 @@ class LocalAnalysisJobTests(unittest.TestCase):
             patch(
                 "beacon.local_analysis.analysis_placement_for",
                 return_value=SimpleNamespace(
-                    destination_directory=Path(r"J:\Projects\Test\Blocked")
+                    destination_directory=projects_root() / "project_alpha" / "blocked"
                 ),
             ),
             patch(

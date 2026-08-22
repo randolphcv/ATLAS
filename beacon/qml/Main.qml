@@ -1182,7 +1182,7 @@ ApplicationWindow {
         id: selectedIntakeFiles
         title: "Choose files for this Beacon intake"
         fileMode: FileDialog.OpenFiles
-        currentFolder: "file:///J:/Inbox"
+        currentFolder: backend.inboxFolderUrl
         onAccepted: {
             backend.createSelectedIntakeJob(selectedFiles)
             newIntakeDialog.close()
@@ -1192,7 +1192,7 @@ ApplicationWindow {
     FolderDialog {
         id: selectedIntakeFolder
         title: "Choose a folder for this Beacon intake"
-        currentFolder: "file:///J:/Inbox"
+        currentFolder: backend.inboxFolderUrl
         onAccepted: {
             backend.createSelectedIntakeFolder(
                 selectedFolder,
@@ -1462,7 +1462,7 @@ ApplicationWindow {
                         id: metadataOrganization
                         Layout.fillWidth: true
                         label: "Final organization directory"
-                        placeholder: "J:\\Library\\…, J:\\Assets\\…, or J:\\Projects\\…"
+                        placeholder: backend.destinationPlaceholder
                     }
                     Rectangle {
                         Layout.fillWidth: true
@@ -1562,7 +1562,7 @@ ApplicationWindow {
                     id: moveDestination
                     Layout.fillWidth: true
                     label: "Approved destination directory"
-                    placeholder: "J:\\Library\\…, J:\\Assets\\…, or J:\\Projects\\…"
+                    placeholder: backend.destinationPlaceholder
                 }
                 Rectangle {
                     Layout.fillWidth: true
@@ -3327,7 +3327,7 @@ ApplicationWindow {
                                             PrimaryButton {
                                                 text: "Up"
                                                 quiet: true
-                                                enabled: backend.libraryPath.toLowerCase() !== "j:\\"
+                                                enabled: !backend.atLibraryRoot
                                                 onClicked: backend.libraryFolderUp()
                                             }
                                             Text {

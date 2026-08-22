@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .config import archive_root, archive_tier_when_sql
 from .database import connect, migrate
 from .identity import atlas_uri
 
@@ -307,12 +308,9 @@ def search_assets(
                                   AND managed.state = 'complete'
                             )
                             THEN 0
-                            WHEN lower(preferred.path) LIKE 'j:\\library\\%'
-                              OR lower(preferred.path) LIKE 'j:\\assets\\%'
-                              OR lower(preferred.path) LIKE 'j:\\projects\\%'
-                            THEN 1
-                            WHEN lower(preferred.path) LIKE 'j:\\inbox\\%'
-                            THEN 2
+                """
+                + archive_tier_when_sql("preferred.path")
+                + f"""
                             ELSE 3
                         END,
                         preferred.observed_at DESC,
@@ -368,11 +366,13 @@ def search_assets(
 
 def library_folders(
     db_path: Path,
-    path_prefix: str = "J:\\",
+    path_prefix: str | None = None,
     *,
     include_hidden: bool = False,
 ) -> list[dict[str, Any]]:
-    """Return direct catalog-backed child folders beneath a Windows path."""
+    """Return direct catalog-backed child folders beneath a configured root."""
+    if path_prefix is None:
+        path_prefix = str(archive_root())
     base = path_prefix.rstrip("\\")
     prefix = f"{base}\\"
     counts: dict[str, set[str]] = {}
@@ -491,12 +491,9 @@ def asset_detail(db_path: Path, asset_id: str) -> dict[str, Any] | None:
                                   AND managed.state = 'complete'
                             )
                             THEN 0
-                            WHEN lower(preferred.path) LIKE 'j:\\library\\%'
-                              OR lower(preferred.path) LIKE 'j:\\assets\\%'
-                              OR lower(preferred.path) LIKE 'j:\\projects\\%'
-                            THEN 1
-                            WHEN lower(preferred.path) LIKE 'j:\\inbox\\%'
-                            THEN 2
+                """
+                + archive_tier_when_sql("preferred.path")
+                + """
                             ELSE 3
                         END,
                         preferred.observed_at DESC,

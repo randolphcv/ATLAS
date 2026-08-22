@@ -7,6 +7,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Callable
 
+from beacon.config import projects_root, runtime_root
 from beacon.catalog import catalog_file
 from beacon.conversation_worker import (
     AgentAction,
@@ -831,16 +832,18 @@ class ConversationWorkerTests(unittest.TestCase):
     def test_live_retrieval_excludes_known_test_and_sandbox_paths(self) -> None:
         self.assertTrue(
             _is_nonproduction_path(
-                r"C:\ProgramData\ATLAS\Beacon\use-tests\UseTest-01\item.mov"
+                str(runtime_root() / "use-tests" / "case-01" / "item.mov")
             )
         )
         self.assertTrue(
             _is_nonproduction_path(
-                r"C:\ProgramData\ATLAS\Beacon\sandbox\inbox\item.mov"
+                str(runtime_root() / "sandbox" / "inbox" / "item.mov")
             )
         )
         self.assertFalse(
-            _is_nonproduction_path(r"J:\Projects\Client\item.mov")
+            _is_nonproduction_path(
+                str(projects_root() / "fixture_client_a" / "item.mov")
+            )
         )
 
     def test_agent_controls_multi_concept_cooccurrence_search(self) -> None:

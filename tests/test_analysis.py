@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from beacon.config import inbox_root
 from beacon.analysis import import_analysis_manifest
 from beacon.catalog import catalog_file
 from beacon.database import SCHEMA_VERSION, database_integrity
@@ -46,7 +47,7 @@ class AnalysisResultTests(unittest.TestCase):
             ),
             "scope": {
                 "asset_ids": [self.asset.asset_id],
-                "excluded_paths": ["J:\\Inbox"],
+                "excluded_paths": [str(inbox_root())],
             },
             "results": [
                 {

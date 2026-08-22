@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import sha256_file
+from .config import derivatives_root, program_data_root
 from .database import connect, migrate, record_event
 from .processes import hidden_creation_flags
 
@@ -31,7 +32,7 @@ def runtime_root() -> Path:
     return Path(
         os.environ.get(
             "BEACON_MUSIC_RUNTIME",
-            r"C:\ProgramData\ATLAS\MusicRuntime",
+            str(program_data_root() / "ATLAS" / "MusicRuntime"),
         )
     )
 
@@ -126,10 +127,7 @@ def analyze_asset_music(
     if sha256_file(source) != source_sha256:
         raise ValueError("source bytes changed before music analysis")
     output = (
-        Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData"))
-        / "ATLAS"
-        / "Beacon"
-        / "derivatives"
+        derivatives_root()
         / "music"
         / asset_id
         / source_sha256

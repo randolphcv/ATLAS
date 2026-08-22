@@ -8,17 +8,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .catalog import sha256_file
+from .config import (
+    approved_destination_roots,
+    inbox_root,
+    projects_root,
+)
 from .database import connect, migrate, record_event
 from .metadata import get_policy
 from .repository import is_hidden_support_path
 
-APPROVED_DESTINATION_ROOTS = (
-    Path(r"J:\Library"),
-    Path(r"J:\Assets"),
-    Path(r"J:\Projects"),
-)
-INBOX_ROOT = Path(r"J:\Inbox")
-PROJECTS_ROOT = Path(r"J:\Projects")
+APPROVED_DESTINATION_ROOTS = approved_destination_roots()
+INBOX_ROOT = inbox_root()
+PROJECTS_ROOT = projects_root()
 
 
 def destination_directory_blocked(error: BaseException) -> bool:

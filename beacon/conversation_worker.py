@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
+from .config import runtime_root
 from .database import connect, migrate, record_event
 from .desk import MESSAGE_LIMIT, _insert_result_cards, thread_detail
 from .repository import asset_detail, search_assets
@@ -1149,10 +1150,11 @@ def _inspect_asset_tool(db_path: Path, item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _is_nonproduction_path(path: str) -> bool:
-    normalized = path.replace("/", "\\").casefold()
-    return (
-        "\\programdata\\atlas\\beacon\\use-tests\\" in normalized
-        or "\\programdata\\atlas\\beacon\\sandbox\\" in normalized
+    normalized = path.replace("/", os.sep).casefold()
+    runtime = str(runtime_root()).casefold().rstrip(os.sep)
+    return any(
+        f"{runtime}{os.sep}{marker}{os.sep}" in normalized
+        for marker in ("use-tests", "sandbox")
     )
 
 

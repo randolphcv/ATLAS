@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from beacon.config import inbox_root
 from beacon.database import connect, migrate, record_event
 from beacon.local_analysis import _record_analysis_placement_failure
 from beacon.managed_moves import (
@@ -58,7 +59,7 @@ def _pending_locations(db_path: Path, run_id: str) -> list[dict[str, Any]]:
             WHERE results.run_id=? AND locations.path LIKE ?
             ORDER BY locations.path COLLATE NOCASE
             """,
-            (run_id, r"J:\Inbox\%"),
+            (run_id, f"{inbox_root()}{os.sep}%"),
         ).fetchall()
     return [dict(row) for row in rows]
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -17,6 +18,8 @@ from PySide6.QtCore import (
     Slot,
 )
 from PySide6.QtGui import QDesktopServices, QGuiApplication
+
+from .config import approved_destination_roots, archive_root, inbox_root
 
 from . import __version__
 from .database import (
@@ -131,12 +134,29 @@ def analysis_stage_status(job: dict[str, Any] | None) -> str:
     }.get(state, state.replace("_", " ").upper())
 
 
+def _library_root() -> str:
+    """Root of the Library browser: the configured archive root."""
+    return str(archive_root())
+
+
+def _is_within_library_root(candidate: str) -> bool:
+    root = _library_root().rstrip("\\/").casefold()
+    value = candidate.casefold()
+    return value == root or value.startswith(root.rstrip("\\/") + os.sep)
+
+
 @dataclass(frozen=True)
 class DesktopSettings:
     db_path: Path
     backup_dir: Path
     catalog_label: str = "Custom catalog"
-    allowed_intake_roots: tuple[Path, ...] = (Path(r"J:\Inbox"),)
+    allowed_intake_roots: tuple[Path, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.allowed_intake_roots:
+            object.__setattr__(
+                self, "allowed_intake_roots", (inbox_root(),)
+            )
 
 
 def format_bytes(value: int | None) -> str:
@@ -495,7 +515,7 @@ class DesktopController(QObject):
         self._current_view = "overview"
         self._search_query = ""
         self._library_mode = "recents"
-        self._library_path = "J:\\"
+        self._library_path = _library_root()
         self._library_file_type = "all"
         self._show_hidden_library_files = False
         self._busy = False
@@ -713,6 +733,27 @@ class DesktopController(QObject):
     def libraryPath(self) -> str:
         return self._library_path
 
+    @Property(str, constant=True)
+    def archiveRoot(self) -> str:
+        """Configured archive root. QML must never hardcode a location."""
+        return _library_root()
+
+    @Property(str, constant=True)
+    def inboxFolderUrl(self) -> str:
+        """file:// URL of the configured Inbox, for native file dialogs."""
+        return QUrl.fromLocalFile(str(inbox_root())).toString()
+
+    @Property(str, constant=True)
+    def destinationPlaceholder(self) -> str:
+        """Example approved destinations, built from configuration."""
+        return ", ".join(
+            f"{root}{os.sep}…" for root in approved_destination_roots()
+        )
+
+    @Property(bool, notify=libraryChanged)
+    def atLibraryRoot(self) -> bool:
+        return self._library_path.casefold() == _library_root().casefold()
+
     @Property(str, notify=libraryChanged)
     def libraryFileType(self) -> str:
         return self._library_file_type
@@ -813,7 +854,7 @@ class DesktopController(QObject):
             resolved = str(candidate.resolve())
         except OSError:
             return
-        if not resolved.lower().startswith("j:\\"):
+        if not _is_within_library_root(resolved):
             return
         self._library_mode = "explorer"
         self._library_path = resolved
@@ -824,9 +865,11 @@ class DesktopController(QObject):
     def libraryFolderUp(self) -> None:
         current = Path(self._library_path)
         parent = current.parent
-        target = "J:\\" if str(current).lower() == "j:\\" else str(parent)
-        if not target.lower().startswith("j:\\"):
-            target = "J:\\"
+        root = _library_root()
+        at_root = str(current).casefold() == root.casefold()
+        target = root if at_root else str(parent)
+        if not _is_within_library_root(target):
+            target = root
         self.openLibraryFolder(target)
 
     @Slot()

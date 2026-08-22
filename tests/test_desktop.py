@@ -17,6 +17,7 @@ from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer, QUrl
 from PIL import Image
 from pillow_heif import from_pillow
 
+from beacon.config import inbox_root
 from beacon.catalog import catalog_file
 from beacon.desktop import DEFAULT_RUNTIME, _catalog_label
 from beacon.desktop_controller import (
@@ -322,17 +323,21 @@ class DesktopControllerTests(unittest.TestCase):
                 {
                     "state": "running",
                     "current_stage": "preparing_raw_preview",
-                    "current_source_path": "J:\\Inbox\\IMG_4821.CR3",
+                    "current_source_path": str(
+                        inbox_root() / "SAMPLE_0001.CR3"
+                    ),
                 }
             ),
-            "PREPARING RAW PREVIEW · IMG_4821.CR3",
+            "PREPARING RAW PREVIEW · SAMPLE_0001.CR3",
         )
         self.assertEqual(
             analysis_stage_status(
                 {
                     "state": "running",
                     "current_stage": "visually_observing",
-                    "current_source_path": "J:\\Inbox\\unsafe\nname.CR3",
+                    "current_source_path": str(
+                        inbox_root() / "unsafe\nname.CR3"
+                    ),
                 }
             ),
             "VISUALLY OBSERVING · unsafe�name.CR3",

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .config import archive_tier_when_sql
 from .database import connect, migrate, record_event
 
 SUBJECT_LIMIT = 160
@@ -352,12 +353,9 @@ def thread_detail(db_path: Path, thread_id: str) -> dict[str, Any] | None:
                     WHERE preferred.asset_id=cards.asset_id
                     ORDER BY
                         CASE
-                            WHEN lower(preferred.path) LIKE 'j:\\library\\%'
-                              OR lower(preferred.path) LIKE 'j:\\assets\\%'
-                              OR lower(preferred.path) LIKE 'j:\\projects\\%'
-                            THEN 0
-                            WHEN lower(preferred.path) LIKE 'j:\\inbox\\%'
-                            THEN 1
+                """
+                + archive_tier_when_sql("preferred.path", 0)
+                + """
                             ELSE 2
                         END,
                         preferred.observed_at DESC
