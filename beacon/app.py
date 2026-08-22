@@ -12,7 +12,11 @@ from typing import Sequence
 import uvicorn
 
 from .api import AppSettings, create_app
-from .config import backups_dir, catalog_path
+from .config import (
+    CatalogNotConfiguredError,
+    backups_dir,
+    resolve_catalog_path,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -20,12 +24,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--db",
         type=Path,
-        default=catalog_path(),
+        default=None,
     )
     parser.add_argument(
         "--backup-dir",
         type=Path,
-        default=backups_dir(),
+        default=None,
     )
     parser.add_argument("--port", type=int, default=8765)
     browser = parser.add_mutually_exclusive_group()
@@ -47,6 +51,17 @@ def _port_available(port: int) -> bool:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    try:
+        if args.db is None:
+            resolved = resolve_catalog_path()
+            if resolved is None:
+                raise CatalogNotConfiguredError()
+            args.db = resolved
+        if args.backup_dir is None:
+            args.backup_dir = backups_dir()
+    except CatalogNotConfiguredError:
+        from .config import catalog_advice
+        raise SystemExit(catalog_advice())
     if not 1 <= args.port <= 65535:
         raise SystemExit("port must be between 1 and 65535")
     if not _port_available(args.port):

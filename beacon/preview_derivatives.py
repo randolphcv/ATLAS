@@ -13,7 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from .config import catalog_path, previews_dir
+from .config import resolve_catalog_path, previews_dir
 from .catalog import sha256_file
 from .database import connect, migrate, record_event
 from .media import probe
@@ -51,7 +51,8 @@ def _preview_directory(db_path: Path) -> Path:
     configured = os.environ.get("BEACON_PREVIEW_ROOT")
     if configured:
         return Path(configured)
-    if db_path.resolve() == catalog_path().resolve():
+    configured = resolve_catalog_path()
+    if configured is not None and db_path.resolve() == Path(configured).resolve():
         return previews_dir()
     return db_path.resolve().parent / "derivatives" / "previews"
 

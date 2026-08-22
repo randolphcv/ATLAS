@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import sha256_file
-from .config import catalog_path, thumbnails_dir
+from .config import resolve_catalog_path, thumbnails_dir
 from .database import connect, migrate, record_event
 from .media import probe
 from .processes import hidden_creation_flags
@@ -53,7 +53,8 @@ def _thumbnail_directory(db_path: Path) -> Path:
     keeps its derivatives beside itself so a test database never writes into
     the deployment's archive.
     """
-    if db_path.resolve() == catalog_path().resolve():
+    configured = resolve_catalog_path()
+    if configured is not None and db_path.resolve() == Path(configured).resolve():
         return thumbnails_dir()
     return db_path.resolve().parent / "derivatives" / "thumbnails"
 

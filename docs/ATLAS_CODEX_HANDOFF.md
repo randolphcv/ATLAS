@@ -859,7 +859,7 @@ Create a local Beacon prototype that catalogs files placed into a test folder wi
 ### Suggested Test Paths
 ```text
 <ARCHIVE_ROOT>\Beacon\TestInbox\
-<ARCHIVE_ROOT>\Beacon\Database\beacon.db
+<ARCHIVE_ROOT>\System\Beacon\beacon.db
 <ARCHIVE_ROOT>\Beacon\Logs\
 ```
 

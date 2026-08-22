@@ -25,7 +25,8 @@ DEFAULT_RUNTIME = (
 
 def _catalog_label(path: Path) -> str:
     resolved = path.resolve()
-    if resolved == config.catalog_path().resolve():
+    configured = config.resolve_catalog_path()
+    if configured is not None and resolved == Path(configured).resolve():
         return "Live catalog"
     if "use-tests" in {part.lower() for part in resolved.parts}:
         return "Isolated use test"
@@ -37,12 +38,20 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--db",
         type=Path,
-        default=config.catalog_path(),
+        default=None,
     )
     parser.add_argument(
         "--backup-dir",
         type=Path,
-        default=config.backups_dir(),
+        default=None,
+    )
+    parser.add_argument(
+        "--initialize",
+        action="store_true",
+        help=(
+            "create a new empty catalog when none exists at the resolved "
+            "location; without this Beacon refuses and asks"
+        ),
     )
     parser.add_argument(
         "--log-file",
@@ -109,6 +118,67 @@ def _set_windows_app_id() -> None:
         )
 
 
+def _resolve_catalog(args, logger) -> tuple[Path, Path] | None:
+    """Resolve the catalog, or return None after showing the ask state.
+
+    Beacon never invents a catalog. If no location is configured, or the
+    configured location holds no catalog and the operator did not explicitly
+    ask to create one, this reports what is missing and refuses to continue.
+    Silently creating an empty database makes a broken configuration look
+    healthy, which is the failure this gate exists to prevent.
+    """
+    explicit = args.db is not None
+    db = Path(args.db) if explicit else config.resolve_catalog_path()
+    if db is None:
+        logger.error("no catalog configured")
+        _ask(config.catalog_advice(), args.smoke_test)
+        return None
+    db = Path(db)
+    # An explicit --db is the operator naming a location, so creating it there
+    # is their intent; that is how isolated and use-test catalogs have always
+    # worked. The gate guards the CONFIGURED default, which is where a silently
+    # created empty catalog would masquerade as the live one.
+    if not db.is_file() and not explicit and not args.initialize:
+        message = (
+            "Beacon found no catalog at the configured location:"
+            + chr(10) + chr(10)
+            + f"    {db}"
+            + chr(10) + chr(10)
+            + "Beacon will not create an empty catalog here, because an empty "
+            "catalog looks healthy and hides the real problem."
+            + chr(10) + chr(10)
+            + "Check that the archive volume is connected and that "
+            f"{config.ARCHIVE_ROOT_SETTING} in"
+            + chr(10)
+            + f"    {config.settings_path()}"
+            + chr(10)
+            + "names the right location."
+            + chr(10) + chr(10)
+            + "To create a new catalog here deliberately, start Beacon with "
+            "--initialize."
+        )
+        logger.error("catalog missing at %s", db)
+        _ask(message, args.smoke_test)
+        return None
+    backup_dir = Path(args.backup_dir) if args.backup_dir else config.backups_dir()
+    return db, backup_dir
+
+
+def _ask(message: str, headless: bool = False) -> None:
+    """Blocking, non-dismissable state: the only way on is to quit."""
+    if headless:
+        print(message, file=sys.stderr, flush=True)
+        return
+    box = QMessageBox()
+    box.setIcon(QMessageBox.Critical)
+    box.setWindowTitle("ATLAS Beacon - catalog not found")
+    box.setText("Beacon cannot open its catalog.")
+    box.setInformativeText(message)
+    box.setStandardButtons(QMessageBox.Close)
+    box.setDefaultButton(QMessageBox.Close)
+    box.exec()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     _configure_logging(args.log_file)
@@ -127,11 +197,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     icon_path = qml_dir / "assets" / "beacon.svg"
     app.setWindowIcon(QIcon(str(icon_path)))
 
+    resolved = _resolve_catalog(args, logger)
+    if resolved is None:
+        return 2
+    db_path, backup_dir = resolved
     controller = DesktopController(
         DesktopSettings(
-            db_path=args.db.resolve(),
-            backup_dir=args.backup_dir.resolve(),
-            catalog_label=_catalog_label(args.db),
+            db_path=db_path.resolve(),
+            backup_dir=backup_dir.resolve(),
+            catalog_label=_catalog_label(db_path),
         )
     )
     app.aboutToQuit.connect(controller.shutdown)

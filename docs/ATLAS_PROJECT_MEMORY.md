@@ -502,7 +502,6 @@ The root was observed from the Mac with:
 ├── Projects\
 ├── Exports\
 ├── Beacon\
-│   ├── Database\
 │   ├── Metadata\
 │   ├── Embeddings\
 │   ├── Proxies\
@@ -510,6 +509,10 @@ The root was observed from the Mac with:
 │   ├── Transcripts\
 │   └── Logs\
 └── System\
+    ├── Documentation\
+    └── Beacon\          <- catalog of record and its backups
+        ├── beacon.db
+        └── backups\
 ```
 
 The fuller proposed structure in `ATLAS_CODEX_HANDOFF.md` is provisional. Existing folders must not be reorganized simply to match a diagram.

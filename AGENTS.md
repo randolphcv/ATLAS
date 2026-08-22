@@ -150,6 +150,33 @@ environment, the secondary environment.
 - Update documentation only after live verification, and redact that evidence
   to structural form per section 7.
 
+### A change is not done until the build is delivered
+
+A change to application code is not complete until the packaged executable has
+been rebuilt from that source and the delivered copy updated. Source, tests,
+version, commit, and build move together. A commit that leaves the shipped
+executable behind, or a build produced from uncommitted source, is an
+incomplete change.
+
+The delivered executable is the staging copy the owner launches:
+
+```text
+<REPO>\dist\ATLAS Beacon\ATLAS Beacon.exe
+```
+
+Update it and the versioned release directory
+`<REPO>\dist\releases\<VERSION>\ATLAS Beacon\` in the same change. Both carry
+the same bytes.
+
+The owner uses the packaged application. He is not going to run the app from
+source to check the work, and a workflow that expects him to is not a workflow.
+Rebuilding and delivering is the implementer's step, not his.
+
+This closes a defect that has bitten twice, in both directions: 0.22.5 through
+0.22.7 were built from source that was never committed, and the configuration
+work of 2026-08-22 was committed without a rebuild. The second failure shipped
+an executable that could not find the catalog it had just been repointed at.
+
 ## 11. Commit convention
 
 Single-line subject, 50 characters or fewer, imperative mood, sentence case.

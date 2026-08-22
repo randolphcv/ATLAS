@@ -32,11 +32,12 @@ LIBRARY_DIRNAME = "Library"
 ASSETS_DIRNAME = "Assets"
 PROJECTS_DIRNAME = "Projects"
 BEACON_DIRNAME = "Beacon"
+SYSTEM_DIRNAME = "System"
 CATALOG_FILENAME = "beacon.db"
 
 # Subdirectories of <ARCHIVE_ROOT>/Beacon, matching the documented archive
-# tree in docs/ATLAS_PROJECT_MEMORY.md.
-DATABASE_DIRNAME = "Database"
+# tree in docs/ATLAS_PROJECT_MEMORY.md. System state lives under
+# <ARCHIVE_ROOT>/System/Beacon; these hold bulk derivative content.
 THUMBNAILS_DIRNAME = "Thumbnails"
 PROXIES_DIRNAME = "Proxies"
 TRANSCRIPTS_DIRNAME = "Transcripts"
@@ -147,30 +148,90 @@ def approved_destination_roots() -> tuple[Path, ...]:
     return (library_root(), assets_root(), projects_root())
 
 
-def catalog_path() -> Path:
-    """The catalog of record.
+class CatalogNotConfiguredError(RuntimeError):
+    """No catalog location could be determined and none may be guessed.
 
-    Preference order: explicit setting, then beneath the archive root when one
-    is configured, then the historical local runtime location. The last case
-    warns rather than silently stranding an installation that predates the
-    archive-root setting.
+    Raised rather than falling back to a local path. A silently created empty
+    catalog reports itself healthy, which is exactly how a broken configuration
+    came to look like a working one.
+    """
+
+
+def system_beacon_dir() -> Path:
+    """<ARCHIVE_ROOT>/System/Beacon - system state, not content.
+
+    Namespaced under System so future modules sit beside Beacon rather than
+    colonising System directly.
+    """
+    return archive_root() / SYSTEM_DIRNAME / BEACON_DIRNAME
+
+
+def resolve_catalog_path() -> Path | None:
+    """The catalog of record, or None when it cannot be determined.
+
+    Order:
+      1. explicit configuration - BEACON_DB in the environment, then
+         settings.json;
+      2. otherwise <ARCHIVE_ROOT>/System/Beacon/beacon.db, when an archive root
+         is known;
+      3. otherwise None. The caller must ask the user. There is no local
+         fallback: the catalog's home is the archive volume.
     """
     value = _setting("BEACON_DB")
     if value:
         return Path(value)
     if archive_root_is_configured():
-        return (
-            archive_root() / BEACON_DIRNAME / DATABASE_DIRNAME
-            / CATALOG_FILENAME
-        )
-    legacy = runtime_root() / CATALOG_FILENAME
-    _warn_once(
-        "catalog_path",
-        f"Using the local catalog at {legacy}. The catalog belongs at the "
-        f"archive root. Set {ARCHIVE_ROOT_SETTING}, or BEACON_DB, in "
-        f"{settings_path()}.",
+        return system_beacon_dir() / CATALOG_FILENAME
+    return None
+
+
+def catalog_path() -> Path:
+    """The catalog of record. Raises when it cannot be determined."""
+    resolved = resolve_catalog_path()
+    if resolved is None:
+        raise CatalogNotConfiguredError(catalog_advice())
+    return resolved
+
+
+def catalog_advice() -> str:
+    """Plain-language instruction for an unresolvable catalog."""
+    sep = os.sep
+    expected = sep.join(
+        ("<ARCHIVE_ROOT>", SYSTEM_DIRNAME, BEACON_DIRNAME, CATALOG_FILENAME)
     )
-    return legacy
+    example = f'{{"{ARCHIVE_ROOT_SETTING}": "<ARCHIVE_ROOT>"}}'
+    lines = [
+        "Beacon cannot find a catalog because no archive location is "
+        "configured.",
+        "",
+        f"Set {ARCHIVE_ROOT_SETTING} to the archive volume, either as an "
+        "environment variable or in:",
+        f"    {settings_path()}",
+        "",
+        "For example:",
+        f"    {example}",
+        "",
+        "Beacon then expects the catalog at:",
+        f"    {expected}",
+        "",
+        "To point at a catalog directly instead, set BEACON_DB to its full "
+        "path.",
+    ]
+    return chr(10).join(lines)
+
+
+def catalog_status() -> dict[str, object]:
+    """Diagnostic for the desktop's missing-catalog state."""
+    resolved = resolve_catalog_path()
+    return {
+        "configured": resolved is not None,
+        "path": str(resolved) if resolved else "",
+        "exists": bool(resolved and resolved.is_file()),
+        "archive_root_configured": archive_root_is_configured(),
+        "settings_path": str(settings_path()),
+        "setting": ARCHIVE_ROOT_SETTING,
+        "advice": catalog_advice(),
+    }
 
 
 def _derivative_location(setting: str, name: str, legacy_name: str) -> Path:
@@ -191,9 +252,13 @@ def _derivative_location(setting: str, name: str, legacy_name: str) -> Path:
 
 
 def backups_dir() -> Path:
-    return _derivative_location(
-        "BEACON_BACKUP_DIR", f"{DATABASE_DIRNAME}/backups", "backups"
-    )
+    """Catalog backups live beside the catalog, under System."""
+    value = _setting("BEACON_BACKUP_DIR")
+    if value:
+        return Path(value)
+    if archive_root_is_configured():
+        return system_beacon_dir() / "backups"
+    raise CatalogNotConfiguredError(catalog_advice())
 
 
 def derivatives_root() -> Path:
