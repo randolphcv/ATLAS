@@ -74,13 +74,32 @@ def settings_path() -> Path:
 
 
 def load_settings() -> dict[str, str]:
-    """Read the deployment settings file. Absent or unreadable means empty."""
+    """Read the deployment settings file. Absent means empty.
+
+    A settings file that exists but cannot be read is reported. Treating a
+    malformed file as an absent one makes a typo look identical to an
+    unconfigured deployment, and the operator then reads advice telling them to
+    add a setting they have already added.
+    """
     path = settings_path()
+    if not path.is_file():
+        return {}
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError) as error:
+        _warn_once(
+            "settings_unreadable",
+            f"{path} exists but could not be read ({error}). Beacon is "
+            f"behaving as though it is not configured. Note that a Windows "
+            f"path in JSON needs its separators doubled.",
+        )
         return {}
     if not isinstance(raw, dict):
+        _warn_once(
+            "settings_not_object",
+            f"{path} must contain a JSON object of setting names to values. "
+            f"Beacon is behaving as though it is not configured.",
+        )
         return {}
     return {str(k): str(v) for k, v in raw.items() if v is not None}
 

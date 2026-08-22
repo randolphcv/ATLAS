@@ -93,6 +93,27 @@ class CatalogDiscoveryTests(unittest.TestCase):
         target.write_bytes(b"")
         self.assertTrue(config.catalog_status()["exists"])
 
+    def test_malformed_settings_file_is_reported_not_swallowed(self) -> None:
+        """A typo must not look identical to an unconfigured deployment."""
+        (self.runtime / config.SETTINGS_FILENAME).write_text(
+            '{"BEACON_ARCHIVE_ROOT": "not closed', encoding="utf-8"
+        )
+        with self.assertLogs("beacon.config", level="WARNING") as captured:
+            self.assertEqual(config.load_settings(), {})
+        self.assertIn("could not be read", "".join(captured.output))
+
+    def test_settings_file_must_be_an_object(self) -> None:
+        (self.runtime / config.SETTINGS_FILENAME).write_text(
+            '["not", "an", "object"]', encoding="utf-8"
+        )
+        with self.assertLogs("beacon.config", level="WARNING") as captured:
+            self.assertEqual(config.load_settings(), {})
+        self.assertIn("JSON object", "".join(captured.output))
+
+    def test_absent_settings_file_is_silent(self) -> None:
+        with self.assertNoLogs("beacon.config", level="WARNING"):
+            self.assertEqual(config.load_settings(), {})
+
     def test_bulk_derivatives_stay_outside_system(self) -> None:
         """System holds system state; the derivative trees hold content."""
         self._write_settings({"BEACON_ARCHIVE_ROOT": str(self.archive)})
