@@ -25,7 +25,7 @@ DEFAULT_RUNTIME = (
 
 def _catalog_label(path: Path) -> str:
     resolved = path.resolve()
-    if resolved == (DEFAULT_RUNTIME / "beacon.db").resolve():
+    if resolved == config.catalog_path().resolve():
         return "Live catalog"
     if "use-tests" in {part.lower() for part in resolved.parts}:
         return "Isolated use test"
@@ -37,19 +37,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--db",
         type=Path,
-        default=Path(os.environ.get("BEACON_DB", DEFAULT_RUNTIME / "beacon.db")),
+        default=config.catalog_path(),
     )
     parser.add_argument(
         "--backup-dir",
         type=Path,
-        default=Path(
-            os.environ.get("BEACON_BACKUP_DIR", DEFAULT_RUNTIME / "backups")
-        ),
+        default=config.backups_dir(),
     )
     parser.add_argument(
         "--log-file",
         type=Path,
-        default=DEFAULT_RUNTIME / "logs" / "beacon-desktop.log",
+        default=config.runtime_log_dir() / "beacon-desktop.log",
     )
     parser.add_argument(
         "--view",

@@ -34,6 +34,15 @@ PROJECTS_DIRNAME = "Projects"
 BEACON_DIRNAME = "Beacon"
 CATALOG_FILENAME = "beacon.db"
 
+# Subdirectories of <ARCHIVE_ROOT>/Beacon, matching the documented archive
+# tree in docs/ATLAS_PROJECT_MEMORY.md.
+DATABASE_DIRNAME = "Database"
+THUMBNAILS_DIRNAME = "Thumbnails"
+PROXIES_DIRNAME = "Proxies"
+TRANSCRIPTS_DIRNAME = "Transcripts"
+LOGS_DIRNAME = "Logs"
+DERIVATIVES_DIRNAME = "Derivatives"
+
 _warned: set[str] = set()
 
 
@@ -150,7 +159,10 @@ def catalog_path() -> Path:
     if value:
         return Path(value)
     if archive_root_is_configured():
-        return archive_root() / BEACON_DIRNAME / CATALOG_FILENAME
+        return (
+            archive_root() / BEACON_DIRNAME / DATABASE_DIRNAME
+            / CATALOG_FILENAME
+        )
     legacy = runtime_root() / CATALOG_FILENAME
     _warn_once(
         "catalog_path",
@@ -161,14 +173,14 @@ def catalog_path() -> Path:
     return legacy
 
 
-def _derivative_location(setting: str, name: str) -> Path:
+def _derivative_location(setting: str, name: str, legacy_name: str) -> Path:
     """Derivative content belongs at the archive root. AGENTS.md section 4."""
     value = _setting(setting)
     if value:
         return Path(value)
     if archive_root_is_configured():
         return archive_root() / BEACON_DIRNAME / name
-    legacy = runtime_root() / name
+    legacy = runtime_root() / legacy_name
     _warn_once(
         f"derivative:{name}",
         f"Using the local {name} directory at {legacy}. Derivative content "
@@ -179,21 +191,41 @@ def _derivative_location(setting: str, name: str) -> Path:
 
 
 def backups_dir() -> Path:
-    return _derivative_location("BEACON_BACKUP_DIR", "backups")
+    return _derivative_location(
+        "BEACON_BACKUP_DIR", f"{DATABASE_DIRNAME}/backups", "backups"
+    )
 
 
 def derivatives_root() -> Path:
-    return _derivative_location("BEACON_DERIVATIVES_DIR", "derivatives")
+    return _derivative_location(
+        "BEACON_DERIVATIVES_DIR", DERIVATIVES_DIRNAME, "derivatives"
+    )
 
 
 def thumbnails_dir() -> Path:
     value = _setting("BEACON_THUMBNAIL_ROOT")
-    return Path(value) if value else derivatives_root() / "thumbnails"
+    if value:
+        return Path(value)
+    return _derivative_location(
+        "BEACON_THUMBNAIL_ROOT", THUMBNAILS_DIRNAME, "derivatives/thumbnails"
+    )
+
+
+def previews_dir() -> Path:
+    return _derivative_location(
+        "BEACON_PREVIEW_DIR", PROXIES_DIRNAME, "derivatives/previews"
+    )
+
+
+def transcripts_dir() -> Path:
+    return _derivative_location(
+        "BEACON_TRANSCRIPT_DIR", TRANSCRIPTS_DIRNAME, "derivatives/transcripts"
+    )
 
 
 def archive_log_dir() -> Path:
     """Logs that record archive content: real filenames and paths."""
-    return _derivative_location("BEACON_ARCHIVE_LOG_DIR", "logs")
+    return _derivative_location("BEACON_ARCHIVE_LOG_DIR", LOGS_DIRNAME, "logs")
 
 
 def runtime_log_dir() -> Path:

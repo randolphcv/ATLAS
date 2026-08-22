@@ -17,7 +17,7 @@ from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer, QUrl
 from PIL import Image
 from pillow_heif import from_pillow
 
-from beacon.config import inbox_root
+from beacon.config import catalog_path, inbox_root
 from beacon.catalog import catalog_file
 from beacon.desktop import DEFAULT_RUNTIME, _catalog_label
 from beacon.desktop_controller import (
@@ -307,7 +307,7 @@ class DesktopControllerTests(unittest.TestCase):
 
     def test_catalog_context_is_explicit(self) -> None:
         self.assertEqual(
-            _catalog_label(DEFAULT_RUNTIME / "beacon.db"),
+            _catalog_label(catalog_path()),
             "Live catalog",
         )
         self.assertEqual(

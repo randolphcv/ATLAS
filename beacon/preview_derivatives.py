@@ -13,6 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from .config import catalog_path, previews_dir
 from .catalog import sha256_file
 from .database import connect, migrate, record_event
 from .media import probe
@@ -41,9 +42,17 @@ def _utc_now() -> str:
 
 
 def _preview_directory(db_path: Path) -> Path:
+    """Where preview derivatives go for this catalog.
+
+    Previews are derivative content and belong at the archive root
+    (AGENTS.md section 4). An isolated or custom catalog keeps its previews
+    beside itself so a test database never writes into the deployment archive.
+    """
     configured = os.environ.get("BEACON_PREVIEW_ROOT")
     if configured:
         return Path(configured)
+    if db_path.resolve() == catalog_path().resolve():
+        return previews_dir()
     return db_path.resolve().parent / "derivatives" / "previews"
 
 
