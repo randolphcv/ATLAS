@@ -80,3 +80,10 @@ models/
 *.aiff
 !docs/images/
 !docs/images/*.png
+
+# Deployment data. Instance names, machine identity, and the local deny-list
+# used by tests/test_no_instance_data.py. See AGENTS.md sections 3 and 9.
+OPERATOR.local.md
+instance-terms.local.txt
+*.local.md
+*.local.txt
