@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import os
 import uuid
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from pathlib import Path
 from .catalog import sha256_file
 from .database import connect, migrate, record_event
 from .metadata import get_policy
+from .repository import is_hidden_support_path
 
 APPROVED_DESTINATION_ROOTS = (
     Path(r"J:\Library"),
@@ -17,6 +19,16 @@ APPROVED_DESTINATION_ROOTS = (
 )
 INBOX_ROOT = Path(r"J:\Inbox")
 PROJECTS_ROOT = Path(r"J:\Projects")
+
+
+def destination_directory_blocked(error: BaseException) -> bool:
+    """Return true only when a destination is actually permission-blocked."""
+    if not isinstance(error, PermissionError):
+        return False
+    winerror = getattr(error, "winerror", None)
+    if winerror is not None:
+        return winerror == 5
+    return getattr(error, "errno", None) in {errno.EACCES, errno.EPERM}
 
 
 @dataclass(frozen=True)
@@ -33,6 +45,14 @@ class MoveResult:
 class PlacementDecision:
     destination_directory: Path | None
     reason: str
+
+
+@dataclass(frozen=True)
+class ContextualArchiveResult:
+    moved: int
+    skipped: int
+    failed: int
+    removed_directories: int
 
 
 def recover_interrupted_managed_moves(db_path: Path) -> int:
@@ -167,7 +187,7 @@ def analysis_placement_for(source_path: Path) -> PlacementDecision:
             None,
             "Ignored operating-system metadata is not committed to the archive.",
         )
-    if len(relative.parts) < 3:
+    if len(relative.parts) < 2:
         return PlacementDecision(
             None,
             "The Inbox path does not contain enough reliable project context.",
@@ -215,6 +235,138 @@ def commit_analyzed_file(
         ),
     )
     return result, decision.reason
+
+
+def contextual_companion_placement_for(
+    db_path: Path,
+    source_path: Path,
+) -> PlacementDecision:
+    """Inherit placement only from an analyzed project already in the archive."""
+    decision = analysis_placement_for(source_path)
+    if decision.destination_directory is None:
+        return decision
+    source = Path(os.path.abspath(source_path))
+    relative = source.relative_to(Path(os.path.abspath(INBOX_ROOT)))
+    project_parts = (
+        relative.parts[:2] if len(relative.parts) >= 3 else relative.parts[:1]
+    )
+    project_root = PROJECTS_ROOT.joinpath(*project_parts)
+    with connect(db_path) as connection:
+        anchor = connection.execute(
+            """
+            SELECT 1
+            FROM locations location
+            JOIN analysis_results result ON result.asset_id=location.asset_id
+            WHERE substr(lower(location.path), 1, length(?))=lower(?)
+              AND result.review_state IN ('candidate', 'approved')
+            LIMIT 1
+            """,
+            (str(project_root) + "\\", str(project_root) + "\\"),
+        ).fetchone()
+    if anchor is None:
+        return PlacementDecision(
+            None,
+            "No analyzed archive neighbor establishes this project destination.",
+        )
+    return PlacementDecision(
+        decision.destination_directory,
+        "Inherited the destination from analyzed files in the same client/project "
+        "tree and preserved the remaining relative folder structure.",
+    )
+
+
+def archive_contextual_inbox_companions(db_path: Path) -> ContextualArchiveResult:
+    """Archive excluded/support files after their project context is established."""
+    with connect(db_path) as connection:
+        migrate(connection)
+        rows = connection.execute(
+            """
+            SELECT location.asset_id,location.path,asset.size_bytes,
+                   EXISTS(
+                     SELECT 1 FROM local_analysis_items item
+                     WHERE item.asset_id=location.asset_id
+                       AND item.source_path=location.path
+                       AND item.excluded_reason IS NOT NULL
+                   ) AS explicitly_excluded
+            FROM locations location
+            JOIN assets asset ON asset.id=location.asset_id
+            WHERE lower(location.path) LIKE lower(?)
+            ORDER BY length(location.path),location.path COLLATE NOCASE
+            """,
+            (str(INBOX_ROOT) + "\\%",),
+        ).fetchall()
+    moved = skipped = failed = 0
+    for row in rows:
+        source = Path(str(row["path"]))
+        is_companion = (
+            is_hidden_support_path(source)
+            or source.suffix.lower() in {".aep", ".aepx", ".prproj"}
+            or int(row["size_bytes"]) == 0
+            or bool(row["explicitly_excluded"])
+        )
+        if not is_companion:
+            skipped += 1
+            continue
+        decision = contextual_companion_placement_for(db_path, source)
+        if decision.destination_directory is None:
+            skipped += 1
+            continue
+        try:
+            move_cataloged_file(
+                db_path,
+                asset_id=str(row["asset_id"]),
+                source_path=source,
+                destination_directory=decision.destination_directory,
+                requested_by="Beacon local analyzer",
+                authorization=(
+                    "Post-analysis companion placement authorized after an "
+                    f"analyzed project neighbor established context. {decision.reason}"
+                ),
+                approved_roots=(PROJECTS_ROOT,),
+            )
+            moved += 1
+        except Exception:
+            failed += 1
+    removed_directories = 0
+    inbox = Path(os.path.abspath(INBOX_ROOT))
+    if inbox.is_dir():
+        directories = sorted(
+            (path for path in inbox.rglob("*") if path.is_dir()),
+            key=lambda path: len(path.parts),
+            reverse=True,
+        )
+        for directory in directories:
+            if directory.is_symlink() or bool(
+                getattr(os.path, "isjunction", lambda _: False)(directory)
+            ):
+                continue
+            try:
+                directory.rmdir()
+                removed_directories += 1
+            except OSError:
+                pass
+    with connect(db_path) as connection:
+        record_event(
+            connection,
+            kind="contextual_companion_archive",
+            state="failed" if failed else "complete",
+            message=(
+                "Archived post-analysis Inbox companions while preserving their "
+                "project folder structure"
+            ),
+            details={
+                "moved": moved,
+                "skipped": skipped,
+                "failed": failed,
+                "removed_directories": removed_directories,
+            },
+        )
+    return ContextualArchiveResult(
+        moved=moved,
+        skipped=skipped,
+        failed=failed,
+        removed_directories=removed_directories,
+    )
 
 
 def _utc_now() -> str:

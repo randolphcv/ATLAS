@@ -402,6 +402,7 @@ class DesktopControllerTests(unittest.TestCase):
             1,
         )
 
+        self.controller._analysis_readiness["runtimeAvailable"] = False
         self.controller.replyToBeaconThread("Yes. Keep it local.")
         self.assertEqual(
             self.controller.selectedBeaconThread["state"],
@@ -422,6 +423,51 @@ class DesktopControllerTests(unittest.TestCase):
 
         self.controller.resolveBeaconThread()
         self.assertEqual(self.controller.beaconThreads.rowCount(), 1)
+
+    def test_reply_wakes_idle_beacon_and_busy_reply_stays_queued(self) -> None:
+        [thread_id] = seed_threads(
+            self.db,
+            (
+                {
+                    "seed_key": "desktop:auto-wake",
+                    "subject": "Wake Beacon",
+                    "kind": "question",
+                    "priority": "normal",
+                    "requires_approval": False,
+                    "body": "Wait for a human reply.",
+                },
+            ),
+        )
+        self.controller.refresh()
+        self.controller._analysis_readiness["runtimeAvailable"] = True
+
+        def mark_running(model: str) -> None:
+            self.assertEqual(model, "")
+            self.controller._conversation_worker_running = True
+
+        with patch.object(
+            self.controller,
+            "runBeaconConversationWorker",
+            side_effect=mark_running,
+        ) as run_worker:
+            self.controller.replyToBeaconThread("Please answer now.")
+
+        run_worker.assert_called_once_with("")
+        self.assertTrue(self.controller.conversationWorkerRunning)
+        self.assertIn("responding now", self.controller.statusMessage)
+
+        with patch.object(
+            self.controller,
+            "runBeaconConversationWorker",
+        ) as second_worker:
+            self.controller.replyToBeaconThread("Process this one next.")
+
+        second_worker.assert_not_called()
+        detail = self.controller.selectedBeaconThread
+        self.assertEqual(detail["id"], thread_id)
+        self.assertEqual(detail["state"], "queued_for_beacon")
+        self.assertIn("process it next", self.controller.statusMessage)
+        self.controller._conversation_worker_running = False
 
     def test_grounded_beacon_result_card_opens_catalog_asset(self) -> None:
         thread_id = create_human_thread(

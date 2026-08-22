@@ -13,6 +13,7 @@ from beacon.conversation_worker import (
     AgentGoal,
     AgentResponse,
     _candidate_series_hint,
+    _complete_claim,
     _is_nonproduction_path,
     _search_catalog_tool,
     claim_next_thread,
@@ -267,6 +268,32 @@ class ConversationWorkerTests(unittest.TestCase):
         self.assertEqual(first.thread_id, thread_id)
         self.assertIsNone(second)
         self.assertEqual(second_state, "idle")
+
+    def test_reply_saved_during_active_claim_remains_queued(self) -> None:
+        thread_id = create_human_thread(
+            self.db,
+            subject="Keep the newer reply queued",
+            body="Begin the first response.",
+        )
+        claim, state = claim_next_thread(
+            self.db,
+            endpoint="http://127.0.0.1:11434",
+            model="fixture-model",
+            worker_id="first",
+        )
+        self.assertEqual(state, "claimed")
+        assert claim is not None
+
+        reply_to_thread(self.db, thread_id, "This arrived while Beacon was busy.")
+        _complete_claim(self.db, claim, "First response complete.", [])
+
+        detail = thread_detail(self.db, thread_id)
+        assert detail is not None
+        self.assertEqual(detail["state"], "queued_for_beacon")
+        self.assertEqual(
+            [message["author"] for message in detail["messages"]],
+            ["human", "human", "beacon"],
+        )
 
     def test_worker_pauses_without_claiming_during_catalog_analysis(self) -> None:
         create_human_thread(

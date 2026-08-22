@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import sqlite3
 import os
@@ -858,7 +859,8 @@ class LocalAnalysisJobTests(unittest.TestCase):
             patch(
                 "beacon.local_analysis.commit_analyzed_file",
                 side_effect=PermissionError(
-                    "synthetic destination access denied"
+                    errno.EACCES,
+                    "synthetic destination access denied",
                 ),
             ) as commit,
         ):

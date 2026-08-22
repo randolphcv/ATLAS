@@ -23,7 +23,9 @@ from .database import connect, migrate, record_event
 from .desk import seed_threads
 from .managed_moves import (
     analysis_placement_for,
+    archive_contextual_inbox_companions,
     commit_analyzed_file,
+    destination_directory_blocked,
     placement_needs_clarification,
     recover_interrupted_managed_moves,
 )
@@ -1934,7 +1936,7 @@ def _run_local_analysis_job(
                     )
                 except Exception as placement_error:
                     if (
-                        isinstance(placement_error, PermissionError)
+                        destination_directory_blocked(placement_error)
                         and destination_key is not None
                     ):
                         blocked_placement_directories.add(destination_key)
@@ -1989,13 +1991,21 @@ def _run_local_analysis_job(
                     Path(last_move.destination_path).parent,
                     run_id=run_id,
                 )
+    companion_archive = None
+    if counts["failed"] == 0 and counts["pending"] == 0:
+        _set_job_stage(db_path, job_id, "archiving_project_companions")
+        companion_archive = archive_contextual_inbox_companions(db_path)
     state = (
         "complete"
         if counts["failed"] == 0
         else ("partial" if counts["complete"] else "failed")
     )
+    if companion_archive is not None and companion_archive.failed:
+        state = "partial"
     error = None
-    if state != "complete":
+    if companion_archive is not None and companion_archive.failed:
+        error = f"{companion_archive.failed} companion placement(s) failed"
+    elif state != "complete":
         error = f"{counts['failed']} item(s) failed"
     with connect(db_path) as connection:
         connection.execute(
@@ -2021,6 +2031,15 @@ def _run_local_analysis_job(
                 "analysis_run_id": run_id,
                 "placement_failures": len(placement_failures),
                 "deferred_placements": deferred_placements,
+                "companion_files_moved": (
+                    companion_archive.moved if companion_archive else 0
+                ),
+                "companion_files_skipped": (
+                    companion_archive.skipped if companion_archive else 0
+                ),
+                "companion_files_failed": (
+                    companion_archive.failed if companion_archive else 0
+                ),
                 **counts,
             },
         )

@@ -1952,6 +1952,18 @@ class DesktopController(QObject):
         )
         self._thread_pool.start(worker)
 
+    def _wake_beacon_for_queued_replies(self) -> bool:
+        """Start one queued conversation when the local inference lane is free."""
+        if self._conversation_worker_running or self.localAnalysisRunning:
+            return False
+        summary = desk_summary(self.settings.db_path)
+        if summary["queued_for_beacon"] <= 0:
+            return False
+        if not self._analysis_readiness.get("runtimeAvailable"):
+            return False
+        self.runBeaconConversationWorker("")
+        return self._conversation_worker_running
+
     @Slot(QUrl, str)
     def createSelectedIntakeFolder(
         self,
@@ -1991,6 +2003,12 @@ class DesktopController(QObject):
             messages.get(result.state, f"Beacon worker state: {result.state}"),
             "success" if result.state == "complete" else "working",
         )
+        if result.state == "complete" and self._wake_beacon_for_queued_replies():
+            self._set_status(
+                "Beacon answered one conversation and is processing the next "
+                "queued reply.",
+                "working",
+            )
 
     def _conversation_worker_failed(
         self,
@@ -2098,13 +2116,35 @@ class DesktopController(QObject):
             self._set_status("Select a Beacon conversation first.", "error")
             return
         try:
+            worker_was_running = self._conversation_worker_running
             reply_to_thread(self.settings.db_path, thread_id, body)
             self._load_events()
             self._load_beacon_threads(preserve_selection=True)
-            self._set_status(
-                "Reply saved locally and queued for Beacon. No file action was taken.",
-                "success",
-            )
+            if worker_was_running:
+                message = (
+                    "Reply saved locally behind Beacon's current response. He will "
+                    "process it next. No file action was taken."
+                )
+                kind = "working"
+            elif self._wake_beacon_for_queued_replies():
+                message = (
+                    "Reply saved locally and Beacon is responding now. No file "
+                    "action was taken."
+                )
+                kind = "working"
+            elif self.localAnalysisRunning:
+                message = (
+                    "Reply saved locally. Beacon will respond after catalog analysis "
+                    "releases the local inference lane. No file action was taken."
+                )
+                kind = "working"
+            else:
+                message = (
+                    "Reply saved locally, but the local Beacon model is offline. "
+                    "The reply remains queued. No file action was taken."
+                )
+                kind = "error"
+            self._set_status(message, kind)
         except (LookupError, ValueError) as error:
             self._set_status(str(error), "error")
         except Exception as error:

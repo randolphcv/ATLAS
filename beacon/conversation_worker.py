@@ -1507,7 +1507,7 @@ def _complete_claim(
         connection.execute("BEGIN IMMEDIATE")
         run = connection.execute(
             """
-            SELECT state,worker_id,thread_id FROM beacon_worker_runs
+            SELECT state,worker_id,thread_id,claimed_at FROM beacon_worker_runs
             WHERE id=?
             """,
             (claim.run_id,),
@@ -1530,10 +1530,25 @@ def _complete_claim(
         connection.execute(
             """
             UPDATE beacon_threads
-            SET state='awaiting_human',updated_at=?,resolved_at=NULL
+            SET state=?,updated_at=?,resolved_at=NULL
             WHERE id=?
             """,
-            (timestamp, claim.thread_id),
+            (
+                (
+                    "queued_for_beacon"
+                    if connection.execute(
+                        """
+                        SELECT 1 FROM beacon_messages
+                        WHERE thread_id=? AND author='human' AND created_at>?
+                        LIMIT 1
+                        """,
+                        (claim.thread_id, run["claimed_at"]),
+                    ).fetchone()
+                    else "awaiting_human"
+                ),
+                timestamp,
+                claim.thread_id,
+            ),
         )
         connection.execute(
             """
