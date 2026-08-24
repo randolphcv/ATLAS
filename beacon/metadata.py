@@ -46,7 +46,23 @@ def empty_metadata() -> dict[str, Any]:
     }
 
 
-def _normalize_list(value: object, field: str) -> list[str]:
+LIST_ENTRY_LIMIT = 300
+LIST_LENGTH_LIMIT = 200
+
+
+def _correction(field: str, action: str, detail: str) -> dict[str, str]:
+    """One recorded change Beacon made to untrusted input. Never silent."""
+    return {"field": field, "action": action, "detail": detail}
+
+
+def _normalize_list(
+    value: object,
+    field: str,
+    *,
+    degrade: bool = False,
+    corrections: list[dict[str, str]] | None = None,
+) -> list[str]:
+    label = field.replace("_", " ")
     if value is None:
         return []
     if isinstance(value, str):
@@ -54,41 +70,146 @@ def _normalize_list(value: object, field: str) -> list[str]:
     elif isinstance(value, list):
         values = value
     else:
-        raise ValueError(f"{field.replace('_', ' ').title()} must be a list.")
+        if not degrade:
+            raise ValueError(f"{label.title()} must be a list.")
+        corrections.append(
+            _correction(
+                field,
+                "dropped_field",
+                f"expected a list, received {type(value).__name__}",
+            )
+        )
+        return []
     normalized: list[str] = []
     seen: set[str] = set()
+    dropped = 0
+    longest = 0
     for item in values:
         text = " ".join(str(item).split()).strip()
         if not text:
             continue
-        if len(text) > 300:
-            raise ValueError(
-                f"Each {field.replace('_', ' ')} entry must be 300 characters or fewer."
-            )
+        if len(text) > LIST_ENTRY_LIMIT:
+            if not degrade:
+                raise ValueError(
+                    f"Each {label} entry must be {LIST_ENTRY_LIMIT} "
+                    "characters or fewer."
+                )
+            # An entry this long is a sentence, not a tag. Truncating it would
+            # produce a worse tag than having none, so it is dropped whole and
+            # the valid entries are kept.
+            dropped += 1
+            longest = max(longest, len(text))
+            continue
         key = text.casefold()
         if key not in seen:
             normalized.append(text)
             seen.add(key)
-    if len(normalized) > 200:
-        raise ValueError(f"{field.replace('_', ' ').title()} is limited to 200 entries.")
+    if dropped:
+        corrections.append(
+            _correction(
+                field,
+                "dropped_entries",
+                f"dropped {dropped} entry/entries over {LIST_ENTRY_LIMIT} "
+                f"characters (longest {longest}); kept {len(normalized)}",
+            )
+        )
+    if len(normalized) > LIST_LENGTH_LIMIT:
+        if not degrade:
+            raise ValueError(
+                f"{label.title()} is limited to {LIST_LENGTH_LIMIT} entries."
+            )
+        corrections.append(
+            _correction(
+                field,
+                "truncated_list",
+                f"{len(normalized)} entries reduced to {LIST_LENGTH_LIMIT}",
+            )
+        )
+        normalized = normalized[:LIST_LENGTH_LIMIT]
     return normalized
 
 
-def normalize_metadata(value: Mapping[str, object]) -> dict[str, Any]:
+def _normalize(
+    value: Mapping[str, object],
+    *,
+    degrade: bool,
+    corrections: list[dict[str, str]],
+) -> dict[str, Any]:
     unknown = set(value) - METADATA_FIELDS
     if unknown:
-        raise ValueError(f"Unsupported metadata fields: {', '.join(sorted(unknown))}")
+        if not degrade:
+            raise ValueError(
+                f"Unsupported metadata fields: {', '.join(sorted(unknown))}"
+            )
+        corrections.append(
+            _correction(
+                "*",
+                "dropped_unknown_fields",
+                f"ignored {len(unknown)} unsupported field(s): "
+                f"{', '.join(sorted(unknown))}",
+            )
+        )
     result = empty_metadata()
     for field, limit in TEXT_LIMITS.items():
-        text = str(value.get(field) or "").strip()
-        if len(text) > limit:
-            raise ValueError(
-                f"{field.replace('_', ' ').title()} must be {limit:,} characters or fewer."
+        raw = value.get(field)
+        if isinstance(raw, (list, dict, tuple, set)):
+            if not degrade:
+                raise ValueError(
+                    f"{field.replace('_', ' ').title()} must be text."
+                )
+            corrections.append(
+                _correction(
+                    field,
+                    "dropped_field",
+                    f"expected text, received {type(raw).__name__}",
+                )
             )
+            continue
+        text = str(raw or "").strip()
+        if len(text) > limit:
+            if not degrade:
+                raise ValueError(
+                    f"{field.replace('_', ' ').title()} must be "
+                    f"{limit:,} characters or fewer."
+                )
+            # Prose truncates cleanly; a shortened title still describes the
+            # asset, which is worth more than discarding the whole analysis.
+            corrections.append(
+                _correction(
+                    field,
+                    "truncated",
+                    f"{len(text)} characters truncated to {limit}",
+                )
+            )
+            text = text[:limit].rstrip()
         result[field] = text
     for field in LIST_FIELDS:
-        result[field] = _normalize_list(value.get(field), field)
+        result[field] = _normalize_list(
+            value.get(field),
+            field,
+            degrade=degrade,
+            corrections=corrections,
+        )
     return result
+
+
+def normalize_metadata(value: Mapping[str, object]) -> dict[str, Any]:
+    """Strict normalization. Human edits must be told when they are invalid."""
+    return _normalize(value, degrade=False, corrections=[])
+
+
+def normalize_metadata_degraded(
+    value: Mapping[str, object],
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    """Lenient normalization for untrusted input, with every change recorded.
+
+    A local model is an untrusted input source: over-long strings, wrong types
+    and missing keys are normal output, not exceptional conditions. This path
+    corrects the offending field and reports what it did rather than raising
+    past the item being processed. See AGENTS.md section 10.
+    """
+    corrections: list[dict[str, str]] = []
+    return _normalize(value, degrade=True, corrections=corrections), corrections
 
 
 def get_asset_metadata(db_path: Path, asset_id: str) -> dict[str, Any]:
@@ -126,8 +247,18 @@ def save_asset_metadata(
     *,
     updated_by: str,
     source: str,
+    degrade: bool = False,
 ) -> dict[str, Any]:
-    metadata = normalize_metadata(value)
+    """Persist editable metadata.
+
+    ``degrade`` marks the value as untrusted input, typically local model
+    output. Offending fields are corrected instead of raising, and every
+    correction is returned and written to the audit trail.
+    """
+    if degrade:
+        metadata, corrections = normalize_metadata_degraded(value)
+    else:
+        metadata, corrections = normalize_metadata(value), []
     timestamp = _utc_now()
     with connect(db_path) as connection:
         migrate(connection)
@@ -149,6 +280,7 @@ def save_asset_metadata(
                 "updated_by": updated_by,
                 "updated_at": timestamp,
                 "unchanged": True,
+                "corrections": corrections,
             }
         revision = int(existing["revision"]) + 1 if existing else 1
         encoded = json.dumps(metadata, sort_keys=True, ensure_ascii=False)
@@ -216,14 +348,33 @@ def save_asset_metadata(
                 "updated_by": updated_by,
                 "source": source,
                 "changed_fields": changed,
+                "corrections": corrections,
             },
         )
+        if corrections:
+            record_event(
+                connection,
+                kind="metadata_correction",
+                state="complete",
+                message=(
+                    f"Beacon corrected {len(corrections)} field(s) of "
+                    "untrusted analysis output before saving"
+                ),
+                asset_id=asset_id,
+                details={
+                    "revision": revision,
+                    "source": source,
+                    "updated_by": updated_by,
+                    "corrections": corrections,
+                },
+            )
     return {
         **metadata,
         "revision": revision,
         "updated_by": updated_by,
         "updated_at": timestamp,
         "unchanged": False,
+        "corrections": corrections,
     }
 
 
@@ -285,6 +436,7 @@ def apply_analysis_metadata(
         editable,
         updated_by="Beacon local analyzer",
         source=f"analysis_run:{run_id}",
+        degrade=True,
     )
 
 

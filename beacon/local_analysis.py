@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import math
 import os
 import shutil
@@ -30,7 +31,7 @@ from .managed_moves import (
     placement_needs_clarification,
     recover_interrupted_managed_moves,
 )
-from .media import IMAGE_EXTENSIONS, probe
+from .media import IMAGE_EXTENSIONS, probe, should_probe
 from .metadata import apply_analysis_metadata, apply_analysis_organization_path
 from .music_analysis import analyze_asset_music
 from .processes import hidden_creation_flags
@@ -261,21 +262,106 @@ def _normalize_confidence(value: object) -> tuple[float, str | None]:
     raise ValueError("local model confidence must be between 0 and 1 or 1 and 100")
 
 
+LOGGER = logging.getLogger("beacon.local_analysis")
+
+PAYLOAD_TEXT_LIMITS = {
+    "title": 300,
+    "description": 4_000,
+    "media_category": 100,
+    "organization_suggestion": 1_000,
+}
+PAYLOAD_TAG_LIMIT = 100
+PAYLOAD_TAG_ENTRY_LIMIT = 300
+
+
+def _payload_limit_violations(payload: object) -> list[str]:
+    """Limit breaches the durable importer would reject. Retryable, not fatal."""
+    if not isinstance(payload, dict):
+        return ["payload must be an object"]
+    problems: list[str] = []
+    for key, limit in PAYLOAD_TEXT_LIMITS.items():
+        value = payload.get(key)
+        if isinstance(value, str) and len(value.strip()) > limit:
+            problems.append(
+                f"{key} is {len(value.strip())} characters; the limit is {limit}"
+            )
+    tags = payload.get("tags")
+    if isinstance(tags, list):
+        long_tags = [
+            tag for tag in tags
+            if isinstance(tag, str) and len(tag.strip()) > PAYLOAD_TAG_ENTRY_LIMIT
+        ]
+        if long_tags:
+            problems.append(
+                f"{len(long_tags)} tag(s) exceed {PAYLOAD_TAG_ENTRY_LIMIT} "
+                "characters; tags must be short labels, not sentences"
+            )
+        if len(tags) > PAYLOAD_TAG_LIMIT:
+            problems.append(
+                f"{len(tags)} tags returned; the limit is {PAYLOAD_TAG_LIMIT}"
+            )
+    return problems
+
+
+def _degrade_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Correct an over-limit payload rather than discarding the analysis.
+
+    Reached only after the retries are exhausted. Prose is truncated because a
+    shortened title still describes the asset; an over-long tag is dropped
+    whole because a truncated sentence is a worse tag than no tag.
+    """
+    result = dict(payload)
+    notes: list[str] = []
+    for key, limit in PAYLOAD_TEXT_LIMITS.items():
+        value = result.get(key)
+        if isinstance(value, str) and len(value.strip()) > limit:
+            notes.append(
+                f"Beacon truncated {key} from {len(value.strip())} to {limit} "
+                "characters after the local model exceeded the limit on every "
+                "attempt."
+            )
+            result[key] = value.strip()[:limit].rstrip()
+    tags = result.get("tags")
+    if isinstance(tags, list):
+        kept = [
+            tag for tag in tags
+            if isinstance(tag, str)
+            and tag.strip()
+            and len(tag.strip()) <= PAYLOAD_TAG_ENTRY_LIMIT
+        ]
+        if len(kept) != len(tags):
+            notes.append(
+                f"Beacon dropped {len(tags) - len(kept)} tag(s) that exceeded "
+                f"{PAYLOAD_TAG_ENTRY_LIMIT} characters or were empty, and kept "
+                f"{len(kept)}."
+            )
+        if len(kept) > PAYLOAD_TAG_LIMIT:
+            notes.append(
+                f"Beacon reduced {len(kept)} tags to {PAYLOAD_TAG_LIMIT}."
+            )
+            kept = kept[:PAYLOAD_TAG_LIMIT]
+        result["tags"] = kept
+    return result, notes
+
+
 def _normalize_payload(payload: object) -> tuple[dict[str, Any], str | None]:
     if not isinstance(payload, dict):
         raise ValueError("local model payload must be an object")
     result = dict(payload)
+    notes: list[str] = []
     suggestion = result.get("organization_suggestion")
     if isinstance(suggestion, str) and not suggestion.strip():
         result["organization_suggestion"] = (
             "No organization suggestion was produced. Human review is "
             "required; do not move or rename the original."
         )
-        return result, (
+        notes.append(
             "Local model returned an empty organization suggestion; Beacon "
             "inserted a non-operative review-required fallback."
         )
-    return result, None
+    result, limit_notes = _degrade_payload(result)
+    notes.extend(limit_notes)
+    return result, ("; ".join(notes) if notes else None)
 
 
 def _request_json(
@@ -719,6 +805,50 @@ def _set_job_stage(db_path: Path, job_id: str, stage: str) -> None:
         )
 
 
+def _undecodable_reason(source: Path, metadata: dict[str, Any] | None) -> str:
+    """Name the actual cause, not the symptom.
+
+    "no decodable content evidence" is what Beacon observed; it says nothing
+    about why, which forced a catalog query to diagnose a whole class of
+    failures. Each branch below is separately actionable.
+    """
+    suffix = source.suffix.lower() or "(no extension)"
+    if not should_probe(source):
+        return (
+            f"{suffix} is not a supported media type, so no probe was "
+            "attempted and there is no content to analyse; this file should "
+            "not have entered analysis scope"
+        )
+    try:
+        size = source.stat().st_size
+    except OSError:
+        size = None
+    if size == 0:
+        return f"the file is zero bytes, so {suffix} content cannot be decoded"
+    if not metadata:
+        return (
+            f"{suffix} is a supported media type but the probe returned no "
+            "metadata; the media tool may be unavailable or the file "
+            "unreadable"
+        )
+    if metadata.get("error"):
+        return (
+            f"the probe of this {suffix} file failed: "
+            f"{str(metadata.get('error'))[:300]}"
+        )
+    streams = metadata.get("streams") or []
+    kinds = sorted({str(s.get("codec_type")) for s in streams if isinstance(s, dict)})
+    if not streams:
+        return (
+            f"the probe of this {suffix} file reported no streams, so it "
+            "holds no decodable video, audio, or image content"
+        )
+    return (
+        f"the probe of this {suffix} file reported only {', '.join(kinds)} "
+        "stream(s), none of which yields visual, audio, or text evidence"
+    )
+
+
 CONTENT_EVIDENCE_MODES = {
     "visual_content",
     "audio_content",
@@ -824,6 +954,51 @@ def _analysis_placement_seed_key(
         str(source_path).encode("utf-8")
     ).hexdigest()[:16]
     return f"analysis-placement-{kind}:{run_id}:{asset_id}:{path_fingerprint}"
+
+
+def _record_finalization_failure(
+    db_path: Path,
+    *,
+    run_id: str,
+    job_id: str,
+    asset_id: str,
+    error: BaseException,
+) -> None:
+    """Record one item's finalization failure without disturbing the others."""
+    try:
+        with connect(db_path) as connection:
+            connection.execute(
+                """
+                UPDATE local_analysis_items
+                SET state='failed',error=?
+                WHERE job_id=? AND asset_id=?
+                """,
+                (
+                    "Result published but finalization failed: "
+                    f"{str(error)[:1900]}",
+                    job_id,
+                    asset_id,
+                ),
+            )
+            record_event(
+                connection,
+                kind="local_analysis_finalization",
+                state="failed",
+                message=(
+                    "Finalization failed for one analyzed asset; the rest of "
+                    "the run was unaffected"
+                ),
+                asset_id=asset_id,
+                details={
+                    "analysis_run_id": run_id,
+                    "job_id": job_id,
+                    "error_class": type(error).__name__,
+                    "error": str(error)[:1000],
+                },
+            )
+    except Exception:
+        # Recording a failure must never itself abort the batch.
+        LOGGER.exception("could not record finalization failure")
 
 
 def _record_analysis_placement_failure(
@@ -997,7 +1172,9 @@ def _default_analyzer(
     if expected_mode not in CONTENT_EVIDENCE_MODES:
         shutil.rmtree(temporary_root, ignore_errors=True)
         raise ValueError(
-            "no decodable visual, audio, or text content evidence was available"
+            "no decodable visual, audio, or text content evidence was "
+            "available: "
+            + _undecodable_reason(source, asset.get("media_metadata") or {})
         )
     request_context: dict[str, Any] = {
         "asset_mode": (
@@ -1119,6 +1296,14 @@ def _default_analyzer(
                     raise ValueError(
                         "local model did not produce concrete "
                         f"{expected_mode.replace('_', '-')} observations"
+                    )
+                violations = _payload_limit_violations(result)
+                if violations:
+                    # Retryable like malformed JSON: the model gets another
+                    # attempt before Beacon degrades the field itself.
+                    raise ValueError(
+                        "local model exceeded field limits: "
+                        + "; ".join(violations)
                     )
                 return result
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
@@ -1865,129 +2050,152 @@ def _run_local_analysis_job(
                 (run_id, _utc_now(), job_id),
             )
     placement_failures: list[dict[str, str]] = []
+    finalization_failures: list[dict[str, str]] = []
     blocked_placement_directories: set[str] = set()
     deferred_placements = 0
     if run_id:
         for candidate in candidates:
-            with connect(db_path) as connection:
-                now = _utc_now()
-                connection.execute(
-                    """
-                    UPDATE local_analysis_jobs
-                    SET current_asset_id=?,current_stage='writing_metadata',
-                        current_stage_updated_at=?,updated_at=?
-                    WHERE id=?
-                    """,
-                    (candidate["asset_id"], now, now, job_id),
-                )
-            if not _analysis_metadata_applied(
-                db_path,
-                candidate["asset_id"],
-                run_id,
-            ):
-                apply_analysis_metadata(
+            # AGENTS.md section 10: no per-item failure in a batch may
+            # abort the batch. One asset's metadata or placement problem
+            # must not stop publication for every item that succeeded.
+            try:
+                with connect(db_path) as connection:
+                    now = _utc_now()
+                    connection.execute(
+                        """
+                        UPDATE local_analysis_jobs
+                        SET current_asset_id=?,current_stage='writing_metadata',
+                            current_stage_updated_at=?,updated_at=?
+                        WHERE id=?
+                        """,
+                        (candidate["asset_id"], now, now, job_id),
+                    )
+                if not _analysis_metadata_applied(
                     db_path,
                     candidate["asset_id"],
-                    candidate["payload"],
-                    run_id=run_id,
-                )
-            with connect(db_path) as connection:
-                locations = connection.execute(
-                    """
-                    SELECT path AS source_path FROM locations
-                    WHERE asset_id=?
-                    ORDER BY
-                      CASE WHEN path LIKE ? THEN 0 ELSE 1 END,
-                      path COLLATE NOCASE
-                    """,
-                    (
-                        candidate["asset_id"],
-                        f"{inbox_root()}{os.sep}%",
-                    ),
-                ).fetchall()
-            if not locations:
-                raise RuntimeError("Analyzed source location could not be recovered.")
-            last_move = None
-            for location in locations:
-                source_path = Path(location["source_path"])
-                placement = analysis_placement_for(source_path)
-                destination_key = (
-                    str(placement.destination_directory).casefold()
-                    if placement.destination_directory is not None
-                    else None
-                )
-                if (
-                    destination_key is not None
-                    and destination_key in blocked_placement_directories
+                    run_id,
                 ):
-                    deferred_placements += 1
-                    continue
-                _set_job_stage(db_path, job_id, "moving_to_archive")
-                try:
-                    moved, placement_reason = commit_analyzed_file(
+                    apply_analysis_metadata(
                         db_path,
-                        asset_id=candidate["asset_id"],
-                        source_path=source_path,
-                        confidence=float(candidate["confidence"]),
-                        analysis_run_id=run_id,
+                        candidate["asset_id"],
+                        candidate["payload"],
+                        run_id=run_id,
                     )
-                except Exception as placement_error:
+                with connect(db_path) as connection:
+                    locations = connection.execute(
+                        """
+                        SELECT path AS source_path FROM locations
+                        WHERE asset_id=?
+                        ORDER BY
+                          CASE WHEN path LIKE ? THEN 0 ELSE 1 END,
+                          path COLLATE NOCASE
+                        """,
+                        (
+                            candidate["asset_id"],
+                            f"{inbox_root()}{os.sep}%",
+                        ),
+                    ).fetchall()
+                if not locations:
+                    raise RuntimeError("Analyzed source location could not be recovered.")
+                last_move = None
+                for location in locations:
+                    source_path = Path(location["source_path"])
+                    placement = analysis_placement_for(source_path)
+                    destination_key = (
+                        str(placement.destination_directory).casefold()
+                        if placement.destination_directory is not None
+                        else None
+                    )
                     if (
-                        destination_directory_blocked(placement_error)
-                        and destination_key is not None
+                        destination_key is not None
+                        and destination_key in blocked_placement_directories
                     ):
-                        blocked_placement_directories.add(destination_key)
-                    placement_failures.append(
-                        {
-                            "asset_id": str(candidate["asset_id"]),
-                            "source_path": str(source_path),
-                            "error": str(placement_error)[:1900],
-                        }
-                    )
+                        deferred_placements += 1
+                        continue
+                    _set_job_stage(db_path, job_id, "moving_to_archive")
                     try:
-                        _record_analysis_placement_failure(
+                        moved, placement_reason = commit_analyzed_file(
                             db_path,
-                            run_id=run_id,
-                            asset_id=str(candidate["asset_id"]),
+                            asset_id=candidate["asset_id"],
                             source_path=source_path,
-                            error=placement_error,
+                            confidence=float(candidate["confidence"]),
+                            analysis_run_id=run_id,
                         )
-                    except Exception:
-                        pass
-                    continue
-                if moved is None and placement_needs_clarification(source_path):
-                    seed_threads(
-                        db_path,
-                        [
+                    except Exception as placement_error:
+                        if (
+                            destination_directory_blocked(placement_error)
+                            and destination_key is not None
+                        ):
+                            blocked_placement_directories.add(destination_key)
+                        placement_failures.append(
                             {
-                                "seed_key": _analysis_placement_seed_key(
-                                    "clarification",
-                                    run_id,
-                                    str(candidate["asset_id"]),
-                                    source_path,
-                                ),
-                                "subject": "Where should this analyzed file live?",
-                                "body": (
-                                    "Beacon completed analysis but could not infer "
-                                    f"a reliable final home for {source_path}. "
-                                    f"{placement_reason}"
-                                ),
-                                "kind": "clarification",
-                                "priority": "normal",
-                                "requires_approval": False,
-                                "asset_id": candidate["asset_id"],
+                                "asset_id": str(candidate["asset_id"]),
+                                "source_path": str(source_path),
+                                "error": str(placement_error)[:1900],
                             }
-                        ],
+                        )
+                        try:
+                            _record_analysis_placement_failure(
+                                db_path,
+                                run_id=run_id,
+                                asset_id=str(candidate["asset_id"]),
+                                source_path=source_path,
+                                error=placement_error,
+                            )
+                        except Exception:
+                            pass
+                        continue
+                    if moved is None and placement_needs_clarification(source_path):
+                        seed_threads(
+                            db_path,
+                            [
+                                {
+                                    "seed_key": _analysis_placement_seed_key(
+                                        "clarification",
+                                        run_id,
+                                        str(candidate["asset_id"]),
+                                        source_path,
+                                    ),
+                                    "subject": "Where should this analyzed file live?",
+                                    "body": (
+                                        "Beacon completed analysis but could not infer "
+                                        f"a reliable final home for {source_path}. "
+                                        f"{placement_reason}"
+                                    ),
+                                    "kind": "clarification",
+                                    "priority": "normal",
+                                    "requires_approval": False,
+                                    "asset_id": candidate["asset_id"],
+                                }
+                            ],
+                        )
+                    elif moved is not None:
+                        last_move = moved
+                if last_move is not None:
+                    apply_analysis_organization_path(
+                        db_path,
+                        candidate["asset_id"],
+                        Path(last_move.destination_path).parent,
+                        run_id=run_id,
                     )
-                elif moved is not None:
-                    last_move = moved
-            if last_move is not None:
-                apply_analysis_organization_path(
-                    db_path,
-                    candidate["asset_id"],
-                    Path(last_move.destination_path).parent,
-                    run_id=run_id,
+            except Exception as finalize_error:
+                finalization_failures.append(
+                    {
+                        "asset_id": str(candidate["asset_id"]),
+                        "error": str(finalize_error)[:1900],
+                    }
                 )
+                _record_finalization_failure(
+                    db_path,
+                    run_id=run_id,
+                    job_id=job_id,
+                    asset_id=str(candidate["asset_id"]),
+                    error=finalize_error,
+                )
+                continue
+    if finalization_failures:
+        counts["failed"] += len(finalization_failures)
+        counts["complete"] = max(0, counts["complete"] - len(finalization_failures))
     companion_archive = None
     if counts["failed"] == 0 and counts["pending"] == 0:
         _set_job_stage(db_path, job_id, "archiving_project_companions")
@@ -2027,6 +2235,7 @@ def _run_local_analysis_job(
                 "job_id": job_id,
                 "analysis_run_id": run_id,
                 "placement_failures": len(placement_failures),
+                "finalization_failures": len(finalization_failures),
                 "deferred_placements": deferred_placements,
                 "companion_files_moved": (
                     companion_archive.moved if companion_archive else 0

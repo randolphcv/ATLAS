@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -16,6 +17,8 @@ from .config import (
 from .database import connect, migrate, record_event
 from .metadata import get_policy
 from .repository import is_hidden_support_path
+
+LOGGER = logging.getLogger("beacon.managed_moves")
 
 APPROVED_DESTINATION_ROOTS = approved_destination_roots()
 INBOX_ROOT = inbox_root()
@@ -69,108 +72,117 @@ def recover_interrupted_managed_moves(db_path: Path) -> int:
         ).fetchall()
     recovered = 0
     for row in rows:
-        source = Path(row["source_path"])
-        destination = Path(row["destination_path"])
-        expected_sha256 = str(row["source_sha256"])
-        source_exists = source.is_file()
-        destination_exists = destination.is_file()
-        if not source_exists and destination_exists:
-            if sha256_file(destination) != expected_sha256:
-                _fail_move(
-                    db_path,
-                    row["id"],
-                    "Interrupted move destination checksum did not match.",
-                )
-                recovered += 1
-                continue
-            destination_stat = destination.stat()
-            completed = _utc_now()
-            with connect(db_path) as connection:
-                source_location = connection.execute(
-                    """
-                    SELECT 1 FROM locations
-                    WHERE asset_id=? AND path=?
-                    """,
-                    (row["asset_id"], str(source)),
-                ).fetchone()
-                destination_location = connection.execute(
-                    """
-                    SELECT 1 FROM locations
-                    WHERE asset_id=? AND path=?
-                    """,
-                    (row["asset_id"], str(destination)),
-                ).fetchone()
-                if source_location is not None:
-                    connection.execute(
-                        """
-                        UPDATE locations
-                        SET path=?,modified_ns=?,observed_at=?
-                        WHERE asset_id=? AND path=?
-                        """,
-                        (
-                            str(destination),
-                            destination_stat.st_mtime_ns,
-                            completed,
-                            row["asset_id"],
-                            str(source),
-                        ),
-                    )
-                elif destination_location is None:
+        # AGENTS.md section 10: one unrecoverable row must not abort
+        # recovery for the rest. This runs at analysis start, so an
+        # exception here would take down the job before it began.
+        try:
+            source = Path(row["source_path"])
+            destination = Path(row["destination_path"])
+            expected_sha256 = str(row["source_sha256"])
+            source_exists = source.is_file()
+            destination_exists = destination.is_file()
+            if not source_exists and destination_exists:
+                if sha256_file(destination) != expected_sha256:
                     _fail_move(
                         db_path,
                         row["id"],
-                        "Interrupted move destination is not catalog-bound.",
+                        "Interrupted move destination checksum did not match.",
                     )
                     recovered += 1
                     continue
-                connection.execute(
-                    """
-                    UPDATE managed_moves
-                    SET state='complete',error=NULL,completed_at=?
-                    WHERE id=?
-                    """,
-                    (completed, row["id"]),
+                destination_stat = destination.stat()
+                completed = _utc_now()
+                with connect(db_path) as connection:
+                    source_location = connection.execute(
+                        """
+                        SELECT 1 FROM locations
+                        WHERE asset_id=? AND path=?
+                        """,
+                        (row["asset_id"], str(source)),
+                    ).fetchone()
+                    destination_location = connection.execute(
+                        """
+                        SELECT 1 FROM locations
+                        WHERE asset_id=? AND path=?
+                        """,
+                        (row["asset_id"], str(destination)),
+                    ).fetchone()
+                    if source_location is not None:
+                        connection.execute(
+                            """
+                            UPDATE locations
+                            SET path=?,modified_ns=?,observed_at=?
+                            WHERE asset_id=? AND path=?
+                            """,
+                            (
+                                str(destination),
+                                destination_stat.st_mtime_ns,
+                                completed,
+                                row["asset_id"],
+                                str(source),
+                            ),
+                        )
+                    elif destination_location is None:
+                        _fail_move(
+                            db_path,
+                            row["id"],
+                            "Interrupted move destination is not catalog-bound.",
+                        )
+                        recovered += 1
+                        continue
+                    connection.execute(
+                        """
+                        UPDATE managed_moves
+                        SET state='complete',error=NULL,completed_at=?
+                        WHERE id=?
+                        """,
+                        (completed, row["id"]),
+                    )
+                    record_event(
+                        connection,
+                        kind="managed_move",
+                        state="complete",
+                        message=(
+                            "Recovered an interrupted managed move from its "
+                            "verified destination"
+                        ),
+                        asset_id=row["asset_id"],
+                        location_path=str(destination),
+                        details={
+                            "move_id": row["id"],
+                            "source_path": str(source),
+                            "destination_path": str(destination),
+                            "sha256": expected_sha256,
+                            "recovered": True,
+                        },
+                    )
+                recovered += 1
+                continue
+            if source_exists and not destination_exists:
+                _fail_move(
+                    db_path,
+                    row["id"],
+                    "Interrupted before the atomic rename; source remains present "
+                    "and is safe to retry through normal checksum verification.",
                 )
-                record_event(
-                    connection,
-                    kind="managed_move",
-                    state="complete",
-                    message=(
-                        "Recovered an interrupted managed move from its "
-                        "verified destination"
-                    ),
-                    asset_id=row["asset_id"],
-                    location_path=str(destination),
-                    details={
-                        "move_id": row["id"],
-                        "source_path": str(source),
-                        "destination_path": str(destination),
-                        "sha256": expected_sha256,
-                        "recovered": True,
-                    },
-                )
-            recovered += 1
-            continue
-        if source_exists and not destination_exists:
+                recovered += 1
+                continue
             _fail_move(
                 db_path,
                 row["id"],
-                "Interrupted before the atomic rename; source remains present "
-                "and is safe to retry through normal checksum verification.",
+                (
+                    "Interrupted move has both source and destination; Beacon "
+                    "left both untouched for human review."
+                    if source_exists and destination_exists
+                    else "Interrupted move has neither source nor destination."
+                ),
             )
             recovered += 1
+        except Exception:
+            LOGGER.exception(
+                "could not recover interrupted managed move %s", row["id"]
+            )
             continue
-        _fail_move(
-            db_path,
-            row["id"],
-            (
-                "Interrupted move has both source and destination; Beacon "
-                "left both untouched for human review."
-                if source_exists and destination_exists
-                else "Interrupted move has neither source nor destination."
-            ),
-        )
-        recovered += 1
     return recovered
 
 

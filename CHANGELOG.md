@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Local model output is now treated as an untrusted input source. An over-limit
+  or wrong-shaped field is retried, then corrected rather than failing the item,
+  and every correction is written to the item record and the audit ledger. An
+  over-long tag entry is dropped whole and its valid siblings kept; over-long
+  prose is truncated. Human edits still reject invalid values as before.
+- Analysis finalization is isolated per item. One asset's metadata or placement
+  failure can no longer abort publication for every other item in the run.
+- Interrupted managed-move recovery is isolated per record, so one unreadable
+  row can no longer abort an analysis job before it starts.
+- Undecodable-content failures now name the cause - unsupported media type,
+  probe error, no streams, or streams carrying no usable evidence - instead of
+  reporting only the symptom.
+
 - Completed analysis now archives excluded project companions and generated
   support artifacts when analyzed files in the same client/project tree have
   already established the destination. Beacon preserves their relative folder

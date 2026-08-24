@@ -150,6 +150,39 @@ environment, the secondary environment.
 - Update documentation only after live verification, and redact that evidence
   to structural form per section 7.
 
+### Model output is an untrusted input source
+
+A local model will emit over-long strings, wrong types, missing keys, and
+malformed JSON. That is normal operation, not an exceptional condition.
+Validating model output is data handling. It must never raise past the item
+being processed.
+
+When a model returns a field that breaks a rule:
+
+1. **Retry.** An over-limit or wrong-shape field is a retryable validation
+   failure, handled by the same path that already covers malformed JSON.
+2. **Degrade.** If the retries are exhausted, correct the field rather than
+   losing the item. Truncate prose. Drop an over-long list entry whole rather
+   than truncating it, and keep the valid entries.
+3. **Record.** Never correct silently. Every correction is written to the
+   item's record and to the audit trail: which field, what the original was,
+   what was done. Audit history is a user-facing feature, not a debug log.
+4. **Fail the item** only if after all that no usable result remains.
+
+The same rule applies to every field of the same class. One field that throws
+where its siblings catch is a defect.
+
+### No per-item failure may abort a batch
+
+No exception raised while processing one item of a batch operation may escape
+to the job. This covers intake, analysis, finalization, publication, metadata
+application, placement, and recovery. Record the item's failure, continue the
+batch, and report the count at the end.
+
+This pattern has produced three separate incidents. Treat a per-item call
+inside a batch loop as requiring isolation by default, not on evidence of a
+crash.
+
 ### A change is not done until the build is delivered
 
 A change to application code is not complete until the packaged executable has
