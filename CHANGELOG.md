@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- The desktop window no longer freezes while a job runs. A repeating five-second
+  refresh on the UI thread was doing roughly twenty-seven seconds of work per
+  pass, so it re-entered as soon as it returned and the window stopped pumping
+  messages for minutes at a time. The library query now selects a page of
+  identifiers before projecting the expensive per-row columns, and a correlated
+  lookup that SQLite was resolving through a near-useless index is steered onto
+  the selective one. That query drops from 24.1s to 0.35s on a catalog of
+  17,829 assets, with byte-identical results.
+- The catalog integrity check leaves the refresh path. `PRAGMA integrity_check`
+  and `foreign_key_check` read every page of the catalog; they now run at
+  startup and on explicit request from the System view, never on a timer, and
+  they open the catalog read-only so a diagnostic cannot alter what it inspects.
+- Catalog change detection uses `PRAGMA data_version` on a long-lived read-only
+  connection instead of database and write-ahead-log file metadata, and a
+  refresh already in flight is not re-entered.
+- The second model-output gate now degrades instead of discarding. An analysis
+  whose only fault is an over-long field is kept and corrected rather than
+  failing the item after three full generations; the request schema also states
+  the field limits, and a repeat violation degrades after one corrective retry
+  rather than a third.
+- Camera media-index and generated editor-index files are excluded from
+  analysis scope as non-media companions, and presentation documents under a
+  distinct reason marking them deferred pending text extraction. Excluded items
+  are recorded complete rather than failed, which is also how companion
+  placement selects them to travel with their originals.
+
 - Local model output is now treated as an untrusted input source. An over-limit
   or wrong-shaped field is retried, then corrected rather than failing the item,
   and every correction is written to the item record and the audit ledger. An

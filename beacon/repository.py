@@ -291,6 +291,29 @@ def search_assets(
             f"SELECT COUNT(*) FROM assets a {where}",
             parameters,
         ).fetchone()[0]
+        page = connection.execute(
+            f"""
+            SELECT a.id
+            FROM assets a
+            {where}
+            ORDER BY a.last_seen_at DESC, a.id
+            LIMIT ? OFFSET ?
+            """,
+            (
+                *parameters,
+                limit,
+                offset,
+            ),
+        ).fetchall()
+        identifiers = [str(row[0]) for row in page]
+        if not identifiers:
+            return {
+                "items": [],
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            }
+        placeholders = ",".join("?" for _ in identifiers)
         rows = connection.execute(
             f"""
             SELECT
@@ -305,7 +328,10 @@ def search_assets(
                                 SELECT 1 FROM managed_moves managed
                                 WHERE managed.asset_id = preferred.asset_id
                                   AND managed.destination_path = preferred.path
-                                  AND managed.state = 'complete'
+                                  -- '+' keeps SQLite off idx_managed_moves_state,
+                                  -- which matches nearly every row; asset_id is
+                                  -- the selective index here.
+                                  AND +managed.state = 'complete'
                             )
                             THEN 0
                 """
@@ -317,7 +343,10 @@ def search_assets(
                         preferred.path
                     LIMIT 1
                 ) AS primary_path,
-                COUNT(l.id) AS location_count,
+                (
+                    SELECT COUNT(*) FROM locations counted
+                    WHERE counted.asset_id = a.id
+                ) AS location_count,
                 (
                     SELECT d.path FROM derivatives d
                     WHERE d.asset_id = a.id
@@ -344,17 +373,10 @@ def search_assets(
                       AND analyzed.review_state IN ('candidate','approved')
                 ) AS analyzed
             FROM assets a
-            LEFT JOIN locations l ON l.asset_id = a.id
-            {where}
-            GROUP BY a.id
-            ORDER BY a.last_seen_at DESC
-            LIMIT ? OFFSET ?
+            WHERE a.id IN ({placeholders})
+            ORDER BY a.last_seen_at DESC, a.id
             """,
-            (
-                *parameters,
-                limit,
-                offset,
-            ),
+            identifiers,
         ).fetchall()
     return {
         "items": [_asset_from_row(row) for row in rows],
@@ -488,7 +510,10 @@ def asset_detail(db_path: Path, asset_id: str) -> dict[str, Any] | None:
                                 SELECT 1 FROM managed_moves managed
                                 WHERE managed.asset_id = preferred.asset_id
                                   AND managed.destination_path = preferred.path
-                                  AND managed.state = 'complete'
+                                  -- '+' keeps SQLite off idx_managed_moves_state,
+                                  -- which matches nearly every row; asset_id is
+                                  -- the selective index here.
+                                  AND +managed.state = 'complete'
                             )
                             THEN 0
                 """

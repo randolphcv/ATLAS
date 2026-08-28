@@ -15,7 +15,12 @@ from PIL import Image
 from beacon.config import projects_root
 from beacon.catalog import catalog_file
 from beacon.database import SCHEMA_VERSION, database_integrity
+from beacon.database import connect, migrate
 from beacon.local_analysis import (
+    DEFERRED_DOCUMENT_EXTENSIONS,
+    NON_CONTENT_COMPANION_EXTENSIONS,
+    _artifact_exclusion_reason,
+    _complete_analysis_exclusion,
     analysis_scope_preview,
     create_local_analysis_job,
     create_selected_local_analysis_job,
@@ -1160,3 +1165,88 @@ class LocalAnalysisJobTests(unittest.TestCase):
         )
         self.assertEqual(second.state, "complete")
         self.assertEqual(second.completed, 2)
+
+
+class CompanionExclusionScopeTests(unittest.TestCase):
+    """Non-media companions leave analysis scope as exclusions, not failures.
+
+    In the monitored retry, 51 of 80 items were these extensions, re-queued to
+    fail again at 150-250ms each purely to record a failure they can never
+    avoid.
+    """
+
+    def test_camera_index_and_editor_index_are_companions(self) -> None:
+        for suffix in sorted(NON_CONTENT_COMPANION_EXTENSIONS):
+            with self.subTest(suffix=suffix):
+                reason = _artifact_exclusion_reason(str(Path("clips") / f"CLIP001{suffix}"))
+                self.assertIsNotNone(reason)
+                self.assertIn("cataloged and searchable", reason)
+
+    def test_presentation_document_has_its_own_deferred_reason(self) -> None:
+        companion = _artifact_exclusion_reason(str(Path("clips") / "CLIP001.mif"))
+        document = _artifact_exclusion_reason(str(Path("decks") / "pitch.key"))
+
+        self.assertIsNotNone(document)
+        self.assertIn("text extraction", document)
+        self.assertNotEqual(
+            companion,
+            document,
+            "a future text path must be able to select these with one query",
+        )
+
+    def test_deferred_documents_are_a_named_constant(self) -> None:
+        self.assertIn(".key", DEFERRED_DOCUMENT_EXTENSIONS)
+        self.assertFalse(
+            NON_CONTENT_COMPANION_EXTENSIONS & DEFERRED_DOCUMENT_EXTENSIONS
+        )
+
+    def test_nothing_else_is_excluded(self) -> None:
+        for suffix in (".mp4", ".mov", ".jpg", ".heic", ".wav", ".txt", ".png"):
+            with self.subTest(suffix=suffix):
+                self.assertIsNone(
+                    _artifact_exclusion_reason(str(Path("media") / f"asset{suffix}"))
+                )
+
+    def test_exclusion_records_complete_with_a_companion_marker(self) -> None:
+        """excluded_reason IS NOT NULL is how companions are selected."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            db = root / "runtime" / "beacon.db"
+            source = root / "clips" / "A.mif"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"synthetic camera media index")
+            catalog_file(
+                source, db, stability_seconds=0, include_media_probe=False
+            )
+
+            with connect(db) as connection:
+                asset_id = connection.execute(
+                    "SELECT id FROM assets LIMIT 1"
+                ).fetchone()[0]
+                connection.execute(
+                    "INSERT INTO local_analysis_jobs "
+                    "(id,state,model,endpoint,policy_version,scope_sha256,"
+                    "total_items,requested_by,created_at,updated_at) VALUES "
+                    "('job','running','m','http://localhost:11434','v','s',1,"
+                    "'test','2026-01-01T00:00:00+00:00',"
+                    "'2026-01-01T00:00:00+00:00')"
+                )
+                connection.execute(
+                    "INSERT INTO local_analysis_items "
+                    "(id,job_id,asset_id,source_sha256,source_path,state,"
+                    "attempts) VALUES ('item','job',?,'sha',?,'failed',1)",
+                    (asset_id, str(source)),
+                )
+
+            reason = _artifact_exclusion_reason(str(source))
+            _complete_analysis_exclusion(db, "item", reason)
+
+            with connect(db) as connection:
+                row = connection.execute(
+                    "SELECT state, error, excluded_reason FROM "
+                    "local_analysis_items WHERE id='item'"
+                ).fetchone()
+
+            self.assertEqual(row["state"], "complete")
+            self.assertIsNone(row["error"])
+            self.assertIsNotNone(row["excluded_reason"])

@@ -8,15 +8,21 @@ to the job, and that a usable result survives wherever one can.
 
 from __future__ import annotations
 
+import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from beacon.catalog import catalog_file
 from beacon.local_analysis import (
     PAYLOAD_TAG_ENTRY_LIMIT,
     PAYLOAD_TEXT_LIMITS,
+    _canonical_json,
+    _default_analyzer,
     _degrade_payload,
+    _normalize_payload,
     _payload_limit_violations,
     _undecodable_reason,
 )
@@ -221,3 +227,97 @@ class UndecodableDiagnosisTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnalyzerRetryGateTests(unittest.TestCase):
+    """The gate inside the analysis retry loop, not the one at metadata save.
+
+    Both gates must degrade. The metadata gate already did; this one discarded
+    the whole analysis after three full generations, which is how 14 items in
+    the monitored run were lost to nothing worse than a long title.
+    """
+
+    def _asset(self, root: Path) -> dict[str, object]:
+        source = root / "note.txt"
+        source.write_text(
+            "A synthetic note used as text evidence for the analyzer.",
+            encoding="utf-8",
+        )
+        return {"source_path": str(source), "media_metadata": {}}
+
+    def _always_over_long(self, calls: list[dict[str, object]]):
+        def respond(endpoint, path, payload=None, *, timeout=5):
+            calls.append(payload or {})
+            mode = "text_content"
+            body = _canonical_json(payload or {})
+            match = re.search(r'"required_evidence_mode":\s*"([a-z_]+)"', body)
+            if match:
+                mode = match.group(1)
+            return {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "title": "T" * (PAYLOAD_TEXT_LIMITS["title"] + 200),
+                            "description": "A grounded description.",
+                            "content_observations": ["plain text is present"],
+                            "evidence_mode": mode,
+                            "media_category": "document",
+                            "tags": ["text", "note"],
+                            "privacy_flags": [],
+                            "organization_suggestion": "Keep with documents.",
+                            "confidence": 0.5,
+                            "stock_metadata": {},
+                        }
+                    )
+                }
+            }
+
+        return respond
+
+    def test_over_long_field_is_kept_and_degraded_not_discarded(self) -> None:
+        calls: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as temp:
+            asset = self._asset(Path(temp))
+            with patch(
+                "beacon.local_analysis._request_json",
+                side_effect=self._always_over_long(calls),
+            ):
+                result = _default_analyzer("http://localhost:11434", "m", asset)
+
+        self.assertIsInstance(result, dict)
+        payload, note = _normalize_payload(result)
+        self.assertEqual(
+            len(payload["title"]), PAYLOAD_TEXT_LIMITS["title"]
+        )
+        self.assertIsNotNone(note)
+        self.assertIn("title", str(note))
+
+    def test_a_violation_no_longer_costs_three_generations(self) -> None:
+        calls: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as temp:
+            asset = self._asset(Path(temp))
+            with patch(
+                "beacon.local_analysis._request_json",
+                side_effect=self._always_over_long(calls),
+            ):
+                _default_analyzer("http://localhost:11434", "m", asset)
+
+        self.assertEqual(len(calls), 2, "one corrective retry, then degrade")
+
+    def test_request_schema_tells_the_model_the_limits(self) -> None:
+        calls: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as temp:
+            asset = self._asset(Path(temp))
+            with patch(
+                "beacon.local_analysis._request_json",
+                side_effect=self._always_over_long(calls),
+            ):
+                _default_analyzer("http://localhost:11434", "m", asset)
+
+        properties = calls[0]["format"]["properties"]
+        self.assertEqual(
+            properties["title"]["maxLength"], PAYLOAD_TEXT_LIMITS["title"]
+        )
+        self.assertEqual(
+            properties["tags"]["items"]["maxLength"], PAYLOAD_TAG_ENTRY_LIMIT
+        )

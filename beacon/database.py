@@ -510,7 +510,10 @@ def database_integrity(path: Path) -> dict[str, object]:
         }
     connection: sqlite3.Connection | None = None
     try:
-        connection = sqlite3.connect(path, timeout=30)
+        # A diagnostic reads; it must not be able to alter what it inspects.
+        connection = sqlite3.connect(
+            f"file:{path.as_posix()}?mode=ro", uri=True, timeout=30
+        )
         integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
         foreign_key_errors = len(
             connection.execute("PRAGMA foreign_key_check").fetchall()

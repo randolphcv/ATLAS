@@ -106,8 +106,68 @@ class DesktopControllerTests(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
+        # The controller holds a read-only catalog connection for change
+        # detection; Windows will not delete the file while it is open, and
+        # deleteLater() alone never runs without an event loop.
+        self.controller.shutdown()
         self.controller.deleteLater()
         self.temp.cleanup()
+
+    def test_refresh_does_not_run_the_integrity_check(self) -> None:
+        """The integrity diagnostic must never sit on the refresh path.
+
+        ``PRAGMA integrity_check`` reads every page of the catalog. On a
+        five-second timer that is what blocked the UI thread.
+        """
+        with patch("beacon.desktop_controller.database_integrity") as checked:
+            self.controller.refresh()
+            self.controller.refreshIfChanged()
+
+        checked.assert_not_called()
+
+    def test_explicit_integrity_check_still_reports_health(self) -> None:
+        self.controller.checkDatabaseIntegrity()
+
+        self.assertEqual(self.controller.databaseHealth["state"], "healthy")
+
+    def test_refresh_does_not_mutate_the_catalog_it_watches(self) -> None:
+        """A freshness check must not change what it checks."""
+        watch = sqlite3.connect(f"file:{self.db.as_posix()}?mode=ro", uri=True)
+        try:
+            version = watch.execute("PRAGMA data_version").fetchone()[0]
+            modified = self.db.stat().st_mtime_ns
+
+            for _ in range(3):
+                self.controller.refresh()
+                self.controller.refreshIfChanged()
+
+            self.assertEqual(
+                watch.execute("PRAGMA data_version").fetchone()[0], version
+            )
+            self.assertEqual(self.db.stat().st_mtime_ns, modified)
+        finally:
+            watch.close()
+
+    def test_refresh_if_changed_reacts_only_to_a_real_write(self) -> None:
+        """data_version must actually move when another connection writes.
+
+        Read on a freshly opened connection it never changes, so a signature
+        built that way would silently stop refreshing the window entirely.
+        """
+        self.controller.refresh()
+
+        with patch.object(DesktopController, "refresh", autospec=True) as refreshed:
+            self.controller.refreshIfChanged()
+            refreshed.assert_not_called()
+
+            writer = sqlite3.connect(self.db)
+            writer.execute("CREATE TABLE IF NOT EXISTS refresh_probe(x)")
+            writer.execute("INSERT INTO refresh_probe VALUES (1)")
+            writer.commit()
+            writer.close()
+
+            self.controller.refreshIfChanged()
+            self.assertEqual(refreshed.call_count, 1)
 
     def test_native_models_expose_catalog_and_detail(self) -> None:
         self.assertEqual(self.controller.assets.rowCount(), 1)

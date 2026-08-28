@@ -44,6 +44,14 @@ DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
 POLICY_VERSION = "beacon-local-content-v4"
 _WHISPER_MODEL: Any = None
 NON_CONTENT_PROJECT_EXTENSIONS = frozenset({".aep", ".aepx", ".prproj"})
+# Generated, non-media companions: a fixed-size camera media index written once
+# per clip folder, and a gzipped editor index. Never probed, so a
+# vision-language model has nothing to work from. Named constants so the owner
+# can extend the list without a change to logic.
+NON_CONTENT_COMPANION_EXTENSIONS = frozenset({".mif", ".prin"})
+# Authored documents, not camera exhaust. Excluded under their own reason so a
+# future text-extraction path can find every one of them with a single query.
+DEFERRED_DOCUMENT_EXTENSIONS = frozenset({".key"})
 EMPTY_FILE_SHA256 = hashlib.sha256(b"").hexdigest()
 ANALYSIS_SCOPE_KINDS = frozenset(
     {"all", "visual", "audio", "other", "raw"}
@@ -553,7 +561,10 @@ def create_selected_local_analysis_job(
                                    SELECT 1 FROM managed_moves managed
                                    WHERE managed.asset_id=preferred.asset_id
                                      AND managed.destination_path=preferred.path
-                                     AND managed.state='complete'
+                                     -- '+' keeps SQLite off idx_managed_moves_state,
+                                     -- which matches nearly every row; asset_id is
+                                     -- the selective index here.
+                                     AND +managed.state='complete'
                                )
                                THEN 0
                 """
@@ -903,6 +914,18 @@ def _artifact_exclusion_reason(
             "Excluded editable production project file from contextual content "
             "inference; the project remains cataloged and searchable."
         )
+    if source.suffix.lower() in NON_CONTENT_COMPANION_EXTENSIONS:
+        return (
+            "Excluded camera metadata or generated editor index from "
+            "contextual content inference; the file remains cataloged and "
+            "searchable."
+        )
+    if source.suffix.lower() in DEFERRED_DOCUMENT_EXTENSIONS:
+        return (
+            "Deferred presentation document pending text extraction; it holds "
+            "no decodable media evidence today and remains cataloged and "
+            "searchable."
+        )
     if not is_hidden_support_path(source_path):
         return None
     return (
@@ -1112,8 +1135,14 @@ def _default_analyzer(
     schema = {
         "type": "object",
         "properties": {
-            "title": {"type": "string"},
-            "description": {"type": "string"},
+            "title": {
+                "type": "string",
+                "maxLength": PAYLOAD_TEXT_LIMITS["title"],
+            },
+            "description": {
+                "type": "string",
+                "maxLength": PAYLOAD_TEXT_LIMITS["description"],
+            },
             "content_observations": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -1130,14 +1159,23 @@ def _default_analyzer(
                     "unreadable",
                 ],
             },
-            "media_category": {"type": "string"},
+            "media_category": {
+                "type": "string",
+                "maxLength": PAYLOAD_TEXT_LIMITS["media_category"],
+            },
             "tags": {
                 "type": "array",
-                "items": {"type": "string"},
-                "maxItems": 100,
+                "items": {
+                    "type": "string",
+                    "maxLength": PAYLOAD_TAG_ENTRY_LIMIT,
+                },
+                "maxItems": PAYLOAD_TAG_LIMIT,
             },
             "privacy_flags": {"type": "array", "items": {"type": "string"}},
-            "organization_suggestion": {"type": "string"},
+            "organization_suggestion": {
+                "type": "string",
+                "maxLength": PAYLOAD_TEXT_LIMITS["organization_suggestion"],
+            },
             "stock_metadata": {
                 "type": "object",
                 "properties": stock_properties,
@@ -1195,6 +1233,7 @@ def _default_analyzer(
         message["images"] = encoded_images
     last_error: Exception | None = None
     last_rejected_output: str | None = None
+    limited_result: dict[str, Any] | None = None
     try:
         for attempt in range(1, 4):
             retry_note = ""
@@ -1299,12 +1338,20 @@ def _default_analyzer(
                     )
                 violations = _payload_limit_violations(result)
                 if violations:
-                    # Retryable like malformed JSON: the model gets another
-                    # attempt before Beacon degrades the field itself.
-                    raise ValueError(
-                        "local model exceeded field limits: "
-                        + "; ".join(violations)
-                    )
+                    if limited_result is None:
+                        # One corrective attempt. The rejected output is fed
+                        # back, so the model is told exactly which field it
+                        # overran.
+                        limited_result = result
+                        raise ValueError(
+                            "local model exceeded field limits: "
+                            + "; ".join(violations)
+                        )
+                    # It overran twice. It will not self-correct, and a third
+                    # full generation buys nothing: keep the analysis and let
+                    # the shared degrade policy correct and record the field.
+                    limited_result = result
+                    break
                 return result
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
                 last_error = error
@@ -1315,6 +1362,15 @@ def _default_analyzer(
                     last_rejected_output = response_message["content"]
     finally:
         shutil.rmtree(temporary_root, ignore_errors=True)
+    if limited_result is not None:
+        # Structurally sound, only over-length. Model output is an untrusted
+        # input source (AGENTS.md section 10): an over-long field is corrected
+        # and recorded by _normalize_payload, not thrown away.
+        LOGGER.warning(
+            "local model exceeded field limits on every attempt; "
+            "keeping the analysis and degrading the over-long fields"
+        )
+        return limited_result
     raise ValueError(
         "local model failed content validation after three attempts: "
         f"{last_error}"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -529,7 +530,9 @@ class DesktopController(QObject):
         self._analysis_readiness: dict[str, Any] = {}
         self._active_local_analysis_job_id = ""
         self._conversation_worker_running = False
-        self._last_catalog_signature: tuple[int, int, int, int] | None = None
+        self._last_catalog_signature: int | None = None
+        self._catalog_watch: sqlite3.Connection | None = None
+        self._refresh_in_progress = False
         self._workers: list[QRunnable] = []
         self._thread_pool = QThreadPool(self)
         self._thread_pool.setMaxThreadCount(1)
@@ -626,6 +629,7 @@ class DesktopController(QObject):
         recovered = recover_intake_jobs(self.settings.db_path)
         recovered_analysis = recover_local_analysis_jobs(self.settings.db_path)
         self.refresh()
+        self._refresh_database_health()
         self.warmLibraryThumbnails()
         if recovered_moves:
             self._set_status(
@@ -886,20 +890,6 @@ class DesktopController(QObject):
                 "lastActivityLabel": format_timestamp(summary["last_activity_at"]),
             }
             self.summaryChanged.emit()
-
-            health = database_integrity(self.settings.db_path)
-            self._database_health = {
-                **health,
-                "stateLabel": (
-                    "Verified healthy"
-                    if health["state"] == "healthy"
-                    else "Needs attention"
-                ),
-                "sizeLabel": format_bytes(int(health.get("size_bytes") or 0)),
-                "schemaLabel": f"Schema {health.get('schema_version') or '—'}",
-                "journalLabel": str(health.get("journal_mode") or "unknown").upper(),
-            }
-            self.databaseHealthChanged.emit()
             self._load_assets(preserve_selection=True)
             self._load_events()
             self._load_backups()
@@ -949,22 +939,98 @@ class DesktopController(QObject):
         if previous_busy != self._busy:
             self.busyChanged.emit()
 
-    def _catalog_signature(self) -> tuple[int, int, int, int]:
-        database = self.settings.db_path
-        wal = Path(f"{database}-wal")
-        database_stat = database.stat() if database.exists() else None
-        wal_stat = wal.stat() if wal.exists() else None
-        return (
-            database_stat.st_mtime_ns if database_stat else 0,
-            database_stat.st_size if database_stat else 0,
-            wal_stat.st_mtime_ns if wal_stat else 0,
-            wal_stat.st_size if wal_stat else 0,
+    def _refresh_database_health(self) -> None:
+        """Run the integrity diagnostic. Never from the refresh timer.
+
+        ``PRAGMA integrity_check`` plus ``foreign_key_check`` reads every page
+        of the catalog. It belongs at startup and behind an explicit user
+        action, not on a five-second poll.
+        """
+        health = database_integrity(self.settings.db_path)
+        self._database_health = {
+            **health,
+            "stateLabel": (
+                "Verified healthy"
+                if health["state"] == "healthy"
+                else "Needs attention"
+            ),
+            "sizeLabel": format_bytes(int(health.get("size_bytes") or 0)),
+            "schemaLabel": f"Schema {health.get('schema_version') or '—'}",
+            "journalLabel": str(health.get("journal_mode") or "unknown").upper(),
+        }
+        self.databaseHealthChanged.emit()
+
+    @Slot()
+    def checkDatabaseIntegrity(self) -> None:
+        """Verify the catalog on explicit request from the System view."""
+        self._set_status("Checking catalog integrity...", "working")
+        self._refresh_database_health()
+        state = str(self._database_health.get("state") or "unknown")
+        healthy = state == "healthy"
+        self._set_status(
+            "Catalog verified healthy."
+            if healthy
+            else f"Catalog needs attention: {state}.",
+            "success" if healthy else "error",
         )
+
+    def _catalog_watch_connection(self) -> sqlite3.Connection | None:
+        """A long-lived read-only connection used only for data_version.
+
+        ``PRAGMA data_version`` reports writes made by *other* connections, but
+        only on a connection that stays open. A freshly opened connection
+        returns the same value every time, so change detection built on one
+        would never fire at all. No transaction is held between reads, so this
+        does not block WAL checkpointing.
+        """
+        database = self.settings.db_path
+        if not database.exists():
+            self._close_catalog_watch()
+            return None
+        if self._catalog_watch is None:
+            try:
+                self._catalog_watch = sqlite3.connect(
+                    f"file:{database.as_posix()}?mode=ro",
+                    uri=True,
+                    timeout=30,
+                )
+            except sqlite3.Error:
+                LOGGER.exception("could not open the catalog watch connection")
+                self._catalog_watch = None
+        return self._catalog_watch
+
+    def _close_catalog_watch(self) -> None:
+        if self._catalog_watch is not None:
+            try:
+                self._catalog_watch.close()
+            except sqlite3.Error:
+                LOGGER.exception("could not close the catalog watch connection")
+            self._catalog_watch = None
+
+    def _catalog_signature(self) -> int | None:
+        """The catalog's data version, or None when it cannot be read."""
+        connection = self._catalog_watch_connection()
+        if connection is None:
+            return None
+        try:
+            return int(connection.execute("PRAGMA data_version").fetchone()[0])
+        except sqlite3.Error:
+            LOGGER.exception("could not read the catalog data version")
+            self._close_catalog_watch()
+            return None
 
     @Slot()
     def refreshIfChanged(self) -> None:
-        if self._catalog_signature() != self._last_catalog_signature:
+        if self._refresh_in_progress:
+            return
+        signature = self._catalog_signature()
+        if signature is None or signature == self._last_catalog_signature:
+            return
+        self._refresh_in_progress = True
+        try:
             self.refresh()
+        finally:
+            self._refresh_in_progress = False
 
     def _load_assets(self, *, preserve_selection: bool) -> None:
         current_id = self._selected_asset.get("id") if preserve_selection else None
@@ -2773,6 +2839,7 @@ class DesktopController(QObject):
         if self._thread_pool.activeThreadCount():
             LOGGER.info("waiting for in-flight desktop work before shutdown")
             self._thread_pool.waitForDone()
+        self._close_catalog_watch()
 
     @Slot(str)
     def copyText(self, value: str) -> None:
