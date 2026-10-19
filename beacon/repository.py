@@ -38,11 +38,19 @@ SUPPORT_FILE_EXTENSIONS = {
     ".xmp",
 }
 GENERATED_ARTIFACT_PATH_FRAGMENTS = {
+    "\\adobe after effects auto-save\\",
     "\\adobe premiere pro auto-save\\",
     "\\adobe premiere pro audio previews\\",
     "\\adobe premiere pro video previews\\",
+    "\\media cache\\",
     "\\media cache files\\",
     "\\peak files\\",
+    # A directory whose name ends in ".prv" holds preview renders. This
+    # fragment is a segment suffix rather than a whole segment, so it
+    # opens with the extension dot and closes with the separator that
+    # proves the name belongs to a directory. A file carrying the same
+    # extension has no trailing separator and is left alone.
+    ".prv\\",
 }
 
 
