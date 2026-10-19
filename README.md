@@ -88,7 +88,7 @@ API is not started by the desktop application.
 
 ## Run the Windows app
 
-1. Open `<REPO>\dist\releases\0.22.4\ATLAS Beacon\`.
+1. Open `<REPO>\dist\releases\0.22.10\ATLAS Beacon\`.
 2. Double-click `ATLAS Beacon.exe`.
 3. Open Library, select an asset, and press Space (or click Preview).
 4. Press Space or Escape to close the temporary preview.

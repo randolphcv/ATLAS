@@ -243,8 +243,10 @@ References are behavioral benchmarks, not licenses to copy a product wholesale. 
 - Beacon conversation now has a compact application-shell dock backed by the
   existing local Beacon Desk authority. Its draft and active thread survive
   page navigation; page or asset context is attached only explicitly.
-- Future thumbnail derivatives live under `<ARCHIVE_ROOT>\Beacon\Thumbnails` for the live
-  catalog; C: remains the fast runtime/model/temp tier.
+- Future thumbnail derivatives live under `<ARCHIVE_ROOT>\Beacon\Thumbnails`.
+  Which location serves as the fast runtime, model and temporary tier is
+  deployment state, not design, and is not stated here. See
+  `docs/ATLAS_PROJECT_MEMORY.md`.
 - After the next Personal-files analysis completes, diagnose HEIC support and
   Apple slow-motion playback that holds the first video frame while audio
   continues. Do not interrupt that analysis for the media-runtime work.

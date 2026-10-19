@@ -29,6 +29,16 @@ inspection. No application run was involved.
   ffprobe demuxes it. There is no MXF test coverage. That is a gap, not a
   defect in behavior.
 
+### Delivered build
+
+Verified 2026-10-19.
+
+- Beacon 0.22.10 is the live version. Source, the declared version and the
+  staging executable the owner launches all report 0.22.10, and the running
+  desktop process is that staging copy. The matching versioned release
+  directory for 0.22.10 is delivered in the same change; the previously newest
+  release directory was 0.22.9.
+
 ### Storage
 
 - The pool reports normal mode. Directory creation works.
@@ -65,12 +75,50 @@ inspection. No application run was involved.
 Everything below is historical. Entries are kept for the reasoning they record,
 not as a description of the present.
 
+### 2026-10-19 — Documentation drift correction and batch-abort repair
+
+- A verified catalog backup was taken before any change in this run. Integrity
+  `ok`, and the backup is newer than every catalog row it covers.
+- Analysis no longer aborts a whole job on one item. The checksum-drift check
+  at the analysis per-item boundary was moved inside the per-item handler, so a
+  single drifted file records an item failure and the batch continues. This is
+  the defect class `AGENTS.md` section 10 names as having already caused three
+  incidents.
+- The generated-artifact rule was extended to cover preview-render directories,
+  the editing suite's auto-save directory, and the media-cache directory spelled
+  without its trailing word. Three folder classes previously in scope as
+  original material are now matched.
+- The large in-progress ingest was mis-recorded as entirely uncataloged. It is
+  fully cataloged: 3,671 catalog rows, of which 1,204 are already placed into
+  the archive and 2,467 remain beneath `<INBOX>`. The arithmetic closes against
+  the managed-move records.
+- Outstanding analysis for that ingest: of its 2,524 assets, 990 carry a
+  completed analysis and 1,534 do not. That is a count of assets. It is not the
+  2,467 above, which counts location rows still beneath `<INBOX>`. The two
+  figures describe different populations and both are correct; do not try to
+  reconcile one against the other.
+- MXF is proven for this ingest rather than unproven: 828 of 828 MXF assets
+  carry a completed analysis, 31 failed, zero excluded. It still has no test
+  coverage, which is a gap in evidence rather than in behavior.
+- The storage incident recorded on 2026-08-03 is closed on observable evidence.
+  Both pooling services report Running/Automatic, all four archive roots
+  enumerate clean, the volume reports Healthy with 82.5% free, and directories
+  were created on it on three separate dates after the incident date. The
+  vendor licence state was **not** verified, because section 6 forbids touching
+  third-party storage configuration. The record is closed on what is
+  observable; the licence question is not answered by it.
+- The workstation rename is confirmed at the OS level.
+- Documentation corrections in this run: the run-the-app release path, the live
+  version, one handoff task already completed in source, and two documents that
+  were asserting current state against section 8.
+
 ### Beacon 0.22.4 analysis and placement failure repair
 
-- Beacon 0.22.4 is live from
+- Beacon 0.22.4 was the delivered build when this entry was written, from
   `<REPO>\dist\releases\0.22.4\ATLAS Beacon\ATLAS Beacon.exe`.
   SHA-256:
   `756a94858f54fee2923cd557bed46bd50dd3da1bba76edbd0936d2fb3ad3a938`.
+  For the version live now, see "Current state" above.
 - Total analysis job `37d94efb-26bb-4701-8efe-782ae9687835` is terminal
   `complete`: 2,896 publishable results, one excluded zero-byte file, zero
   failures, and zero pending items. The empty asset remains cataloged and

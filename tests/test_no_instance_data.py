@@ -160,8 +160,10 @@ class NoInstanceDataTests(unittest.TestCase):
         terms = deny_terms()
         if not terms:
             self.skipTest(
-                f"No deny-list at {DENY_LIST_FILE.name}; structural checks "
-                "still ran. This is expected on a fresh clone."
+                f"{DENY_LIST_FILE.name} holds no active terms -- every line "
+                "is blank or commented out, or the file is absent -- so no "
+                "deployment term was checked. Structural checks still ran; "
+                "the file merely existing is not enforcement."
             )
         failures: list[str] = []
         for relative in tracked_files():

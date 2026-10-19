@@ -46,9 +46,16 @@ Standing constraints:
 
 Next priorities, in order:
 
-1. Add input validation at the metadata-normalization boundary so an
-   over-length model-generated tag cannot raise an unhandled exception and end
-   an analysis job `partial`. This is the most recent known crash.
+1. Finish the large in-progress ingest's outstanding analysis, once the
+   batch-abort fix at the analysis per-item boundary is committed and
+   delivered, so one item's checksum drift cannot end the whole job. Read the
+   current outstanding count from `docs/ATLAS_PROJECT_MEMORY.md` and verify it
+   against the catalog before starting.
+
+   The input-validation item that previously led this list is done. The
+   metadata-normalization boundary now degrades an over-length
+   model-generated field instead of raising, and records the correction.
+
 2. Decide what to do with the long-paused intake job and the Beacon Desk
    clarification thread that has awaited an answer for over two weeks.
 3. Add MXF test coverage. The format is handled end to end and has none.

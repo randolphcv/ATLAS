@@ -22,7 +22,9 @@ managed moves; schema 16 integrity is `ok` with zero foreign-key violations.
 The pre-change verified backup is
 `beacon-20260804T181633.430082Z.db` (SHA-256
 `15cb8103f31c55f3b4944caeed019f508e66f1ea42831beb931e5fda5bf26ba8`).
-All 128 tests pass (two opt-in real-media probes skipped).
+The suite passed when this entry was written, with the two opt-in real-media
+probes skipped. The count itself is state, not history: see
+`docs/ATLAS_PROJECT_MEMORY.md`.
 
 ## 2026-08-04 Beacon 0.22.6 reply activation and placement recovery
 
@@ -33,8 +35,9 @@ the newer queued human message. The desktop drains queued replies one at a
 time. Conversation remains read-only and cannot directly authorize file
 actions.
 
-All 126 tests pass. The packaged 0.22.6 smoke exits 0, and the live desktop is
-running from `<REPO>\dist\releases\0.22.6\ATLAS Beacon`.
+The packaged 0.22.6 smoke exited 0 and the suite passed when this entry was
+written. The test count and the version now live are state, not history: see
+`docs/ATLAS_PROJECT_MEMORY.md`.
 
 DrivePool directory creation is restored. The exact blocker reply asset passed
 a full checksum-verified placement proof into
