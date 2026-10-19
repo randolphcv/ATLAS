@@ -1812,9 +1812,7 @@ def _run_local_analysis_job(
                 """,
                 (item["asset_id"], item["source_sha256"]),
             ).fetchone()
-            if asset is None:
-                raise ValueError(f"catalog checksum changed for {item['asset_id']}")
-            asset = dict(asset)
+            asset = dict(asset) if asset is not None else None
             connection.execute(
                 """
                 UPDATE local_analysis_items
@@ -1844,6 +1842,11 @@ def _run_local_analysis_job(
                 progress_callback()
             continue
         try:
+            # AGENTS.md section 10: no per-item failure may abort a batch.
+            # Catalog drift is one item's problem, so it is raised inside
+            # this try and recorded like any other per-item failure.
+            if asset is None:
+                raise ValueError(f"catalog checksum changed for {item['asset_id']}")
             source = Path(item["source_path"])
             if not source.exists():
                 raise FileNotFoundError(str(source))

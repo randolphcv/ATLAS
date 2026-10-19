@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.22.10 - 2026-10-19
+
 - The desktop window no longer freezes while a job runs. A repeating five-second
   refresh on the UI thread was doing roughly twenty-seven seconds of work per
   pass, so it re-entered as soon as it returned and the window stopped pumping
@@ -27,6 +29,14 @@
   distinct reason marking them deferred pending text extraction. Excluded items
   are recorded complete rather than failed, which is also how companion
   placement selects them to travel with their originals.
+- A catalog checksum that drifted between scoping and analysis now fails only
+  its own item. The drift check was raised outside the per-item boundary, so a
+  single asset whose catalog identity had changed since the job was scoped
+  terminalized the entire job and discarded the remaining work. It is now
+  recorded as a per-item failure carrying the same reason, and the batch
+  continues to the next asset.
+
+## 0.22.9 - 2026-08-24
 
 - Local model output is now treated as an untrusted input source. An over-limit
   or wrong-shaped field is retried, then corrected rather than failing the item,
@@ -40,6 +50,23 @@
 - Undecodable-content failures now name the cause - unsupported media type,
   probe error, no streams, or streams carrying no usable evidence - instead of
   reporting only the symptom.
+- Documented the proposal to exclude non-media companion files from analysis
+  scope, so the reasoning and the exclusion reasons were settled in writing
+  before the behavior itself changed.
+
+## 0.22.8 - 2026-08-22
+
+- The catalog of record now lives at `<ARCHIVE_ROOT>/System/Beacon`, where
+  system state sits beside future modules instead of among bulk derivative
+  content. When no archive location is configured Beacon asks for one and
+  explains how to set it, rather than silently creating an empty local catalog
+  that would then report itself healthy.
+- A settings file that exists but cannot be read is now reported instead of
+  being treated as absent. A malformed file looked identical to an unconfigured
+  deployment, so the advice told the operator to add a setting they had already
+  added.
+
+## 0.22.7 and earlier
 
 - Completed analysis now archives excluded project companions and generated
   support artifacts when analyzed files in the same client/project tree have

@@ -775,6 +775,63 @@ class LocalAnalysisJobTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_catalog_drift_fails_one_item_without_aborting_the_batch(
+        self,
+    ) -> None:
+        job_id = create_local_analysis_job(self.db, model="fixture-model")
+        connection = sqlite3.connect(self.db)
+        try:
+            drifted_item_id, drifted_asset_id = connection.execute(
+                """
+                SELECT id,asset_id FROM local_analysis_items
+                WHERE job_id=? ORDER BY source_path COLLATE NOCASE LIMIT 1
+                """,
+                (job_id,),
+            ).fetchone()
+            connection.execute(
+                "UPDATE assets SET sha256=? WHERE id=?",
+                ("0" * 64, drifted_asset_id),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        result = run_local_analysis_job(
+            self.db, job_id, analyzer=self._analyzer
+        )
+
+        self.assertEqual(result.state, "partial")
+        self.assertEqual(result.failed, 1)
+        self.assertEqual(result.completed, 1)
+        connection = sqlite3.connect(self.db)
+        try:
+            state, error = connection.execute(
+                "SELECT state,error FROM local_analysis_items WHERE id=?",
+                (drifted_item_id,),
+            ).fetchone()
+            self.assertEqual(state, "failed")
+            self.assertIn("catalog checksum changed", error or "")
+            remaining = connection.execute(
+                """
+                SELECT state FROM local_analysis_items
+                WHERE job_id=? AND id<>?
+                """,
+                (job_id, drifted_item_id),
+            ).fetchall()
+            self.assertEqual([row[0] for row in remaining], ["complete"])
+            job_state, worker_pid, stage = connection.execute(
+                """
+                SELECT state,worker_pid,current_stage
+                FROM local_analysis_jobs WHERE id=?
+                """,
+                (job_id,),
+            ).fetchone()
+            self.assertEqual(job_state, "partial")
+            self.assertIsNone(worker_pid)
+            self.assertIsNone(stage)
+        finally:
+            connection.close()
+
     def test_finalization_resume_does_not_duplicate_metadata_revisions(
         self,
     ) -> None:
