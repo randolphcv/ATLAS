@@ -21,9 +21,15 @@ from beacon.config import catalog_path, inbox_root
 from beacon.catalog import catalog_file
 from beacon.desktop import DEFAULT_RUNTIME, _catalog_label
 from beacon.desktop_controller import (
+    MODE_ANALYSIS_SCOPE_KINDS,
     DesktopController,
     DesktopSettings,
     analysis_stage_status,
+)
+from beacon.local_analysis import (
+    PLACEMENT_FREE_SCOPE_KINDS,
+    create_selected_local_analysis_job,
+    list_local_analysis_jobs,
 )
 from beacon.desk import add_beacon_message, create_human_thread, seed_threads
 from beacon.text_preview import read_text_preview
@@ -706,6 +712,37 @@ class DesktopControllerTests(unittest.TestCase):
             self.cataloged.asset_id,
         )
 
+    def test_analysis_readiness_publishes_the_placement_rule(self) -> None:
+        """The dialog is told the rule, so it holds no copy that can drift."""
+        readiness = self.controller.analysisReadiness
+        self.assertEqual(
+            readiness["placementFreeScopeKinds"],
+            sorted(PLACEMENT_FREE_SCOPE_KINDS),
+        )
+        self.assertEqual(
+            readiness["modeScopeKinds"],
+            dict(MODE_ANALYSIS_SCOPE_KINDS),
+        )
+        # Total creates its job with the mapped kind, and that kind is a
+        # content scope, so the dialog says Total may move originals.
+        self.assertNotIn(
+            MODE_ANALYSIS_SCOPE_KINDS["total"], PLACEMENT_FREE_SCOPE_KINDS
+        )
+
+    def test_granular_mode_scope_kind_matches_the_job_it_creates(self) -> None:
+        """The mapping is verified against the job row, not assumed."""
+        create_selected_local_analysis_job(
+            self.db,
+            asset_ids=[self.cataloged.asset_id],
+            model="fixture-model",
+            requested_by="fixture granular analysis",
+        )
+        job = list_local_analysis_jobs(self.db, limit=1)[0]
+        self.assertEqual(
+            str(job["scope_kind"]),
+            MODE_ANALYSIS_SCOPE_KINDS["granular"],
+        )
+
     def test_selected_folder_intake_recurses_with_limit(self) -> None:
         nested = self.source.parent / "chosen-folder" / "nested"
         nested.mkdir(parents=True)
@@ -859,7 +896,10 @@ def verify():
     if intake_scope.property("scopeMode") != "total":
         app.exit(35)
         return
-    if analysis_scope.property("scopeMode") != "total":
+    # An unopened dialog keeps its declared default across navigation. The
+    # analysis dialog's default is General, not Total: Total is whole-catalog
+    # analysis with placement active and is never where the dialog starts.
+    if analysis_scope.property("scopeMode") != "general":
         app.exit(36)
         return
     app.exit(0)
@@ -1279,6 +1319,177 @@ raise SystemExit(app.exec())
                 0,
                 msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
             )
+
+    def _run_analysis_dialog_probe(self, body: str) -> None:
+        """Load the real QML offscreen and probe the analysis dialog.
+
+        Same shape as the surface test above: a synthetic single-asset catalog
+        in a temporary directory, the real Main.qml, and a non-zero exit code
+        per failed assertion so the failure names itself.
+        """
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "SAMPLE_0001.txt"
+            source.write_text("Synthetic scope fixture.", encoding="utf-8")
+            catalog_file(
+                source,
+                root / "beacon.db",
+                stability_seconds=0,
+                include_media_probe=False,
+            )
+            environment = os.environ.copy()
+            environment["QT_QPA_PLATFORM"] = "offscreen"
+            environment["QT_QUICK_BACKEND"] = "software"
+            preamble = r"""
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QObject, QTimer, QUrl
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuickControls2 import QQuickStyle
+from PySide6.QtWidgets import QApplication
+
+from beacon.desktop_controller import DesktopController, DesktopSettings
+
+QQuickStyle.setStyle("Fusion")
+app = QApplication(["beacon-analysis-dialog-test"])
+controller = DesktopController(DesktopSettings(Path(sys.argv[1]), Path(sys.argv[2])))
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("backend", controller)
+engine.rootContext().setContextProperty("previewMuted", True)
+qml = Path.cwd() / "beacon" / "qml" / "Main.qml"
+engine.load(QUrl.fromLocalFile(str(qml)))
+if not engine.rootObjects():
+    raise SystemExit(30)
+window = engine.rootObjects()[0]
+dialog = window.findChild(QObject, "localAnalysisDialog")
+prefix = window.findChild(QObject, "localAnalysisPathPrefix")
+note = window.findChild(QObject, "localAnalysisPlacementNote")
+if dialog is None or prefix is None or note is None:
+    raise SystemExit(31)
+"""
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    preamble + body,
+                    str(root / "beacon.db"),
+                    str(root / "backups"),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+            )
+
+    def test_analysis_dialog_offers_the_path_field_in_modes_that_honour_it(
+        self,
+    ) -> None:
+        """General and Total both honour a prefix, so both must offer it."""
+        self._run_analysis_dialog_probe(r"""
+
+def verify():
+    expectations = (
+        ("general", True, 40),
+        ("total", True, 41),
+        ("granular", False, 42),
+    )
+    for mode, expected, code in expectations:
+        dialog.setProperty("scopeMode", mode)
+        app.processEvents()
+        if bool(prefix.property("visible")) is not expected:
+            app.exit(code)
+            return
+    app.exit(0)
+
+dialog.open()
+QTimer.singleShot(300, verify)
+raise SystemExit(app.exec())
+""")
+
+    def test_analysis_dialog_opens_and_reopens_on_the_narrower_mode(
+        self,
+    ) -> None:
+        """Total is one click away, never where the dialog starts."""
+        self._run_analysis_dialog_probe(r"""
+
+def first_opening():
+    if dialog.property("scopeMode") != "general":
+        app.exit(50)
+        return
+    # The operator can still reach Total; the reset must not keep it.
+    dialog.setProperty("scopeMode", "total")
+    app.processEvents()
+    if dialog.property("scopeMode") != "total":
+        app.exit(51)
+        return
+    dialog.close()
+    QTimer.singleShot(300, reopen)
+
+def reopen():
+    dialog.open()
+    QTimer.singleShot(400, second_opening)
+
+def second_opening():
+    if dialog.property("scopeMode") != "general":
+        app.exit(52)
+        return
+    app.exit(0)
+
+dialog.open()
+QTimer.singleShot(300, first_opening)
+raise SystemExit(app.exec())
+""")
+
+    def test_analysis_dialog_states_the_placement_consequence_always(
+        self,
+    ) -> None:
+        """Every mode and scope says which it is; nothing is left to infer."""
+        self._run_analysis_dialog_probe(r"""
+
+def verify():
+    if not bool(note.property("visible")):
+        app.exit(60)
+        return
+    # A placement-free scope: the dialog says so.
+    dialog.setProperty("scopeMode", "general")
+    dialog.setProperty("scopeKind", "artifacts")
+    app.processEvents()
+    text = str(note.property("text"))
+    if "moves nothing" not in text:
+        app.exit(61)
+        return
+    # A content scope says the opposite, and the two non-general modes resolve
+    # their own scope kind, so a stale artifacts selection cannot make Total or
+    # Granular claim that they move nothing.
+    expectations = (
+        ("general", "visual", 62),
+        ("total", "artifacts", 63),
+        ("granular", "artifacts", 64),
+    )
+    for mode, kind, code in expectations:
+        dialog.setProperty("scopeMode", mode)
+        dialog.setProperty("scopeKind", kind)
+        app.processEvents()
+        text = str(note.property("text"))
+        if "may move originals" not in text or "moves nothing" in text:
+            app.exit(code)
+            return
+        if not bool(note.property("visible")):
+            app.exit(code + 10)
+            return
+    app.exit(0)
+
+dialog.open()
+QTimer.singleShot(300, verify)
+raise SystemExit(app.exec())
+""")
 
 
 if __name__ == "__main__":

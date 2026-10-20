@@ -61,6 +61,7 @@ from .intake import (
 )
 from .local_analysis import (
     NON_CONTENT_PROJECT_EXTENSIONS,
+    PLACEMENT_FREE_SCOPE_KINDS,
     LocalAnalysisRunResult,
     analysis_scope_preview,
     analysis_scope_previews,
@@ -107,6 +108,19 @@ ANALYSIS_STAGE_LABELS = {
     "publishing_results": "PUBLISHING RESULTS",
     "writing_metadata": "WRITING METADATA",
     "moving_to_archive": "MOVING TO ARCHIVE",
+}
+
+# The scope kind each dialog mode creates its job with, for the two modes that
+# do not let the operator choose one. The job-creating slot reads this mapping,
+# and so does the readiness payload the dialog reads, so the dialog's statement
+# about whether a job can move files is derived from the same value the job row
+# will carry. Membership in PLACEMENT_FREE_SCOPE_KINDS is the only rule; this
+# repository never repeats the list of placement-free kinds in the surface.
+MODE_ANALYSIS_SCOPE_KINDS = {
+    # create_selected_local_analysis_job records this kind on the job row.
+    # tests/test_desktop.py asserts the two still agree.
+    "granular": "selected_content_repair",
+    "total": "all",
 }
 
 
@@ -1678,6 +1692,12 @@ class DesktopController(QObject):
             "allAudioLabel": f"{full_scope['audio']:,}",
             "allOtherLabel": f"{full_scope['other']:,}",
             "generalScopes": general_scopes,
+            # The placement rule, published rather than restated: the dialog
+            # says "this job moves nothing" exactly when the scope kind it
+            # would create the job with is one of these, which is the same
+            # membership test job_may_place() applies to the job row.
+            "placementFreeScopeKinds": sorted(PLACEMENT_FREE_SCOPE_KINDS),
+            "modeScopeKinds": dict(MODE_ANALYSIS_SCOPE_KINDS),
             "selectedScope": selected_scope,
             "selectedAssetId": selected_id,
             "selectedAssetLabel": str(
@@ -1863,8 +1883,9 @@ class DesktopController(QObject):
                     ),
                 )
             elif normalized_mode == "total":
+                total_kind = MODE_ANALYSIS_SCOPE_KINDS["total"]
                 self._require_non_empty_analysis_scope(
-                    scope_kind="all",
+                    scope_kind=total_kind,
                     path_prefix=normalized_prefix,
                     include_analyzed=include_analyzed,
                 )
@@ -1872,7 +1893,7 @@ class DesktopController(QObject):
                     self.settings.db_path,
                     model=model,
                     include_analyzed=include_analyzed,
-                    scope_kind="all",
+                    scope_kind=total_kind,
                     path_prefix=normalized_prefix,
                     requested_by="human total analysis",
                 )

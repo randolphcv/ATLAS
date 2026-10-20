@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 0.22.13 - 2026-10-20
+
+- The analysis dialog now opens on General rather than Total, and resetting it
+  on each opening returns it to General instead of Total. Total means
+  whole-catalog analysis with managed placement active, so opening on it made
+  the broadest, file-moving scope the default outcome of clicking through the
+  dialog: an operator who intended to analyze one folder could start a
+  whole-catalog job without choosing anything. The reset itself is kept,
+  because a stale category selection could otherwise show one category while
+  the job ran another, and Total remains a single click away.
+- The folder field that confines a job to one path is now proven reachable in
+  both modes that honour it. General and Total both pass the prefix through to
+  job creation, Granular analyzes one selected asset and ignores it, and the
+  dialog's surface tests now assert that visibility mode by mode, so a prefix
+  can no longer become honoured by the job but untypeable in the dialog.
+- The dialog now states the placement consequence for every mode and scope
+  rather than only for generated cache artifacts. It says either that the job
+  may move originals out of the Inbox into the archive, or that the job moves
+  nothing, and which one it says is derived from the placement rule the run
+  itself applies: the placement-free scope kinds and the scope kind each mode
+  creates its job with both come from the controller, so the surface holds no
+  second copy of the rule that could drift from the job. An operator no longer
+  has to infer whether a job can move files.
+
 ## 0.22.12 - 2026-10-20
 
 - Analysis job creation now accepts an optional path prefix, so a job can be

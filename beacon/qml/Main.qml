@@ -617,9 +617,27 @@ ApplicationWindow {
     Dialog {
         id: localAnalysisDialog
         objectName: "localAnalysisDialog"
-        property string scopeMode: "total"
+        // General, not Total. Total analyzes the whole catalog with managed
+        // placement active, so it is never the mode the dialog opens on; it
+        // stays one click away.
+        property string scopeMode: "general"
         property string scopeKind: "visual"
         property string scopePathPrefix: ""
+        // Whether the job this dialog would start is allowed to move files.
+        // The scope kind is resolved the way the controller resolves it, and
+        // the placement-free kinds arrive from the backend, so this surface
+        // holds no copy of the rule that could drift from the job itself.
+        function resolvedScopeKind() {
+            if (scopeMode === "general")
+                return scopeKind
+            var kinds = (backend.analysisReadiness || {}).modeScopeKinds || {}
+            return kinds[scopeMode] === undefined ? "" : kinds[scopeMode]
+        }
+        function jobMayMoveFiles() {
+            var readiness = backend.analysisReadiness || {}
+            var placementFree = readiness.placementFreeScopeKinds || []
+            return placementFree.indexOf(resolvedScopeKind()) < 0
+        }
         function scopeValue(key) {
             var readiness = backend.analysisReadiness || {}
             var scoped = readiness
@@ -654,7 +672,9 @@ ApplicationWindow {
         padding: 0
         closePolicy: Popup.CloseOnEscape
         onOpened: {
-            scopeMode = "total"
+            // Reset to the narrower mode, never to Total: a reopened dialog
+            // must not sit on whole-catalog analysis with placement active.
+            scopeMode = "general"
             scopeKind = "visual"
             // The dropdown keeps its last selection across openings, so
             // resetting scopeKind alone would leave the field showing one
@@ -750,9 +770,21 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     visible: localAnalysisDialog.scopeMode === "general"
                              && localAnalysisDialog.scopeKind === "artifacts"
-                    text: "Generated cache artifacts are regenerable previews, autosaves and sidecars. They are recorded as excluded, and this scope never moves a file: neither managed placement nor the Inbox companion sweep runs."
+                    text: "Generated cache artifacts are regenerable previews, autosaves and sidecars. They are recorded as excluded."
                     color: root.muted
                     font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                }
+                Text {
+                    objectName: "localAnalysisPlacementNote"
+                    Layout.fillWidth: true
+                    text: localAnalysisDialog.jobMayMoveFiles()
+                          ? "This job may move originals out of the Inbox into the archive."
+                          : "This job moves nothing: neither managed placement nor the Inbox companion sweep runs."
+                    color: localAnalysisDialog.jobMayMoveFiles()
+                           ? root.brass : root.muted
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
                     wrapMode: Text.WordWrap
                 }
                 RowLayout {
