@@ -779,8 +779,8 @@ ApplicationWindow {
                     objectName: "localAnalysisPlacementNote"
                     Layout.fillWidth: true
                     text: localAnalysisDialog.jobMayMoveFiles()
-                          ? "This job may move originals out of the Inbox into the archive."
-                          : "This job moves nothing: neither managed placement nor the Inbox companion sweep runs."
+                          ? "This job clears the Inbox: everything it analyses moves to a final destination or a holding zone."
+                          : "This job moves nothing: neither managed placement nor the Inbox settle step runs."
                     color: localAnalysisDialog.jobMayMoveFiles()
                            ? root.brass : root.muted
                     font.pixelSize: 11

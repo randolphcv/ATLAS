@@ -31,6 +31,15 @@ INBOX_DIRNAME = "Inbox"
 LIBRARY_DIRNAME = "Library"
 ASSETS_DIRNAME = "Assets"
 PROJECTS_DIRNAME = "Projects"
+# The Inbox means "not yet looked at". Material a job has reached a terminal
+# state on but cannot send to a final destination goes to a holding zone, so
+# that the Inbox never carries a mixture of looked-at and not-looked-at
+# material. Review holds items whose analysis failed; Unidentified holds items
+# no placement rule can derive a destination for.
+HOLDING_DIRNAME = "Holding"
+CACHE_DIRNAME = "Cache"
+REVIEW_DIRNAME = "Review"
+UNIDENTIFIED_DIRNAME = "Unidentified"
 BEACON_DIRNAME = "Beacon"
 SYSTEM_DIRNAME = "System"
 CATALOG_FILENAME = "beacon.db"
@@ -162,9 +171,41 @@ def projects_root() -> Path:
     return archive_root() / PROJECTS_DIRNAME
 
 
+def holding_root() -> Path:
+    """Bounded placement zone for material with no final destination.
+
+    Configurable the same way the archive root is, because a deployment may
+    want it on a different path within the volume. It must stay on the archive
+    volume: a managed move is a rename and may not cross volumes.
+    """
+    value = _setting("BEACON_HOLDING_ROOT")
+    return Path(value) if value else archive_root() / HOLDING_DIRNAME
+
+
+def cache_root() -> Path:
+    """Regenerable generated artifacts swept out of the Inbox.
+
+    Cache never enters Library, Assets or Projects: it is regenerable, and a
+    job that enrols only cache still moves nothing. It does leave the Inbox,
+    because the Inbox means "not yet looked at" and cache that has been
+    classified has been looked at.
+    """
+    return holding_root() / CACHE_DIRNAME
+
+
+def review_root() -> Path:
+    """Items whose analysis failed. Retry reads them from here."""
+    return holding_root() / REVIEW_DIRNAME
+
+
+def unidentified_root() -> Path:
+    """Items no placement rule can derive a destination for."""
+    return holding_root() / UNIDENTIFIED_DIRNAME
+
+
 def approved_destination_roots() -> tuple[Path, ...]:
     """Managed placement may only write beneath these."""
-    return (library_root(), assets_root(), projects_root())
+    return (library_root(), assets_root(), projects_root(), holding_root())
 
 
 class CatalogNotConfiguredError(RuntimeError):

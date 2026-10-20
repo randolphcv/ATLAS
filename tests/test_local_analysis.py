@@ -264,8 +264,13 @@ class LocalAnalysisJobTests(unittest.TestCase):
             self.sources / "graphics.aep",
             self.sources / "graphics-text.aepx",
         ]
-        for project_file in project_files:
-            project_file.write_bytes(b"editable production project fixture")
+        for index, project_file in enumerate(project_files):
+            # Distinct bytes per file. Identical bytes would deduplicate to one
+            # catalog asset with three locations, and the count below would
+            # then prove far less than it appears to.
+            project_file.write_bytes(
+                b"editable production project fixture %d" % index
+            )
         catalog_file(
             sidecar,
             self.db,
@@ -288,8 +293,12 @@ class LocalAnalysisJobTests(unittest.TestCase):
                 include_media_probe=False,
                 include_thumbnail_generation=False,
             )
+        # Two content fixtures plus the three project files. Generated cache
+        # and sidecars stay out of scope; editable project files are now in it,
+        # because an item that never enrols never gets a terminal state and so
+        # can never leave the Inbox.
         preview = analysis_scope_preview(self.db)
-        self.assertEqual(preview["assets"], 2)
+        self.assertEqual(preview["assets"], 5)
         job_id = create_local_analysis_job(self.db, model="fixture-model")
         connection = sqlite3.connect(self.db)
         try:
@@ -305,10 +314,17 @@ class LocalAnalysisJobTests(unittest.TestCase):
             ]
         finally:
             connection.close()
-        self.assertEqual(
-            {Path(path).suffix.lower() for path in job_paths},
-            {".txt"},
+        suffixes = {Path(path).suffix.lower() for path in job_paths}
+        self.assertEqual(suffixes, {".txt", ".prproj", ".aep", ".aepx"})
+        self.assertNotIn(
+            ".xmp", suffixes, "a sidecar is support, not content to analyse"
         )
+        for path in job_paths:
+            self.assertNotIn(
+                ".prv",
+                path.casefold(),
+                "generated preview cache must stay out of analysis scope",
+            )
 
     def test_selected_analysis_job_contains_only_explicit_assets(self) -> None:
         connection = sqlite3.connect(self.db)
@@ -1512,9 +1528,8 @@ class ArtifactsPlacementGuardTests(unittest.TestCase):
     """An artifacts job must reach neither movement site in a run.
 
     There are two: the managed placement of each analyzed candidate, and the
-    Inbox-wide companion sweep that follows it. The sweep takes only a
-    db_path, so it is not scoped to the job at all and would move the very
-    files the job just declined to place.
+    settle step that follows it, which would otherwise move the very files
+    the job just declined to place.
     """
 
     def setUp(self) -> None:
@@ -1580,15 +1595,15 @@ class ArtifactsPlacementGuardTests(unittest.TestCase):
                 "beacon.local_analysis.commit_analyzed_file"
             ) as commit_mock,
             patch(
-                "beacon.local_analysis.archive_contextual_inbox_companions"
-            ) as sweep_mock,
+                "beacon.local_analysis.settle_inbox_items"
+            ) as settle_mock,
         ):
             result = run_local_analysis_job(
                 self.db, job_id, analyzer=self._analyzer
             )
 
         self.assertEqual(commit_mock.call_count, 0)
-        self.assertEqual(sweep_mock.call_count, 0)
+        self.assertEqual(settle_mock.call_count, 0)
         self.assertEqual(result.state, "complete")
         self.assertEqual(result.excluded, 1)
         self.assertTrue(self.media.exists())
@@ -1601,7 +1616,7 @@ class ArtifactsPlacementGuardTests(unittest.TestCase):
 
         with (
             patch("beacon.local_analysis.commit_analyzed_file"),
-            patch("beacon.local_analysis.archive_contextual_inbox_companions"),
+            patch("beacon.local_analysis.settle_inbox_items"),
         ):
             run_local_analysis_job(self.db, job_id, analyzer=self._analyzer)
 
@@ -1614,7 +1629,48 @@ class ArtifactsPlacementGuardTests(unittest.TestCase):
         self.assertEqual(len(guard_events), 1)
         details = json.loads(guard_events[0]["details_json"])
         self.assertEqual(details["scope_kind"], "artifacts")
-        self.assertTrue(details["companion_sweep_skipped"])
+        self.assertTrue(details["settle_skipped"])
+
+    def test_a_failed_item_does_not_skip_the_settle_step(self) -> None:
+        """The defect this change closes, guarded at the call site.
+
+        Settle used to be gated on the job having zero failures, so one model
+        error skipped placement for every other item in the job and the Inbox
+        filled up behind it. Settle is gated on the placement guard alone; a
+        failed item is settled to the review zone and strands nobody.
+        """
+        job_id = create_local_analysis_job(
+            self.db, model="fixture-model", scope_kind="all"
+        )
+
+        def failing_analyzer(
+            endpoint: str, model: str, asset: dict[str, object]
+        ) -> dict:
+            raise RuntimeError("fixture model failure")
+
+        with (
+            patch(
+                "beacon.local_analysis.commit_analyzed_file",
+                return_value=(None, "fixture placement declined"),
+            ),
+            patch(
+                "beacon.local_analysis.settle_inbox_items",
+                return_value=SimpleNamespace(
+                    attempted=0, moved=0, outcomes={}, skipped_reasons={},
+                    not_terminal=0, removed_directories=0,
+                ),
+            ) as settle_mock,
+        ):
+            result = run_local_analysis_job(
+                self.db, job_id, analyzer=failing_analyzer
+            )
+
+        self.assertGreater(result.failed, 0, "the fixture must have failed")
+        self.assertEqual(
+            settle_mock.call_count,
+            1,
+            "a failed item must not stop the Inbox from draining",
+        )
 
     def test_a_content_job_still_reaches_both_movement_sites(self) -> None:
         """The guard discriminates; it is not a blanket disable."""
@@ -1628,9 +1684,12 @@ class ArtifactsPlacementGuardTests(unittest.TestCase):
                 return_value=(None, "fixture placement declined"),
             ) as commit_mock,
             patch(
-                "beacon.local_analysis.archive_contextual_inbox_companions",
-                return_value=SimpleNamespace(moved=0, skipped=0, failed=0),
-            ) as sweep_mock,
+                "beacon.local_analysis.settle_inbox_items",
+                return_value=SimpleNamespace(
+                    attempted=0, moved=0, outcomes={}, skipped_reasons={},
+                    not_terminal=0, removed_directories=0,
+                ),
+            ) as settle_mock,
             patch(
                 "beacon.local_analysis.placement_needs_clarification",
                 return_value=False,
@@ -1639,7 +1698,7 @@ class ArtifactsPlacementGuardTests(unittest.TestCase):
             run_local_analysis_job(self.db, job_id, analyzer=self._analyzer)
 
         self.assertEqual(commit_mock.call_count, 1)
-        self.assertEqual(sweep_mock.call_count, 1)
+        self.assertEqual(settle_mock.call_count, 1)
 
     def test_job_may_place_is_the_single_authority(self) -> None:
         """Both call sites read this one answer, so unit-test it directly."""
@@ -1689,8 +1748,11 @@ class ArtifactsPlacementGuardTests(unittest.TestCase):
                 return_value=(None, "fixture placement declined"),
             ) as commit_mock,
             patch(
-                "beacon.local_analysis.archive_contextual_inbox_companions",
-                return_value=SimpleNamespace(moved=0, skipped=0, failed=0),
+                "beacon.local_analysis.settle_inbox_items",
+                return_value=SimpleNamespace(
+                    attempted=0, moved=0, outcomes={}, skipped_reasons={},
+                    not_terminal=0, removed_directories=0,
+                ),
             ),
             patch(
                 "beacon.local_analysis.placement_needs_clarification",

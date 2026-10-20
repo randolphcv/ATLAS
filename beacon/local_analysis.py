@@ -31,11 +31,11 @@ from .database import connect, migrate, record_event
 from .desk import seed_threads
 from .managed_moves import (
     analysis_placement_for,
-    archive_contextual_inbox_companions,
     commit_analyzed_file,
     destination_directory_blocked,
     placement_needs_clarification,
     recover_interrupted_managed_moves,
+    settle_inbox_items,
 )
 from .media import IMAGE_EXTENSIONS, probe, should_probe
 from .metadata import apply_analysis_metadata, apply_analysis_organization_path
@@ -69,7 +69,7 @@ ANALYSIS_SCOPE_KINDS = frozenset(
 # coincidence of which items happened to be excluded first.
 PLACEMENT_FREE_SCOPE_KINDS = frozenset({"artifacts"})
 PLACEMENT_SKIPPED_FOR_SCOPE = (
-    "Skipped managed placement and the Inbox companion sweep: this job's "
+    "Skipped managed placement and the Inbox settle step: this job's "
     "scope enrols only regenerable generated artifacts, which are never "
     "placed into the archive."
 )
@@ -100,16 +100,6 @@ def _utc_now() -> str:
 
 def _canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-
-
-def _project_scope_sql(column: str) -> tuple[str, list[str]]:
-    predicates = [
-        f"lower({column}) NOT LIKE ?"
-        for _ in sorted(NON_CONTENT_PROJECT_EXTENSIONS)
-    ]
-    return " AND ".join(predicates), [
-        f"%{suffix}" for suffix in sorted(NON_CONTENT_PROJECT_EXTENSIONS)
-    ]
 
 
 def _is_still_image(source: Path, metadata: dict[str, Any]) -> bool:
@@ -156,16 +146,17 @@ def _analysis_scope_rows(
     if scope_kind == "artifacts":
         # support_path_sql builds the predicate for a visible, content-bearing
         # path, which is the exact complement of what this scope wants, so it
-        # is inverted rather than reimplemented. The project-extension filter
-        # is dropped too: an editable project file inside an auto-save
-        # directory is generated cache by the same rule.
+        # is inverted rather than reimplemented.
         scope_predicate = f"NOT ({visible_predicate})"
     else:
-        project_predicate, project_parameters = _project_scope_sql(
-            "locations.path"
-        )
-        scope_predicate = f"({visible_predicate}) AND ({project_predicate})"
-        parameters.extend(project_parameters)
+        # Editable project files are enrolled rather than filtered out here.
+        # Dropping them before enrolment gave them no item row, no reason and
+        # no terminal state, so nothing could ever settle them and they sat in
+        # the Inbox indefinitely. They are excluded from content inference the
+        # moment the item is picked up, by _artifact_exclusion_reason, which
+        # runs before any model call: enrolment costs no analysis time and buys
+        # them a recorded reason and a destination.
+        scope_predicate = visible_predicate
     prefix = normalized_scope_path_prefix(path_prefix)
     if prefix is None:
         prefix_predicate = "1"
@@ -974,8 +965,8 @@ def job_may_place(job: Any) -> bool:
     """Whether this job is allowed to move originals at all.
 
     The single authority for both movement call sites in a run: the managed
-    placement of each analyzed candidate, and the Inbox-wide companion sweep
-    that follows it. A job whose scope enrols only regenerable generated
+    placement of each analyzed candidate, and the settle step that follows
+    it. A job whose scope enrols only regenerable generated
     artifacts answers False, so neither site runs.
 
     The answer comes from the job row, which means it survives a restart and a
@@ -1014,7 +1005,7 @@ def _record_placement_guard(
                 "job_id": job_id,
                 "scope_kind": scope_kind,
                 "candidates_not_placed": item_count,
-                "companion_sweep_skipped": True,
+                "settle_skipped": True,
             },
         )
 
@@ -1054,6 +1045,36 @@ def _artifact_exclusion_reason(
         "Excluded confidently generated cache, autosave, or sidecar artifact; "
         "the original remains cataloged and can be shown as a hidden file."
     )
+
+
+def _resolve_item_source(
+    db_path: Path,
+    *,
+    asset_id: str,
+    stored_path: str,
+) -> Path:
+    """Where this item's bytes are now, not where they were when enrolled.
+
+    An item's ``source_path`` records the location it was enrolled from. Once
+    settle moves a failed item to the review holding zone, that path no longer
+    exists, and a retry that trusted it would fail on a file that is sitting
+    safely one directory away. The catalog's ``locations`` table is the record
+    of where a file is, so a retry resolves the item by catalog location and
+    falls back to the enrolled path only when nothing else is on disk.
+    """
+    stored = Path(stored_path)
+    if stored.exists():
+        return stored
+    with connect(db_path) as connection:
+        rows = connection.execute(
+            "SELECT path FROM locations WHERE asset_id=? ORDER BY observed_at DESC",
+            (asset_id,),
+        ).fetchall()
+    for row in rows:
+        candidate = Path(str(row["path"]))
+        if candidate.exists():
+            return candidate
+    return stored
 
 
 def _complete_analysis_exclusion(
@@ -1953,7 +1974,12 @@ def _run_local_analysis_job(
                 """,
                 (item["asset_id"], _utc_now(), _utc_now(), job_id),
             )
-        exclusion_reason = _artifact_exclusion_reason(item["source_path"])
+        item_source = _resolve_item_source(
+            db_path,
+            asset_id=str(item["asset_id"]),
+            stored_path=str(item["source_path"]),
+        )
+        exclusion_reason = _artifact_exclusion_reason(item_source)
         if exclusion_reason:
             _complete_analysis_exclusion(
                 db_path,
@@ -1969,7 +1995,7 @@ def _run_local_analysis_job(
             # this try and recorded like any other per-item failure.
             if asset is None:
                 raise ValueError(f"catalog checksum changed for {item['asset_id']}")
-            source = Path(item["source_path"])
+            source = item_source
             if not source.exists():
                 raise FileNotFoundError(str(source))
             if sha256_file(source) != item["source_sha256"]:
@@ -2237,9 +2263,10 @@ def _run_local_analysis_job(
     skipped_artifact_placements = 0
     # The structural placement guard. Both of this run's movement sites are
     # gated on this one answer, read from the job row: the managed placement
-    # loop immediately below, and the Inbox-wide companion sweep further down.
-    # Neither is left merely unreachable.
+    # loop immediately below, and the settle step further down. Neither is
+    # left merely unreachable.
     may_place = job_may_place(job)
+    scope_path_prefix = normalized_scope_path_prefix(job["scope_path_prefix"])
     if not may_place:
         _record_placement_guard(
             db_path,
@@ -2399,25 +2426,39 @@ def _run_local_analysis_job(
     if finalization_failures:
         counts["failed"] += len(finalization_failures)
         counts["complete"] = max(0, counts["complete"] - len(finalization_failures))
-    companion_archive = None
-    # The guard's second site. archive_contextual_inbox_companions takes only
-    # db_path: it is an Inbox-wide sweep, not scoped to this job's items, and
-    # it moves anything the job marked excluded. A cache-only job would
-    # therefore move the very files it just declined to place, so the same
-    # answer gates it.
-    if counts["failed"] == 0 and counts["pending"] == 0 and may_place:
-        _set_job_stage(db_path, job_id, "archiving_project_companions")
-        companion_archive = archive_contextual_inbox_companions(db_path)
+    settled = None
+    # The guard's second site. Settle is scoped to this job's path prefix, so
+    # a folder-scoped job drains its own folder and nothing else, and it is
+    # gated on the same one answer as placement: a cache-only job moves
+    # nothing at all.
+    #
+    # It is deliberately NOT gated on the job's failure or pending counts.
+    # That gate is what left the Inbox full: one failed item out of a thousand
+    # skipped placement for every other item in the job, which is the
+    # per-item-failure-aborts-the-batch defect AGENTS.md forbids. A failed item
+    # is settled to the review zone; it no longer strands its neighbours.
+    if may_place:
+        _set_job_stage(db_path, job_id, "settling_inbox")
+        settled = settle_inbox_items(
+            db_path,
+            path_prefix=scope_path_prefix,
+            requested_by="Beacon local analyzer",
+            authorization_note=f"analysis_run={run_id}; job={job_id}.",
+        )
     state = (
         "complete"
         if counts["failed"] == 0
         else ("partial" if counts["complete"] else "failed")
     )
-    if companion_archive is not None and companion_archive.failed:
+    # A settle that could not move something does not fail the analysis: the
+    # analysis is done. It makes the job partial so the count is visible and
+    # the operator knows the Inbox did not fully clear.
+    if settled is not None and settled.skipped_reasons:
         state = "partial"
     error = None
-    if companion_archive is not None and companion_archive.failed:
-        error = f"{companion_archive.failed} companion placement(s) failed"
+    if settled is not None and settled.skipped_reasons:
+        left = sum(settled.skipped_reasons.values())
+        error = f"{left} item(s) could not leave the Inbox"
     elif state != "complete":
         error = f"{counts['failed']} item(s) failed"
     with connect(db_path) as connection:
@@ -2450,14 +2491,17 @@ def _run_local_analysis_job(
                     None if may_place else PLACEMENT_SKIPPED_FOR_SCOPE
                 ),
                 "skipped_artifact_placements": skipped_artifact_placements,
-                "companion_files_moved": (
-                    companion_archive.moved if companion_archive else 0
+                "settle_attempted": settled.attempted if settled else 0,
+                "settle_moved": settled.moved if settled else 0,
+                "settle_outcomes": settled.outcomes if settled else {},
+                "settle_left_behind": (
+                    settled.skipped_reasons if settled else {}
                 ),
-                "companion_files_skipped": (
-                    companion_archive.skipped if companion_archive else 0
+                "settle_not_terminal": (
+                    settled.not_terminal if settled else 0
                 ),
-                "companion_files_failed": (
-                    companion_archive.failed if companion_archive else 0
+                "removed_directories": (
+                    settled.removed_directories if settled else 0
                 ),
                 **counts,
             },

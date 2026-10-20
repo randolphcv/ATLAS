@@ -12,12 +12,11 @@ from beacon.catalog import catalog_file, sha256_file
 from beacon.database import SCHEMA_VERSION, connect, database_integrity
 from beacon.managed_moves import (
     analysis_placement_for,
-    archive_contextual_inbox_companions,
-    contextual_companion_placement_for,
     destination_directory_blocked,
     move_cataloged_file,
     placement_needs_clarification,
     recover_interrupted_managed_moves,
+    settle_inbox_items,
 )
 from beacon.metadata import (
     apply_analysis_metadata,
@@ -226,9 +225,51 @@ class ManagedMoveTests(unittest.TestCase):
         self.assertTrue(placement_needs_clarification(inbox / "loose.wav"))
         self.assertFalse(placement_needs_clarification(inbox / ".DS_Store"))
 
+    def _mark_excluded(
+        self, asset_id: str, source: Path, reason: str
+    ) -> None:
+        """Give an asset the terminal excluded state a settle acts on.
+
+        Settle reads the terminal state from the catalog rather than from one
+        job's items, because material stranded by an earlier job is exactly
+        what has to drain. This writes that state directly so the test does
+        not have to run an analysis job to produce it.
+        """
+        with connect(self.db) as connection:
+            connection.execute(
+                """
+                INSERT INTO local_analysis_jobs(
+                    id, state, model, endpoint, policy_version, scope_sha256,
+                    total_items, cancel_requested, requested_by, created_at,
+                    updated_at
+                ) VALUES (?, 'complete', 'fixture', 'fixture', 'fixture',
+                          'fixture', 1, 0, 'test', ?, ?)
+                ON CONFLICT(id) DO NOTHING
+                """,
+                ("fixture-settle-job", self.now, self.now),
+            )
+            connection.execute(
+                """
+                INSERT INTO local_analysis_items(
+                    id, job_id, asset_id, source_sha256, source_path, state,
+                    attempts, excluded_reason, completed_at
+                ) VALUES (?, 'fixture-settle-job', ?, ?, ?, 'complete', 1,
+                          ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    asset_id,
+                    sha256_file(source),
+                    str(source),
+                    reason,
+                    self.now,
+                ),
+            )
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        self.now = datetime.now(timezone.utc).isoformat()
         self.db = self.root / "beacon.db"
         self.inbox = self.root / "inbox"
         self.library = self.root / "library"
@@ -322,77 +363,95 @@ class ManagedMoveTests(unittest.TestCase):
         self.assertTrue(self.source.exists())
         self.assertTrue(destination.exists())
 
-    def test_contextual_companion_inherits_analyzed_project_tree(self) -> None:
+    def test_settle_sends_a_sidecar_to_the_cache_holding_zone(self) -> None:
+        """Cache leaves the Inbox but never enters the archive proper."""
         inbox = self.root / "context-inbox"
         projects = self.root / "context-projects"
-        source = inbox / "Client" / "Project" / "Sidecars" / "frame.xmp"
+        holding = self.root / "context-holding"
+        source = inbox / "fixture_client_a" / "project_alpha" / "Sidecars" / "SAMPLE_0001.xmp"
         source.parent.mkdir(parents=True)
         source.write_text("sidecar", encoding="utf-8")
-        companion = catalog_file(
+        asset = catalog_file(
             source, self.db, stability_seconds=0, include_media_probe=False
         )
-        anchor_path = projects / "Client" / "Project" / "Media" / "frame.jpg"
-        anchor_path.parent.mkdir(parents=True)
-        anchor_path.write_text("analyzed", encoding="utf-8")
-        anchor = catalog_file(
-            anchor_path, self.db, stability_seconds=0, include_media_probe=False
-        )
-        now = datetime.now(timezone.utc).isoformat()
-        run_id = str(uuid.uuid4())
-        with connect(self.db) as connection:
-            connection.execute(
-                """INSERT INTO analysis_runs VALUES
-                (?, ?, 'test', '1', 'test', 'local', 0, 'test',
-                 'complete', '{}', ?, ?, NULL)""",
-                (run_id, str(uuid.uuid4()), now, now),
-            )
-            connection.execute(
-                """INSERT INTO analysis_results VALUES
-                (?, ?, ?, ?, 'contextual_metadata', ?, '{}', '{}',
-                 1.0, 'candidate', ?, NULL)""",
-                (
-                    str(uuid.uuid4()), run_id, anchor.asset_id, anchor.sha256,
-                    str(uuid.uuid4()), now,
-                ),
-            )
+        self._mark_excluded(asset.asset_id, source, "fixture exclusion")
         set_policy(
             self.db, "files.managed_moves.enabled", True, source_kind="test"
         )
         with (
             patch("beacon.managed_moves.INBOX_ROOT", inbox),
             patch("beacon.managed_moves.PROJECTS_ROOT", projects),
+            patch("beacon.managed_moves.CACHE_ROOT", holding / "Cache"),
+            patch("beacon.managed_moves.REVIEW_ROOT", holding / "Review"),
+            patch(
+                "beacon.managed_moves.UNIDENTIFIED_ROOT",
+                holding / "Unidentified",
+            ),
+            patch(
+                "beacon.managed_moves.SETTLE_APPROVED_ROOTS",
+                (projects, holding),
+            ),
         ):
-            decision = contextual_companion_placement_for(self.db, source)
-            self.assertEqual(
-                decision.destination_directory,
-                projects / "Client" / "Project" / "Sidecars",
-            )
-            result = archive_contextual_inbox_companions(self.db)
-        destination = projects / "Client" / "Project" / "Sidecars" / "frame.xmp"
+            result = settle_inbox_items(self.db)
+        destination = (
+            holding / "Cache" / "fixture_client_a" / "project_alpha"
+            / "Sidecars" / "SAMPLE_0001.xmp"
+        )
         self.assertEqual(result.moved, 1)
-        self.assertEqual(result.failed, 0)
+        self.assertEqual(result.outcomes.get("cache"), 1)
+        self.assertFalse(source.exists(), "the Inbox must not keep it")
+        self.assertTrue(destination.exists())
+        self.assertFalse((projects / "fixture_client_a").exists())
+
+    def test_settle_needs_no_analyzed_archive_neighbor(self) -> None:
+        """The anchor requirement was circular and is deliberately gone.
+
+        Nothing could leave the Inbox until something had already left it, so
+        a folder whose media was never placed stayed full forever. The
+        destination comes from the path beneath the Inbox, which AGENTS.md
+        section 6 requires be preserved verbatim anyway.
+        """
+        inbox = self.root / "noanchor-inbox"
+        projects = self.root / "noanchor-projects"
+        holding = self.root / "noanchor-holding"
+        source = (
+            inbox / "fixture_client_a" / "project_alpha" / "SAMPLE_0002.mov"
+        )
+        source.parent.mkdir(parents=True)
+        source.write_text("media", encoding="utf-8")
+        asset = catalog_file(
+            source, self.db, stability_seconds=0, include_media_probe=False
+        )
+        self._mark_excluded(asset.asset_id, source, "fixture exclusion")
+        set_policy(
+            self.db, "files.managed_moves.enabled", True, source_kind="test"
+        )
+        self.assertFalse(
+            projects.exists(), "no analyzed neighbor exists anywhere"
+        )
+        with (
+            patch("beacon.managed_moves.INBOX_ROOT", inbox),
+            patch("beacon.managed_moves.PROJECTS_ROOT", projects),
+            patch("beacon.managed_moves.CACHE_ROOT", holding / "Cache"),
+            patch("beacon.managed_moves.REVIEW_ROOT", holding / "Review"),
+            patch(
+                "beacon.managed_moves.UNIDENTIFIED_ROOT",
+                holding / "Unidentified",
+            ),
+            patch(
+                "beacon.managed_moves.SETTLE_APPROVED_ROOTS",
+                (projects, holding),
+            ),
+        ):
+            result = settle_inbox_items(self.db)
+        destination = (
+            projects / "fixture_client_a" / "project_alpha" / "SAMPLE_0002.mov"
+        )
+        self.assertEqual(result.moved, 1)
+        self.assertEqual(result.outcomes.get("placed"), 1)
         self.assertFalse(source.exists())
         self.assertTrue(destination.exists())
-        self.assertFalse((inbox / "Client").exists())
 
-    def test_contextual_companion_requires_analyzed_archive_neighbor(self) -> None:
-        inbox = self.root / "context-inbox"
-        projects = self.root / "context-projects"
-        source = inbox / "Client" / "Unknown" / "Sidecars" / "frame.xmp"
-        source.parent.mkdir(parents=True)
-        source.write_text("sidecar", encoding="utf-8")
-        catalog_file(source, self.db, stability_seconds=0, include_media_probe=False)
-        set_policy(
-            self.db, "files.managed_moves.enabled", True, source_kind="test"
-        )
-        with (
-            patch("beacon.managed_moves.INBOX_ROOT", inbox),
-            patch("beacon.managed_moves.PROJECTS_ROOT", projects),
-        ):
-            result = archive_contextual_inbox_companions(self.db)
-        self.assertEqual(result.moved, 0)
-        self.assertEqual(result.skipped, 1)
-        self.assertTrue(source.exists())
 
     def test_destination_creation_failure_is_recorded_immediately(self) -> None:
         set_policy(

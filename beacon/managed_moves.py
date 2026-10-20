@@ -7,12 +7,18 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from .catalog import sha256_file
 from .config import (
+    LIKE_ESCAPE,
     approved_destination_roots,
+    cache_root,
     inbox_root,
+    like_prefix_pattern,
     projects_root,
+    review_root,
+    unidentified_root,
 )
 from .database import connect, migrate, record_event
 from .metadata import get_policy
@@ -23,6 +29,21 @@ LOGGER = logging.getLogger("beacon.managed_moves")
 APPROVED_DESTINATION_ROOTS = approved_destination_roots()
 INBOX_ROOT = inbox_root()
 PROJECTS_ROOT = projects_root()
+CACHE_ROOT = cache_root()
+REVIEW_ROOT = review_root()
+UNIDENTIFIED_ROOT = unidentified_root()
+
+# Terminal outcomes a settled item can carry out of the Inbox. The Inbox means
+# "not yet looked at", so every item a job reached a terminal state on leaves
+# it by exactly one of these routes.
+SETTLE_PLACED = "placed"
+SETTLE_CACHE = "cache"
+SETTLE_REVIEW = "review"
+SETTLE_UNIDENTIFIED = "unidentified"
+SETTLE_DESTINATION_EXISTS = "destination_exists"
+SETTLE_CHECKSUM_MISMATCH = "checksum_mismatch"
+SETTLE_MISSING = "missing"
+SETTLE_FAILED = "failed"
 
 
 def destination_directory_blocked(error: BaseException) -> bool:
@@ -51,12 +72,6 @@ class PlacementDecision:
     reason: str
 
 
-@dataclass(frozen=True)
-class ContextualArchiveResult:
-    moved: int
-    skipped: int
-    failed: int
-    removed_directories: int
 
 
 def recover_interrupted_managed_moves(db_path: Path) -> int:
@@ -250,136 +265,271 @@ def commit_analyzed_file(
     return result, decision.reason
 
 
-def contextual_companion_placement_for(
-    db_path: Path,
+@dataclass(frozen=True)
+class SettleDecision:
+    destination_directory: Path | None
+    outcome: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class SettleResult:
+    """Counts per outcome, plus what was left behind and why."""
+
+    attempted: int
+    moved: int
+    outcomes: dict[str, int]
+    skipped_reasons: dict[str, int]
+    not_terminal: int
+    removed_directories: int
+
+
+def settle_destination_for(
     source_path: Path,
-) -> PlacementDecision:
-    """Inherit placement only from an analyzed project already in the archive."""
-    decision = analysis_placement_for(source_path)
-    if decision.destination_directory is None:
-        return decision
+    *,
+    failed: bool = False,
+) -> SettleDecision:
+    """Where an item with a terminal analysis state leaves the Inbox for.
+
+    The Inbox means "not yet looked at". Anything a job has reached a terminal
+    state on has been looked at, so it leaves, by exactly one route:
+
+    - analysis failed            -> Holding/Review, so retry has one home
+    - regenerable cache          -> Holding/Cache, never into the archive
+    - a placement rule applies   -> that destination, structure preserved
+    - no rule derives a home     -> Holding/Unidentified
+
+    The cache route is what keeps the 0.22.12 rule true: a generated artifact
+    is never placed into Library, Assets or Projects, whichever scope enrolled
+    it. Leaving it in the Inbox is not the way to honour that rule, because
+    then the Inbox no longer means what it says.
+    """
     source = Path(os.path.abspath(source_path))
-    relative = source.relative_to(Path(os.path.abspath(INBOX_ROOT)))
-    project_parts = (
-        relative.parts[:2] if len(relative.parts) >= 3 else relative.parts[:1]
-    )
-    project_root = PROJECTS_ROOT.joinpath(*project_parts)
-    with connect(db_path) as connection:
-        anchor = connection.execute(
-            """
-            SELECT 1
-            FROM locations location
-            JOIN analysis_results result ON result.asset_id=location.asset_id
-            WHERE substr(lower(location.path), 1, length(?))=lower(?)
-              AND result.review_state IN ('candidate', 'approved')
-            LIMIT 1
-            """,
-            (str(project_root) + "\\", str(project_root) + "\\"),
-        ).fetchone()
-    if anchor is None:
-        return PlacementDecision(
+    inbox = Path(os.path.abspath(INBOX_ROOT))
+    if not _is_within(source, inbox):
+        return SettleDecision(
             None,
-            "No analyzed archive neighbor establishes this project destination.",
+            SETTLE_MISSING,
+            "Source is outside the managed Inbox; nothing to settle.",
         )
-    return PlacementDecision(
-        decision.destination_directory,
-        "Inherited the destination from analyzed files in the same client/project "
-        "tree and preserved the remaining relative folder structure.",
+    relative = source.relative_to(inbox)
+    if failed:
+        return SettleDecision(
+            REVIEW_ROOT / relative.parent,
+            SETTLE_REVIEW,
+            "Analysis failed; held for review with its Inbox structure "
+            "preserved so a retry resolves it by catalog location.",
+        )
+    if is_hidden_support_path(source):
+        return SettleDecision(
+            CACHE_ROOT / relative.parent,
+            SETTLE_CACHE,
+            "Regenerable generated artifact; swept out of the Inbox and never "
+            "placed into the archive.",
+        )
+    decision = analysis_placement_for(source)
+    if decision.destination_directory is not None:
+        return SettleDecision(
+            decision.destination_directory, SETTLE_PLACED, decision.reason
+        )
+    if decision.reason.startswith("Ignored "):
+        return SettleDecision(None, SETTLE_MISSING, decision.reason)
+    return SettleDecision(
+        UNIDENTIFIED_ROOT / relative.parent,
+        SETTLE_UNIDENTIFIED,
+        f"No placement rule derives a destination: {decision.reason}",
     )
 
 
-def archive_contextual_inbox_companions(db_path: Path) -> ContextualArchiveResult:
-    """Archive excluded/support files after their project context is established."""
+SETTLE_APPROVED_ROOTS = (
+    PROJECTS_ROOT,
+    CACHE_ROOT,
+    REVIEW_ROOT,
+    UNIDENTIFIED_ROOT,
+)
+
+
+def _settle_candidates(
+    connection: Any,
+    path_prefix: str | Path | None,
+) -> list[Any]:
+    """Catalog rows beneath the Inbox, with whatever terminal state they hold.
+
+    Scoped by prefix when the job was, so a folder-scoped job drains its own
+    folder and nothing else. The state is read from the catalog rather than
+    from this job's item rows, because material stranded by an earlier job is
+    exactly what has to drain.
+    """
+    parameters: list[Any] = [str(INBOX_ROOT) + "\\%"]
+    prefix_predicate = "1"
+    if path_prefix is not None:
+        prefix_predicate = (
+            f"lower(location.path) LIKE ? ESCAPE '{LIKE_ESCAPE}'"
+        )
+        parameters.append(like_prefix_pattern(path_prefix))
+    return connection.execute(
+        f"""
+        SELECT location.asset_id AS asset_id,
+               location.path AS path,
+               (SELECT item.excluded_reason FROM local_analysis_items item
+                 WHERE item.asset_id = location.asset_id
+                   AND item.excluded_reason IS NOT NULL
+                 LIMIT 1) AS excluded_reason,
+               (SELECT item.state FROM local_analysis_items item
+                 WHERE item.asset_id = location.asset_id
+                 ORDER BY item.completed_at DESC LIMIT 1) AS item_state,
+               EXISTS(SELECT 1 FROM analysis_results result
+                      WHERE result.asset_id = location.asset_id
+                        AND result.analysis_kind = 'contextual_metadata'
+                        AND result.review_state IN ('candidate','approved')
+               ) AS analysed
+        FROM locations location
+        WHERE lower(location.path) LIKE lower(?)
+          AND ({prefix_predicate})
+        ORDER BY length(location.path), location.path COLLATE NOCASE
+        """,
+        parameters,
+    ).fetchall()
+
+
+def settle_inbox_items(
+    db_path: Path,
+    *,
+    path_prefix: str | Path | None = None,
+    requested_by: str = "Beacon settle",
+    authorization_note: str = "",
+) -> SettleResult:
+    """Move every looked-at item out of the Inbox. One item never stops another.
+
+    AGENTS.md: no per-item failure may abort a batch. Every per-item call here
+    is isolated, the outcome is recorded, and the batch continues. A item left
+    behind is counted and named by class in the result rather than silently
+    tolerated.
+
+    Idempotent: a settled item's catalog location no longer sits beneath the
+    Inbox, so a second run does not select it and moves nothing.
+    """
     with connect(db_path) as connection:
         migrate(connection)
-        rows = connection.execute(
-            """
-            SELECT location.asset_id,location.path,asset.size_bytes,
-                   EXISTS(
-                     SELECT 1 FROM local_analysis_items item
-                     WHERE item.asset_id=location.asset_id
-                       AND item.source_path=location.path
-                       AND item.excluded_reason IS NOT NULL
-                   ) AS explicitly_excluded
-            FROM locations location
-            JOIN assets asset ON asset.id=location.asset_id
-            WHERE lower(location.path) LIKE lower(?)
-            ORDER BY length(location.path),location.path COLLATE NOCASE
-            """,
-            (str(INBOX_ROOT) + "\\%",),
-        ).fetchall()
-    moved = skipped = failed = 0
+        rows = _settle_candidates(connection, path_prefix)
+    outcomes: dict[str, int] = {}
+    skipped_reasons: dict[str, int] = {}
+    attempted = moved = not_terminal = 0
+
+    def count(mapping: dict[str, int], key: str) -> None:
+        mapping[key] = mapping.get(key, 0) + 1
+
     for row in rows:
         source = Path(str(row["path"]))
-        is_companion = (
-            is_hidden_support_path(source)
-            or source.suffix.lower() in {".aep", ".aepx", ".prproj"}
-            or int(row["size_bytes"]) == 0
-            or bool(row["explicitly_excluded"])
+        state = str(row["item_state"]) if row["item_state"] else None
+        failed = state == "failed"
+        terminal = (
+            failed
+            or row["excluded_reason"] is not None
+            or bool(row["analysed"])
+            or state == "complete"
         )
-        if not is_companion:
-            skipped += 1
+        if not terminal:
+            # Not looked at yet. This is the one thing the Inbox is for.
+            not_terminal += 1
             continue
-        decision = contextual_companion_placement_for(db_path, source)
+        decision = settle_destination_for(source, failed=failed)
         if decision.destination_directory is None:
-            skipped += 1
+            count(outcomes, decision.outcome)
             continue
+        if not source.exists():
+            count(outcomes, SETTLE_MISSING)
+            continue
+        attempted += 1
         try:
             move_cataloged_file(
                 db_path,
                 asset_id=str(row["asset_id"]),
                 source_path=source,
                 destination_directory=decision.destination_directory,
-                requested_by="Beacon local analyzer",
+                requested_by=requested_by,
                 authorization=(
-                    "Post-analysis companion placement authorized after an "
-                    f"analyzed project neighbor established context. {decision.reason}"
+                    "The Inbox holds only material not yet looked at; this "
+                    "item has a terminal analysis state. "
+                    f"{decision.reason} {authorization_note}".strip()
                 ),
-                approved_roots=(PROJECTS_ROOT,),
+                approved_roots=SETTLE_APPROVED_ROOTS,
             )
             moved += 1
+            count(outcomes, decision.outcome)
+        except FileExistsError:
+            # An identical file is already at the destination. Never overwrite,
+            # never merge, never delete either copy: leave it and say so.
+            count(outcomes, SETTLE_DESTINATION_EXISTS)
+            count(skipped_reasons, SETTLE_DESTINATION_EXISTS)
+        except FileNotFoundError:
+            count(outcomes, SETTLE_MISSING)
+            count(skipped_reasons, SETTLE_MISSING)
+        except RuntimeError as error:
+            key = (
+                SETTLE_CHECKSUM_MISMATCH
+                if "checksum" in str(error).casefold()
+                else SETTLE_FAILED
+            )
+            count(outcomes, key)
+            count(skipped_reasons, key)
         except Exception:
-            failed += 1
-    removed_directories = 0
-    inbox = Path(os.path.abspath(INBOX_ROOT))
-    if inbox.is_dir():
-        directories = sorted(
-            (path for path in inbox.rglob("*") if path.is_dir()),
-            key=lambda path: len(path.parts),
-            reverse=True,
-        )
-        for directory in directories:
-            if directory.is_symlink() or bool(
-                getattr(os.path, "isjunction", lambda _: False)(directory)
-            ):
-                continue
-            try:
-                directory.rmdir()
-                removed_directories += 1
-            except OSError:
-                pass
+            LOGGER.exception("settle failed for one item")
+            count(outcomes, SETTLE_FAILED)
+            count(skipped_reasons, SETTLE_FAILED)
+
+    removed_directories = _remove_empty_inbox_directories()
     with connect(db_path) as connection:
         record_event(
             connection,
-            kind="contextual_companion_archive",
-            state="failed" if failed else "complete",
+            kind="inbox_settle",
+            state="complete" if not skipped_reasons else "partial",
             message=(
-                "Archived post-analysis Inbox companions while preserving their "
-                "project folder structure"
+                "Settled looked-at Inbox material to final destinations and "
+                "holding zones"
             ),
             details={
+                "scoped": path_prefix is not None,
+                "attempted": attempted,
                 "moved": moved,
-                "skipped": skipped,
-                "failed": failed,
+                "outcomes": outcomes,
+                "skipped_reasons": skipped_reasons,
+                "not_terminal": not_terminal,
                 "removed_directories": removed_directories,
             },
         )
-    return ContextualArchiveResult(
+    return SettleResult(
+        attempted=attempted,
         moved=moved,
-        skipped=skipped,
-        failed=failed,
+        outcomes=outcomes,
+        skipped_reasons=skipped_reasons,
+        not_terminal=not_terminal,
         removed_directories=removed_directories,
     )
+
+
+def _remove_empty_inbox_directories() -> int:
+    """Remove directories the settle left empty. Never removes a file."""
+    removed = 0
+    inbox = Path(os.path.abspath(INBOX_ROOT))
+    if not inbox.is_dir():
+        return 0
+    directories = sorted(
+        (path for path in inbox.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for directory in directories:
+        if directory.is_symlink() or bool(
+            getattr(os.path, "isjunction", lambda _: False)(directory)
+        ):
+            continue
+        try:
+            directory.rmdir()
+            removed += 1
+        except OSError:
+            pass
+    return removed
 
 
 def _utc_now() -> str:

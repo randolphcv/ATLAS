@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+## 0.22.15 - 2026-10-20
+
+- The Inbox now means one thing: not yet looked at. Every item an analysis job
+  reaches a terminal state on leaves the Inbox in the same operation, to a
+  final destination or to one of three bounded holding zones beneath the
+  archive root — `Holding\Cache` for regenerable generated artifacts,
+  `Holding\Review` for items whose analysis failed, and
+  `Holding\Unidentified` for items no placement rule derives a destination
+  for. Material that belongs together stays together: an editable project
+  file and the camera index beside it follow their media into the same folder
+  rather than being separated by class, and relative structure beneath the
+  Inbox is reproduced verbatim beneath every destination, holding zones
+  included. Until now a human could not tell by looking whether anything in
+  the Inbox had been analysed, because analysed, excluded, failed and
+  untouched material all sat in it together.
+- A single failed item no longer stops the Inbox from draining. Placement was
+  gated on the job having zero failed and zero pending items, so one model
+  error skipped the move for every other item in that job; the Inbox had been
+  accumulating looked-at material behind such failures across many jobs. This
+  was a fourth instance of the per-item-failure-aborts-the-batch pattern that
+  the engineering rules already forbid. A failed item is now settled to the
+  review zone and strands nobody, and a retry resolves it by its catalog
+  location rather than by the Inbox path it was enrolled from, so holding an
+  item for review does not make it unretryable.
+- Placement no longer requires a file already analysed in the destination tree
+  before it will move anything there. That requirement was circular — nothing
+  could leave the Inbox until something had already left it — so a folder
+  whose media was never placed stayed full indefinitely. The destination is
+  derived from the path beneath the Inbox, which the structure rule requires be
+  preserved verbatim in any case, so the requirement added no safety.
+- Editable production project files are now enrolled rather than filtered out
+  before a job sees them. An item that never enrols receives no record, no
+  reason and no terminal state, so nothing could ever move it and it sat in
+  the Inbox indefinitely. They are still never sent to the model: exclusion is
+  decided when the item is picked up, before any analysis, so enrolment costs
+  no model time and buys them a recorded reason and a destination.
+- The scope guard from 0.22.12 is unchanged and now covers the new step. A job
+  whose scope enrols only regenerable artifacts still moves nothing at all,
+  settle included, and the analysis dialog still says so; it now states the
+  consequence for the clearing rule in the other direction too, that the job
+  moves everything it analyses to a final destination or a holding zone.
+  Regenerable artifacts are still never placed into the archive proper,
+  whichever scope enrolled them — they leave the Inbox for the cache holding
+  zone instead, because cache that has been classified has been looked at.
+
 ## 0.22.14 - 2026-10-20
 
 - The version stamped into the packaged executable is now generated from the

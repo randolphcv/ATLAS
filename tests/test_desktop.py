@@ -1478,8 +1478,11 @@ def verify():
         dialog.setProperty("scopeKind", kind)
         app.processEvents()
         text = str(note.property("text"))
-        if "may move originals" not in text or "moves nothing" in text:
+        if "clears the Inbox" not in text or "moves nothing" in text:
             app.exit(code)
+            return
+        if "holding zone" not in text:
+            app.exit(code + 20)
             return
         if not bool(note.property("visible")):
             app.exit(code + 10)
