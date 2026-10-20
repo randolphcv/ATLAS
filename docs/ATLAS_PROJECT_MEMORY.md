@@ -111,6 +111,16 @@ not as a description of the present.
 - Documentation corrections in this run: the run-the-app release path, the live
   version, one handoff task already completed in source, and two documents that
   were asserting current state against section 8.
+- The packaged executable's copyright attribution was moved from a personal
+  name to the business entity, by owner decision, and the deployment deny-list
+  was seeded by hand with 18 terms in the untracked local file. The guard
+  test's deployment-term half therefore runs and enforces for the first time
+  rather than skipping. It honours the same allow-list and quarantine as the
+  structural half, so the two halves no longer disagree about which files they
+  cover. The pre-doctrine quarantined documents are therefore exempt from it
+  and still carry instance data: unblocked, not cleaned. The quarantine ratchet
+  still applies, so each remains due for cleanup and must leave the quarantine
+  in the same change that cleans it.
 
 ### Beacon 0.22.4 analysis and placement failure repair
 

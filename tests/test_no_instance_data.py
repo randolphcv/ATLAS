@@ -53,8 +53,10 @@ PATTERNS: dict[str, re.Pattern[str]] = {
 }
 
 # Narrow, explicit allow-list. Every entry needs a reason. Keep it small.
-# A file listed here is exempt from the STRUCTURAL detectors only; the
-# deny-list of deployment terms still applies to it.
+# A file listed here is exempt from both halves of this guard: the structural
+# detectors and the deny-list of deployment terms. The two halves honour the
+# same two lists, because one half exempting where the other does not is the
+# inconsistency AGENTS.md section 10 calls a defect.
 ALLOWED: dict[str, str] = {
     "tests/test_no_instance_data.py": (
         "This guard. Its patterns describe path shapes; the comments above "
@@ -63,6 +65,10 @@ ALLOWED: dict[str, str] = {
     ".env.example": (
         "Configuration template. Placeholder values are deliberately "
         "illustrative and name no deployment."
+    ),
+    "scripts/version_info.txt": (
+        "Legal attribution to the business entity, by the owner's decision "
+        "of 2026-10-19."
     ),
 }
 
@@ -167,6 +173,8 @@ class NoInstanceDataTests(unittest.TestCase):
             )
         failures: list[str] = []
         for relative in tracked_files():
+            if relative in ALLOWED or relative in QUARANTINE:
+                continue
             text = read_text(relative)
             if text is None:
                 continue
