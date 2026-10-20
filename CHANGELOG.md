@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+## 0.22.14 - 2026-10-20
+
+- The version stamped into the packaged executable is now generated from the
+  package version instead of being maintained by hand. The Windows version
+  resource was the only thing that labelled the binary, and it declared the
+  version four more times — as two numeric tuples and two dotted strings — in
+  a file nothing generated and nothing checked, so a release could carry new
+  code under an old label. That is how 0.22.5 through 0.22.7 shipped, and
+  0.22.12 came within one step of repeating it, caught only because the
+  implementer happened to read the file before building rather than after. A
+  single generator now renders the resource from the package version, and the
+  build writes it before PyInstaller reads it and refuses to continue if what
+  it wrote does not declare the version being built. Every field that
+  identifies the product rather than the release is a constant in that
+  generator, so nothing a release touches can move them.
+- The generated resource is no longer tracked, which removes the last way the
+  stamp could go stale. It is written beside the generated icon, under the
+  same ignore rule and consumed by the spec the same way, so the packaging
+  configuration did not have to change to accommodate it. A tracked copy would
+  have left a file that a commit could carry forward unchanged while the
+  source version moved, which is the defect being closed rather than a smaller
+  version of it. Untracking it also returns the legal attribution to a single
+  tracked home in the generator, where the instance-data allow-list justifies
+  it.
+- A new guard fails the suite when the version declarations disagree. It
+  compares the package version against the one in the project metadata and
+  against every declaration in the resource the generator produces, in the
+  numeric form as well as the dotted one, because a correct string beside a
+  stale tuple is still the version Windows reports. It writes the resource the
+  way the build does rather than reading whatever a previous build left
+  behind, counts the declarations so a fifth one cannot appear unnoticed,
+  pins the product identity fields and the legal attribution, and checks that
+  the file the generator writes is the file the spec stamps and that the build
+  writes it before packaging — a guard aimed at a file the build no longer
+  uses would guard nothing.
+
 ## 0.22.13 - 2026-10-20
 
 - The analysis dialog now opens on General rather than Total, and resetting it

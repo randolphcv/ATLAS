@@ -66,9 +66,10 @@ ALLOWED: dict[str, str] = {
         "Configuration template. Placeholder values are deliberately "
         "illustrative and name no deployment."
     ),
-    "scripts/version_info.txt": (
-        "Legal attribution to the business entity, by the owner's decision "
-        "of 2026-10-19."
+    "scripts/generate_version_info.py": (
+        "Sole home of the packaged executable's version resource, including "
+        "the legal attribution to the business entity by the owner's "
+        "decision of 2026-10-19. The resource it writes is untracked."
     ),
 }
 

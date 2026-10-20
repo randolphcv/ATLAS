@@ -28,6 +28,7 @@ htmlcov/
 build/
 dist/
 scripts/beacon.ico
+scripts/version_info.txt
 *.egg-info/
 .DS_Store
 Thumbs.db

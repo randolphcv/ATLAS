@@ -31,13 +31,21 @@ inspection. No application run was involved.
 
 ### Delivered build
 
-Verified 2026-10-19.
+Verified 2026-10-20.
 
-- Beacon 0.22.10 is the live version. Source, the declared version and the
-  staging executable the owner launches all report 0.22.10, and the running
-  desktop process is that staging copy. The matching versioned release
-  directory for 0.22.10 is delivered in the same change; the previously newest
-  release directory was 0.22.9.
+- Beacon 0.22.14 is the live version. The package version, the project
+  metadata version and the version resource stamped into the executable all
+  report 0.22.14, in the numeric form as well as the dotted one, and a test
+  now fails if any of them disagrees. The staging executable the owner
+  launches and the versioned release directory for 0.22.14 are delivered in
+  the same change and hash identically; the previously newest release
+  directory was 0.22.13, and the six directories from 0.22.9 onward are
+  retained. The running desktop process observed during this change was the
+  0.22.13 release copy, not the staging copy, and was left running.
+- The version resource is generated at build time and is no longer tracked,
+  so the stamp cannot be carried forward from a previous release by a commit
+  that forgets it. The build refuses to package if the resource it just wrote
+  does not declare the version being built.
 
 ### Storage
 

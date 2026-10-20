@@ -26,6 +26,22 @@ if (-not $OutputRoot.StartsWith($allowedDistRoot, [System.StringComparison]::Ord
 
 Push-Location $PSScriptRoot
 try {
+    # The version resource PyInstaller stamps into the executable is derived
+    # from beacon.__version__ and is untracked, like the generated icon beside
+    # it. Writing it here means a build cannot label the binary with a version
+    # the source does not carry.
+    & $python .\generate_version_info.py
+    if ($LASTEXITCODE -ne 0) {
+        throw "Version resource generation failed with exit code $LASTEXITCODE."
+    }
+    $resource = Join-Path $PSScriptRoot 'version_info.txt'
+    if (-not (Test-Path -LiteralPath $resource)) {
+        throw "Version resource was not written: $resource"
+    }
+    $stamp = "StringStruct('FileVersion', '$version')"
+    if ((Get-Content -LiteralPath $resource -Raw) -notlike "*$stamp*") {
+        throw "Version resource does not declare $version; refusing to build."
+    }
     & $python .\generate_icon.py
     if ($LASTEXITCODE -ne 0) {
         throw "Icon generation failed with exit code $LASTEXITCODE."
