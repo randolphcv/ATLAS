@@ -318,20 +318,38 @@ def runtime_log_dir() -> Path:
     return Path(value) if value else runtime_root() / "logs"
 
 
-_LIKE_ESCAPE = "~"
+LIKE_ESCAPE = "~"
 
 
-def _like_prefix(path: Path) -> str:
-    """Lowercased SQL LIKE prefix matching everything beneath a directory.
+def like_prefix_pattern(path: str | Path) -> str:
+    """Lowercased SQL LIKE pattern matching everything beneath a directory.
+
+    Safe to bind as a query parameter, so it accepts an operator-supplied
+    prefix as well as a configured root. Pair it with ``ESCAPE
+    '<LIKE_ESCAPE>'`` in the query.
 
     SQLite treats a backslash as an ordinary character, so a Windows separator
     needs no escaping. The LIKE wildcards do: ``_`` is common in folder names
     and would otherwise match any single character.
+
+    Any trailing separator is stripped before exactly one is appended, so a
+    prefix written with a trailing separator and the same prefix written
+    without one produce an identical pattern.
     """
     text = str(path).rstrip("\\/").casefold()
-    for special in (_LIKE_ESCAPE, "%", "_"):
-        text = text.replace(special, _LIKE_ESCAPE + special)
-    return text.replace("'", "''") + os.sep + "%"
+    for special in (LIKE_ESCAPE, "%", "_"):
+        text = text.replace(special, LIKE_ESCAPE + special)
+    return text + os.sep + "%"
+
+
+def _like_prefix(path: Path) -> str:
+    """``like_prefix_pattern`` for a pattern interpolated into SQL text.
+
+    Identical to the bindable form except that single quotes are doubled,
+    which is correct inside a quoted SQL literal and wrong for a bound
+    parameter, where it would match a path that does not exist.
+    """
+    return like_prefix_pattern(path).replace("'", "''")
 
 
 def location_rank_sql(column: str) -> str:
@@ -346,7 +364,7 @@ def location_rank_sql(column: str) -> str:
     their own parameters positionally; adding more would reorder every call
     site. Quotes are doubled and LIKE wildcards escaped regardless.
     """
-    clause = f"' ESCAPE '{_LIKE_ESCAPE}'"
+    clause = f"' ESCAPE '{LIKE_ESCAPE}'"
     approved = " OR ".join(
         f"lower({column}) LIKE '{_like_prefix(root)}{clause}"
         for root in approved_destination_roots()
@@ -371,7 +389,7 @@ def archive_tier_when_sql(column: str, first_rank: int = 1) -> str:
     ``first_rank`` is the rank given to an approved destination; the Inbox
     takes the next value.
     """
-    clause = f"' ESCAPE '{_LIKE_ESCAPE}'"
+    clause = f"' ESCAPE '{LIKE_ESCAPE}'"
     approved = "\n  OR ".join(
         f"lower({column}) LIKE '{_like_prefix(root)}{clause}"
         for root in approved_destination_roots()

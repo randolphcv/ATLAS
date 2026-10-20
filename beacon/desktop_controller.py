@@ -62,11 +62,13 @@ from .intake import (
 from .local_analysis import (
     NON_CONTENT_PROJECT_EXTENSIONS,
     LocalAnalysisRunResult,
+    analysis_scope_preview,
     analysis_scope_previews,
     create_local_analysis_job,
     create_selected_local_analysis_job,
     list_local_analysis_jobs,
     local_runtime_status,
+    normalized_scope_path_prefix,
     recover_local_analysis_jobs,
     request_local_analysis_cancel,
     retry_local_analysis_failures,
@@ -1592,7 +1594,7 @@ class DesktopController(QObject):
         scope = scopes["all"]
         full_scope = full_scopes["all"]
         general_scopes: dict[str, dict[str, Any]] = {}
-        for scope_kind in ("visual", "audio", "other", "raw"):
+        for scope_kind in ("visual", "audio", "other", "raw", "artifacts"):
             scoped = scopes[scope_kind]
             full_scoped = full_scopes[scope_kind]
             general_scopes[scope_kind] = {
@@ -1751,12 +1753,39 @@ class DesktopController(QObject):
         }
         self.analysisReadinessChanged.emit()
 
-    @Slot(str, str, str, bool)
+    def _require_non_empty_analysis_scope(
+        self,
+        *,
+        scope_kind: str,
+        path_prefix: str | None,
+        include_analyzed: bool,
+    ) -> None:
+        """Refuse a confinement that enrols nothing, before a job exists.
+
+        Only checked when a path prefix narrows the scope; without one the
+        readiness counts the dialog already shows are the same numbers.
+        """
+        if path_prefix is None:
+            return
+        confined = analysis_scope_preview(
+            self.settings.db_path,
+            include_analyzed=include_analyzed,
+            scope_kind=scope_kind,
+            path_prefix=path_prefix,
+        )
+        if int(confined["assets"]) == 0:
+            raise ValueError(
+                "No catalog assets sit under that folder for the chosen "
+                "category. Check the path and try again."
+            )
+
+    @Slot(str, str, str, str, bool)
     def startLocalCatalogAnalysis(
         self,
         model: str,
         scope_mode: str,
         scope_kind: str,
+        path_prefix: str,
         include_analyzed: bool,
     ) -> None:
         if self._busy:
@@ -1788,6 +1817,7 @@ class DesktopController(QObject):
             return
         normalized_mode = scope_mode.strip().lower()
         normalized_kind = scope_kind.strip().lower()
+        normalized_prefix = normalized_scope_path_prefix(path_prefix)
         try:
             if normalized_mode == "granular":
                 selected_id = str(self._selected_asset.get("id") or "")
@@ -1814,24 +1844,36 @@ class DesktopController(QObject):
                 )
             elif normalized_mode == "general":
                 if normalized_kind not in {
-                    "visual", "audio", "other", "raw"
+                    "visual", "audio", "other", "raw", "artifacts"
                 }:
                     raise ValueError("Choose a general analysis category.")
+                self._require_non_empty_analysis_scope(
+                    scope_kind=normalized_kind,
+                    path_prefix=normalized_prefix,
+                    include_analyzed=include_analyzed,
+                )
                 job_id = create_local_analysis_job(
                     self.settings.db_path,
                     model=model,
                     include_analyzed=include_analyzed,
                     scope_kind=normalized_kind,
+                    path_prefix=normalized_prefix,
                     requested_by=(
                         f"human general {normalized_kind} analysis"
                     ),
                 )
             elif normalized_mode == "total":
+                self._require_non_empty_analysis_scope(
+                    scope_kind="all",
+                    path_prefix=normalized_prefix,
+                    include_analyzed=include_analyzed,
+                )
                 job_id = create_local_analysis_job(
                     self.settings.db_path,
                     model=model,
                     include_analyzed=include_analyzed,
                     scope_kind="all",
+                    path_prefix=normalized_prefix,
                     requested_by="human total analysis",
                 )
             else:

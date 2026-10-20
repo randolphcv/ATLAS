@@ -20,7 +20,13 @@ from typing import Any
 
 from .analysis import import_analysis_manifest, validate_analysis_result
 from .catalog import sha256_file
-from .config import archive_tier_when_sql, inbox_root, runtime_root
+from .config import (
+    LIKE_ESCAPE,
+    archive_tier_when_sql,
+    inbox_root,
+    like_prefix_pattern,
+    runtime_root,
+)
 from .database import connect, migrate, record_event
 from .desk import seed_threads
 from .managed_moves import (
@@ -54,7 +60,18 @@ NON_CONTENT_COMPANION_EXTENSIONS = frozenset({".mif", ".prin"})
 DEFERRED_DOCUMENT_EXTENSIONS = frozenset({".key"})
 EMPTY_FILE_SHA256 = hashlib.sha256(b"").hexdigest()
 ANALYSIS_SCOPE_KINDS = frozenset(
-    {"all", "visual", "audio", "other", "raw"}
+    {"all", "visual", "audio", "other", "raw", "artifacts"}
+)
+# A scope that enrols only regenerable cache may never move a file. Analysis
+# normally authorizes placement, so the exception is named here and read from
+# the job row at run time rather than inferred from the items, which is what
+# makes "this job moves nothing" a property of the job instead of a
+# coincidence of which items happened to be excluded first.
+PLACEMENT_FREE_SCOPE_KINDS = frozenset({"artifacts"})
+PLACEMENT_SKIPPED_FOR_SCOPE = (
+    "Skipped managed placement and the Inbox companion sweep: this job's "
+    "scope enrols only regenerable generated artifacts, which are never "
+    "placed into the archive."
 )
 
 
@@ -118,19 +135,48 @@ def _analysis_media_bucket(
     return "other"
 
 
+def normalized_scope_path_prefix(path_prefix: str | Path | None) -> str | None:
+    """Return a usable path prefix, or None when none was asked for."""
+    if path_prefix is None:
+        return None
+    text = str(path_prefix).strip()
+    return text or None
+
+
 def _analysis_scope_rows(
     connection: Any,
     *,
     include_analyzed: bool,
     scope_kind: str,
+    path_prefix: str | Path | None = None,
 ) -> list[Any]:
     if scope_kind not in ANALYSIS_SCOPE_KINDS:
         raise ValueError("unsupported analysis scope")
     visible_predicate, parameters = support_path_sql("locations.path")
-    project_predicate, project_parameters = _project_scope_sql(
-        "locations.path"
-    )
-    parameters.extend(project_parameters)
+    if scope_kind == "artifacts":
+        # support_path_sql builds the predicate for a visible, content-bearing
+        # path, which is the exact complement of what this scope wants, so it
+        # is inverted rather than reimplemented. The project-extension filter
+        # is dropped too: an editable project file inside an auto-save
+        # directory is generated cache by the same rule.
+        scope_predicate = f"NOT ({visible_predicate})"
+    else:
+        project_predicate, project_parameters = _project_scope_sql(
+            "locations.path"
+        )
+        scope_predicate = f"({visible_predicate}) AND ({project_predicate})"
+        parameters.extend(project_parameters)
+    prefix = normalized_scope_path_prefix(path_prefix)
+    if prefix is None:
+        prefix_predicate = "1"
+    else:
+        # The prefix is operator-supplied, so it is bound rather than
+        # interpolated. like_prefix_pattern case-folds it, normalizes the
+        # trailing separator and escapes the LIKE wildcards, which matters
+        # because "_" is a wildcard and a commonplace character in folder
+        # names.
+        prefix_predicate = f"lower(locations.path) LIKE ? ESCAPE '{LIKE_ESCAPE}'"
+        parameters.append(like_prefix_pattern(prefix))
     parameters.append(int(include_analyzed))
     rows = connection.execute(
         f"""
@@ -141,8 +187,8 @@ def _analysis_scope_rows(
         WHERE lower(locations.path) NOT LIKE '%.ds_store'
           AND lower(locations.path) NOT LIKE '%\\desktop.ini'
           AND lower(locations.path) NOT LIKE '%\\thumbs.db'
-          AND ({visible_predicate})
-          AND ({project_predicate})
+          AND ({scope_predicate})
+          AND ({prefix_predicate})
           AND (? OR NOT EXISTS (
             SELECT 1 FROM analysis_results result
             WHERE result.asset_id = assets.id
@@ -160,7 +206,12 @@ def _analysis_scope_rows(
     for row in rows:
         source = Path(str(row["source_path"]))
         metadata = json.loads(row["media_metadata_json"] or "{}")
-        if scope_kind == "raw":
+        if scope_kind == "artifacts":
+            # The repository rule is the single authority on what counts as a
+            # generated artifact. Asking it directly keeps enrolment identical
+            # to the exclusion decision the run will make for each item.
+            matches = is_hidden_support_path(source)
+        elif scope_kind == "raw":
             matches = source.suffix.lower() in RAW_EXTENSIONS
         else:
             matches = _analysis_media_bucket(source, metadata) == scope_kind
@@ -425,12 +476,14 @@ def analysis_scope_preview(
     *,
     include_analyzed: bool = False,
     scope_kind: str = "all",
+    path_prefix: str | Path | None = None,
 ) -> dict[str, Any]:
     if scope_kind not in ANALYSIS_SCOPE_KINDS:
         raise ValueError("unsupported analysis scope")
     return analysis_scope_previews(
         db_path,
         include_analyzed=include_analyzed,
+        path_prefix=path_prefix,
     )[scope_kind]
 
 
@@ -438,6 +491,7 @@ def analysis_scope_previews(
     db_path: Path,
     *,
     include_analyzed: bool = False,
+    path_prefix: str | Path | None = None,
 ) -> dict[str, dict[str, Any]]:
     with connect(db_path) as connection:
         migrate(connection)
@@ -445,6 +499,16 @@ def analysis_scope_previews(
             connection,
             include_analyzed=include_analyzed,
             scope_kind="all",
+            path_prefix=path_prefix,
+        )
+        # The artifacts scope cannot be grouped out of the rows above: the
+        # base query filters generated artifacts away, so this kind needs its
+        # own pass.
+        artifact_rows = _analysis_scope_rows(
+            connection,
+            include_analyzed=include_analyzed,
+            scope_kind="artifacts",
+            path_prefix=path_prefix,
         )
     grouped: dict[str, list[Any]] = {
         "all": list(rows),
@@ -452,6 +516,7 @@ def analysis_scope_previews(
         "audio": [],
         "other": [],
         "raw": [],
+        "artifacts": list(artifact_rows),
     }
     for row in rows:
         source = Path(str(row["source_path"]))
@@ -472,11 +537,13 @@ def create_local_analysis_job(
     endpoint: str = DEFAULT_ENDPOINT,
     include_analyzed: bool = False,
     scope_kind: str = "all",
+    path_prefix: str | Path | None = None,
     requested_by: str = "human",
 ) -> str:
     model = model.strip()
     if not model:
         raise ValueError("choose a local model")
+    prefix = normalized_scope_path_prefix(path_prefix)
     job_id = str(uuid.uuid4())
     now = _utc_now()
     with connect(db_path) as connection:
@@ -485,18 +552,20 @@ def create_local_analysis_job(
             connection,
             include_analyzed=include_analyzed,
             scope_kind=scope_kind,
+            path_prefix=prefix,
         )
         preview = _analysis_scope_summary(rows)
         connection.execute(
             """
             INSERT INTO local_analysis_jobs(
                 id,state,model,endpoint,policy_version,scope_sha256,total_items,
-                requested_by,created_at,updated_at
-            ) VALUES (?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)
+                requested_by,created_at,updated_at,scope_kind,scope_path_prefix
+            ) VALUES (?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id, model, endpoint.rstrip("/"), POLICY_VERSION,
                 preview["scope_sha256"], len(rows), requested_by, now, now,
+                scope_kind, prefix,
             ),
         )
         connection.executemany(
@@ -522,6 +591,9 @@ def create_local_analysis_job(
                 "job_id": job_id, "model": model, "endpoint": endpoint,
                 "scope_sha256": preview["scope_sha256"],
                 "scope_kind": scope_kind,
+                "scope_path_prefix": prefix,
+                "placement_allowed": scope_kind
+                not in PLACEMENT_FREE_SCOPE_KINDS,
             },
         )
     return job_id
@@ -597,8 +669,8 @@ def create_selected_local_analysis_job(
             """
             INSERT INTO local_analysis_jobs(
                 id,state,model,endpoint,policy_version,scope_sha256,total_items,
-                requested_by,created_at,updated_at
-            ) VALUES (?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)
+                requested_by,created_at,updated_at,scope_kind
+            ) VALUES (?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
@@ -610,6 +682,7 @@ def create_selected_local_analysis_job(
                 requested_by,
                 now,
                 now,
+                "selected_content_repair",
             ),
         )
         connection.executemany(
@@ -894,6 +967,55 @@ def _validate_content_candidate(
     ):
         raise ValueError(
             "local analysis must include concrete content observations"
+        )
+
+
+def job_may_place(job: Any) -> bool:
+    """Whether this job is allowed to move originals at all.
+
+    The single authority for both movement call sites in a run: the managed
+    placement of each analyzed candidate, and the Inbox-wide companion sweep
+    that follows it. A job whose scope enrols only regenerable generated
+    artifacts answers False, so neither site runs.
+
+    The answer comes from the job row, which means it survives a restart and a
+    run started from another process, and it does not depend on which items
+    happened to be excluded first.
+    """
+    try:
+        scope_kind = job["scope_kind"]
+    except (KeyError, IndexError, TypeError):
+        # A job row written before schema 17 carries no scope kind. It cannot
+        # be a placement-free scope, because that scope did not exist, so it
+        # behaves exactly as it did before this guard.
+        return True
+    return str(scope_kind or "") not in PLACEMENT_FREE_SCOPE_KINDS
+
+
+def _record_placement_guard(
+    db_path: Path,
+    *,
+    job_id: str,
+    scope_kind: str,
+    item_count: int,
+) -> None:
+    """Write the skipped-placement decision to the audit trail.
+
+    AGENTS.md section 10: a correction is never silent. A job that declines to
+    place is a user-facing fact, not a debug detail.
+    """
+    with connect(db_path) as connection:
+        record_event(
+            connection,
+            kind="local_analysis_placement_guard",
+            state="skipped",
+            message=PLACEMENT_SKIPPED_FOR_SCOPE,
+            details={
+                "job_id": job_id,
+                "scope_kind": scope_kind,
+                "candidates_not_placed": item_count,
+                "companion_sweep_skipped": True,
+            },
         )
 
 
@@ -2112,7 +2234,21 @@ def _run_local_analysis_job(
     finalization_failures: list[dict[str, str]] = []
     blocked_placement_directories: set[str] = set()
     deferred_placements = 0
-    if run_id:
+    skipped_artifact_placements = 0
+    # The structural placement guard. Both of this run's movement sites are
+    # gated on this one answer, read from the job row: the managed placement
+    # loop immediately below, and the Inbox-wide companion sweep further down.
+    # Neither is left merely unreachable.
+    may_place = job_may_place(job)
+    if not may_place:
+        _record_placement_guard(
+            db_path,
+            job_id=job_id,
+            scope_kind=str(job["scope_kind"] or ""),
+            item_count=len(candidates),
+        )
+        _set_job_stage(db_path, job_id, "placement_skipped_for_scope")
+    if run_id and may_place:
         for candidate in candidates:
             # AGENTS.md section 10: no per-item failure in a batch may
             # abort the batch. One asset's metadata or placement problem
@@ -2159,6 +2295,14 @@ def _run_local_analysis_job(
                 last_move = None
                 for location in locations:
                     source_path = Path(location["source_path"])
+                    # Second layer, independent of the job's scope. A
+                    # generated artifact is regenerable cache and is never
+                    # placed into the archive, whichever scope enrolled it.
+                    # Unreachable while exclusion runs first, which is the
+                    # point: it holds if that ever changes.
+                    if is_hidden_support_path(source_path):
+                        skipped_artifact_placements += 1
+                        continue
                     placement = analysis_placement_for(source_path)
                     destination_key = (
                         str(placement.destination_directory).casefold()
@@ -2256,7 +2400,12 @@ def _run_local_analysis_job(
         counts["failed"] += len(finalization_failures)
         counts["complete"] = max(0, counts["complete"] - len(finalization_failures))
     companion_archive = None
-    if counts["failed"] == 0 and counts["pending"] == 0:
+    # The guard's second site. archive_contextual_inbox_companions takes only
+    # db_path: it is an Inbox-wide sweep, not scoped to this job's items, and
+    # it moves anything the job marked excluded. A cache-only job would
+    # therefore move the very files it just declined to place, so the same
+    # answer gates it.
+    if counts["failed"] == 0 and counts["pending"] == 0 and may_place:
         _set_job_stage(db_path, job_id, "archiving_project_companions")
         companion_archive = archive_contextual_inbox_companions(db_path)
     state = (
@@ -2296,6 +2445,11 @@ def _run_local_analysis_job(
                 "placement_failures": len(placement_failures),
                 "finalization_failures": len(finalization_failures),
                 "deferred_placements": deferred_placements,
+                "placement_allowed": may_place,
+                "placement_skipped_reason": (
+                    None if may_place else PLACEMENT_SKIPPED_FOR_SCOPE
+                ),
+                "skipped_artifact_placements": skipped_artifact_placements,
                 "companion_files_moved": (
                     companion_archive.moved if companion_archive else 0
                 ),

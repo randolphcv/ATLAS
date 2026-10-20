@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 
 @dataclass(frozen=True)
@@ -423,6 +423,23 @@ def migrate(connection: sqlite3.Connection) -> None:
             """
             ALTER TABLE local_analysis_jobs
             ADD COLUMN current_stage_updated_at TEXT
+            """
+        )
+    # Schema 17. The scope kind a job was created with, so a later run can
+    # tell what the job is for. A cache-only job must never place a file,
+    # and the run reads that decision from the job row rather than inferring
+    # it, so the guard survives a restart and a run from a separate process.
+    # Existing rows stay NULL, which is not a placement-free scope, so every
+    # job created before this column behaves exactly as it did.
+    if "scope_kind" not in columns:
+        connection.execute(
+            "ALTER TABLE local_analysis_jobs ADD COLUMN scope_kind TEXT"
+        )
+    if "scope_path_prefix" not in columns:
+        connection.execute(
+            """
+            ALTER TABLE local_analysis_jobs
+            ADD COLUMN scope_path_prefix TEXT
             """
         )
     item_columns = {

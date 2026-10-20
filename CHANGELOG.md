@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 0.22.12 - 2026-10-20
+
+- Analysis job creation now accepts an optional path prefix, so a job can be
+  confined to one folder instead of covering every matching asset in the
+  catalog. Scope was previously expressible only by media kind, which meant a
+  single ingest could not be analyzed on its own and the only targeted path was
+  an explicit asset selection capped at a thousand items. The prefix composes
+  with every existing scope kind, matches the catalog's stored path
+  case-insensitively, and reuses the archive tier's own prefix helper, so a
+  prefix written with or without a trailing separator selects the same assets
+  and an underscore in a folder name is matched literally rather than as a
+  wildcard.
+- A new `artifacts` scope enrols only the regenerable generated cache that the
+  repository's support-path rule already recognizes, and a structural guard
+  stops such a job from moving anything. Completing analysis authorizes managed
+  placement, and a run moves files at two sites: the placement of each analyzed
+  candidate, and an Inbox-wide companion sweep that is not scoped to the job at
+  all and would have moved the very files the job marked excluded. Cache items
+  previously avoided placement only because exclusion happened to short-circuit
+  first, which was incidental rather than a guarantee. The scope kind is now
+  recorded on the job, both sites read that one answer, and a second check
+  refuses to place a generated artifact whatever scope enrolled it, so clearing
+  cache from an ingest leaves every original where it is.
+
 ## 0.22.11 - 2026-10-19
 
 - The Desk seed threads and the conversation and catalog test fixtures no

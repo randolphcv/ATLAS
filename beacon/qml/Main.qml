@@ -619,6 +619,7 @@ ApplicationWindow {
         objectName: "localAnalysisDialog"
         property string scopeMode: "total"
         property string scopeKind: "visual"
+        property string scopePathPrefix: ""
         function scopeValue(key) {
             var readiness = backend.analysisReadiness || {}
             var scoped = readiness
@@ -655,6 +656,12 @@ ApplicationWindow {
         onOpened: {
             scopeMode = "total"
             scopeKind = "visual"
+            // The dropdown keeps its last selection across openings, so
+            // resetting scopeKind alone would leave the field showing one
+            // category while the job ran another.
+            localAnalysisScopeKind.currentIndex = 0
+            scopePathPrefix = ""
+            localAnalysisPathPrefix.text = ""
             includeAnalyzedAssets.checked = false
             backend.refreshAnalysisReadiness()
         }
@@ -730,12 +737,41 @@ ApplicationWindow {
                             { "label": "Visual media", "value": "visual" },
                             { "label": "Audio-only media", "value": "audio" },
                             { "label": "Camera RAW photos", "value": "raw" },
-                            { "label": "Other bounded content", "value": "other" }
+                            { "label": "Other bounded content", "value": "other" },
+                            { "label": "Generated cache artifacts (never placed)", "value": "artifacts" }
                         ]
                         onCurrentValueChanged: {
                             if (currentValue)
                                 localAnalysisDialog.scopeKind = currentValue
                         }
+                    }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    visible: localAnalysisDialog.scopeMode === "general"
+                             && localAnalysisDialog.scopeKind === "artifacts"
+                    text: "Generated cache artifacts are regenerable previews, autosaves and sidecars. They are recorded as excluded, and this scope never moves a file: neither managed placement nor the Inbox companion sweep runs."
+                    color: root.muted
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: localAnalysisDialog.scopeMode !== "granular"
+                    spacing: 10
+                    Text {
+                        text: "FOLDER"
+                        color: root.muted
+                        font.pixelSize: 8
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: 1.0
+                    }
+                    TextField {
+                        id: localAnalysisPathPrefix
+                        objectName: "localAnalysisPathPrefix"
+                        Layout.fillWidth: true
+                        placeholderText: "Optional: confine to a folder, blank for the whole archive"
+                        onTextChanged: localAnalysisDialog.scopePathPrefix = text
                     }
                 }
                 Rectangle {
@@ -916,6 +952,7 @@ ApplicationWindow {
                             localAnalysisModel.currentText,
                             localAnalysisDialog.scopeMode,
                             localAnalysisDialog.scopeKind,
+                            localAnalysisDialog.scopePathPrefix,
                             includeAnalyzedAssets.checked
                         )
                         localAnalysisDialog.close()

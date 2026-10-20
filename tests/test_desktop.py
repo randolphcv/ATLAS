@@ -1192,6 +1192,94 @@ raise SystemExit(app.exec())
                 msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
             )
 
+    def test_analysis_dialog_offers_artifacts_scope_and_a_path_field(
+        self,
+    ) -> None:
+        """The scope surface carries both additions; no second UI."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "SAMPLE_0001.txt"
+            source.write_text("Synthetic scope fixture.", encoding="utf-8")
+            catalog_file(
+                source,
+                root / "beacon.db",
+                stability_seconds=0,
+                include_media_probe=False,
+            )
+            environment = os.environ.copy()
+            environment["QT_QPA_PLATFORM"] = "offscreen"
+            environment["QT_QUICK_BACKEND"] = "software"
+            script = r"""
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QObject, QTimer, QUrl
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuickControls2 import QQuickStyle
+from PySide6.QtWidgets import QApplication
+
+from beacon.desktop_controller import DesktopController, DesktopSettings
+
+QQuickStyle.setStyle("Fusion")
+app = QApplication(["beacon-analysis-scope-test"])
+controller = DesktopController(DesktopSettings(Path(sys.argv[1]), Path(sys.argv[2])))
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("backend", controller)
+engine.rootContext().setContextProperty("previewMuted", True)
+qml = Path.cwd() / "beacon" / "qml" / "Main.qml"
+engine.load(QUrl.fromLocalFile(str(qml)))
+if not engine.rootObjects():
+    raise SystemExit(30)
+window = engine.rootObjects()[0]
+dialog = window.findChild(QObject, "localAnalysisDialog")
+kinds = window.findChild(QObject, "localAnalysisScopeKind")
+prefix = window.findChild(QObject, "localAnalysisPathPrefix")
+if dialog is None or kinds is None or prefix is None:
+    raise SystemExit(31)
+
+def verify():
+    values = [entry["value"] for entry in kinds.property("model")]
+    if "artifacts" not in values:
+        app.exit(32)
+        return
+    for legacy in ("visual", "audio", "raw", "other"):
+        if legacy not in values:
+            app.exit(33)
+            return
+    # The path field drives the dialog property the start button passes on.
+    prefix.setProperty("text", "fixture_client_a")
+    if dialog.property("scopePathPrefix") != "fixture_client_a":
+        app.exit(34)
+        return
+    if dialog.property("scopeKind") != "visual":
+        app.exit(35)
+        return
+    app.exit(0)
+
+dialog.open()
+QTimer.singleShot(250, verify)
+raise SystemExit(app.exec())
+"""
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    script,
+                    str(root / "beacon.db"),
+                    str(root / "backups"),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

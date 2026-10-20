@@ -17,12 +17,15 @@ from beacon.catalog import catalog_file
 from beacon.database import SCHEMA_VERSION, database_integrity
 from beacon.database import connect, migrate
 from beacon.local_analysis import (
+    ANALYSIS_SCOPE_KINDS,
     DEFERRED_DOCUMENT_EXTENSIONS,
     NON_CONTENT_COMPANION_EXTENSIONS,
     _artifact_exclusion_reason,
     _complete_analysis_exclusion,
     analysis_scope_preview,
+    analysis_scope_previews,
     create_local_analysis_job,
+    job_may_place,
     create_selected_local_analysis_job,
     list_local_analysis_jobs,
     recover_local_analysis_jobs,
@@ -34,7 +37,7 @@ from beacon.local_analysis import (
     _process_is_alive,
 )
 from beacon.media import should_probe
-from beacon.repository import asset_detail
+from beacon.repository import asset_detail, is_hidden_support_path
 from beacon.transcripts import get_asset_transcript, save_asset_transcript
 
 
@@ -1307,3 +1310,398 @@ class CompanionExclusionScopeTests(unittest.TestCase):
             self.assertEqual(row["state"], "complete")
             self.assertIsNone(row["error"])
             self.assertIsNotNone(row["excluded_reason"])
+
+
+class ScopedAnalysisEnrolmentTests(unittest.TestCase):
+    """A path prefix and an artifacts-only scope confine what a job enrols.
+
+    Fixtures are synthetic per AGENTS.md section 3: these names could not
+    occur in a real archive, and everything lives under a temporary
+    directory.
+    """
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.db = self.root / "runtime" / "beacon.db"
+        self.inside = self.root / "fixture_client_a" / "project_alpha"
+        self.outside = self.root / "fixture_client_b" / "project_beta"
+        # A directory whose name ends in ".prv" is the generated preview
+        # cache the 0.22.11 rule was written to catch.
+        self.cache_dir = self.inside / "project_alpha.prv"
+        for directory in (self.inside, self.outside, self.cache_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+        self.media_inside = self.inside / "SAMPLE_0001.mov"
+        self.media_outside = self.outside / "SAMPLE_0002.mov"
+        self.cache_render = self.cache_dir / "SAMPLE_0001_preview.mov"
+        self.cache_sidecar = self.inside / "SAMPLE_0001.cfa"
+        self.catalogued = (
+            self.media_inside,
+            self.media_outside,
+            self.cache_render,
+            self.cache_sidecar,
+        )
+        for index, source in enumerate(self.catalogued):
+            source.write_bytes(f"synthetic fixture bytes {index}".encode())
+            catalog_file(
+                source,
+                self.db,
+                stability_seconds=0,
+                include_media_probe=False,
+                include_thumbnail_generation=False,
+            )
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def _enrolled(self, job_id: str) -> set[str]:
+        with connect(self.db) as connection:
+            return {
+                str(row["source_path"]).casefold()
+                for row in connection.execute(
+                    "SELECT source_path FROM local_analysis_items WHERE job_id=?",
+                    (job_id,),
+                )
+            }
+
+    def _resolved(self, source: Path) -> str:
+        return str(source.resolve()).casefold()
+
+    # ---- group 1: the path prefix -------------------------------------
+
+    def test_path_prefix_enrols_only_assets_beneath_it(self) -> None:
+        job_id = create_local_analysis_job(
+            self.db,
+            model="fixture-model",
+            path_prefix=str(self.inside.resolve()),
+        )
+
+        enrolled = self._enrolled(job_id)
+        self.assertIn(self._resolved(self.media_inside), enrolled)
+        self.assertNotIn(self._resolved(self.media_outside), enrolled)
+
+    def test_path_prefix_matching_is_case_insensitive(self) -> None:
+        lowered = create_local_analysis_job(
+            self.db,
+            model="fixture-model",
+            path_prefix=str(self.inside.resolve()).lower(),
+        )
+        uppered = create_local_analysis_job(
+            self.db,
+            model="fixture-model",
+            path_prefix=str(self.inside.resolve()).upper(),
+        )
+
+        self.assertEqual(self._enrolled(lowered), self._enrolled(uppered))
+        self.assertIn(self._resolved(self.media_inside), self._enrolled(uppered))
+
+    def test_trailing_separator_on_the_prefix_changes_nothing(self) -> None:
+        bare = analysis_scope_preview(
+            self.db, path_prefix=str(self.inside.resolve())
+        )
+        trailing = analysis_scope_preview(
+            self.db, path_prefix=str(self.inside.resolve()) + os.sep
+        )
+
+        self.assertEqual(bare["assets"], trailing["assets"])
+        self.assertEqual(bare["scope_sha256"], trailing["scope_sha256"])
+        self.assertEqual(bare["assets"], 1)
+
+    def test_blank_prefix_is_the_same_as_no_prefix(self) -> None:
+        self.assertEqual(
+            analysis_scope_preview(self.db)["scope_sha256"],
+            analysis_scope_preview(self.db, path_prefix="   ")["scope_sha256"],
+        )
+
+    def test_prefix_composes_with_an_existing_scope_kind(self) -> None:
+        job_id = create_local_analysis_job(
+            self.db,
+            model="fixture-model",
+            scope_kind="other",
+            path_prefix=str(self.inside.resolve()),
+        )
+
+        self.assertEqual(
+            self._enrolled(job_id), {self._resolved(self.media_inside)}
+        )
+
+    # ---- group 2: the artifacts scope kind -----------------------------
+
+    def test_artifacts_scope_enrols_only_generated_cache(self) -> None:
+        job_id = create_local_analysis_job(
+            self.db, model="fixture-model", scope_kind="artifacts"
+        )
+
+        self.assertEqual(
+            self._enrolled(job_id),
+            {
+                self._resolved(self.cache_render),
+                self._resolved(self.cache_sidecar),
+            },
+        )
+
+    def test_artifacts_scope_matches_the_repository_rule(self) -> None:
+        preview = analysis_scope_preview(self.db, scope_kind="artifacts")
+
+        self.assertEqual(preview["assets"], 2)
+        self.assertTrue(is_hidden_support_path(self.cache_render))
+        self.assertTrue(is_hidden_support_path(self.cache_sidecar))
+        self.assertFalse(is_hidden_support_path(self.media_inside))
+
+    def test_artifacts_scope_composes_with_the_path_prefix(self) -> None:
+        confined = analysis_scope_preview(
+            self.db,
+            scope_kind="artifacts",
+            path_prefix=str(self.outside.resolve()),
+        )
+
+        self.assertEqual(confined["assets"], 0)
+
+    def test_artifacts_is_a_recognized_scope_kind(self) -> None:
+        self.assertIn("artifacts", ANALYSIS_SCOPE_KINDS)
+        with self.assertRaises(ValueError):
+            analysis_scope_preview(self.db, scope_kind="not-a-scope")
+
+    # ---- group 4: no regression on the existing scope kinds ------------
+
+    def test_existing_scope_kinds_are_unchanged(self) -> None:
+        previews = analysis_scope_previews(self.db)
+
+        # The two .mov files are the only content-bearing assets; the cache
+        # render and the .cfa sidecar stay outside every content scope.
+        self.assertEqual(previews["all"]["assets"], 2)
+        self.assertEqual(previews["other"]["assets"], 2)
+        self.assertEqual(previews["visual"]["assets"], 0)
+        self.assertEqual(previews["audio"]["assets"], 0)
+        self.assertEqual(previews["raw"]["assets"], 0)
+        self.assertEqual(previews["artifacts"]["assets"], 2)
+
+    def test_default_job_creation_is_unchanged(self) -> None:
+        job_id = create_local_analysis_job(self.db, model="fixture-model")
+
+        self.assertEqual(
+            self._enrolled(job_id),
+            {
+                self._resolved(self.media_inside),
+                self._resolved(self.media_outside),
+            },
+        )
+
+    def test_scope_kind_and_prefix_are_recorded_on_the_job(self) -> None:
+        job_id = create_local_analysis_job(
+            self.db,
+            model="fixture-model",
+            scope_kind="artifacts",
+            path_prefix=str(self.inside.resolve()),
+        )
+
+        with connect(self.db) as connection:
+            row = connection.execute(
+                "SELECT scope_kind,scope_path_prefix FROM local_analysis_jobs "
+                "WHERE id=?",
+                (job_id,),
+            ).fetchone()
+
+        self.assertEqual(row["scope_kind"], "artifacts")
+        self.assertEqual(
+            row["scope_path_prefix"], str(self.inside.resolve())
+        )
+
+
+class ArtifactsPlacementGuardTests(unittest.TestCase):
+    """An artifacts job must reach neither movement site in a run.
+
+    There are two: the managed placement of each analyzed candidate, and the
+    Inbox-wide companion sweep that follows it. The sweep takes only a
+    db_path, so it is not scoped to the job at all and would move the very
+    files the job just declined to place.
+    """
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.db = self.root / "runtime" / "beacon.db"
+        self.project = self.root / "fixture_client_a" / "project_alpha"
+        self.cache_dir = self.project / "project_alpha.prv"
+        self.cache_dir.mkdir(parents=True)
+        self.media = self.project / "SAMPLE_0001.mov"
+        self.cache_render = self.cache_dir / "SAMPLE_0001_preview.mov"
+        for index, source in enumerate((self.media, self.cache_render)):
+            source.write_bytes(f"synthetic fixture bytes {index}".encode())
+            catalog_file(
+                source,
+                self.db,
+                stability_seconds=0,
+                include_media_probe=False,
+                include_thumbnail_generation=False,
+            )
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    @staticmethod
+    def _analyzer(endpoint: str, model: str, asset: dict[str, object]) -> dict:
+        return {
+            "title": Path(str(asset["source_path"])).stem.title(),
+            "description": "Candidate derived from verified local context.",
+            "content_observations": [
+                "The bounded fixture contains locally verified content."
+            ],
+            "evidence_mode": "text_content",
+            "media_category": "text fixture",
+            "tags": ["local", "fixture"],
+            "privacy_flags": ["none detected from bounded context"],
+            "organization_suggestion": "Leave in test scope; no move authorized.",
+            "confidence": 0.8,
+        }
+
+    def test_artifacts_job_calls_neither_movement_site(self) -> None:
+        """THE guard test: cache and real media in range, nothing moves."""
+        job_id = create_local_analysis_job(
+            self.db, model="fixture-model", scope_kind="artifacts"
+        )
+
+        with connect(self.db) as connection:
+            enrolled = [
+                str(row["source_path"])
+                for row in connection.execute(
+                    "SELECT source_path FROM local_analysis_items WHERE job_id=?",
+                    (job_id,),
+                )
+            ]
+        # Only the cache item is enrolled, though both sit in range.
+        self.assertEqual(
+            [Path(path).name for path in enrolled],
+            ["SAMPLE_0001_preview.mov"],
+        )
+
+        with (
+            patch(
+                "beacon.local_analysis.commit_analyzed_file"
+            ) as commit_mock,
+            patch(
+                "beacon.local_analysis.archive_contextual_inbox_companions"
+            ) as sweep_mock,
+        ):
+            result = run_local_analysis_job(
+                self.db, job_id, analyzer=self._analyzer
+            )
+
+        self.assertEqual(commit_mock.call_count, 0)
+        self.assertEqual(sweep_mock.call_count, 0)
+        self.assertEqual(result.state, "complete")
+        self.assertEqual(result.excluded, 1)
+        self.assertTrue(self.media.exists())
+        self.assertTrue(self.cache_render.exists())
+
+    def test_the_guard_is_recorded_in_the_audit_trail(self) -> None:
+        job_id = create_local_analysis_job(
+            self.db, model="fixture-model", scope_kind="artifacts"
+        )
+
+        with (
+            patch("beacon.local_analysis.commit_analyzed_file"),
+            patch("beacon.local_analysis.archive_contextual_inbox_companions"),
+        ):
+            run_local_analysis_job(self.db, job_id, analyzer=self._analyzer)
+
+        with connect(self.db) as connection:
+            guard_events = connection.execute(
+                "SELECT details_json FROM system_events WHERE kind=?",
+                ("local_analysis_placement_guard",),
+            ).fetchall()
+
+        self.assertEqual(len(guard_events), 1)
+        details = json.loads(guard_events[0]["details_json"])
+        self.assertEqual(details["scope_kind"], "artifacts")
+        self.assertTrue(details["companion_sweep_skipped"])
+
+    def test_a_content_job_still_reaches_both_movement_sites(self) -> None:
+        """The guard discriminates; it is not a blanket disable."""
+        job_id = create_local_analysis_job(
+            self.db, model="fixture-model", scope_kind="all"
+        )
+
+        with (
+            patch(
+                "beacon.local_analysis.commit_analyzed_file",
+                return_value=(None, "fixture placement declined"),
+            ) as commit_mock,
+            patch(
+                "beacon.local_analysis.archive_contextual_inbox_companions",
+                return_value=SimpleNamespace(moved=0, skipped=0, failed=0),
+            ) as sweep_mock,
+            patch(
+                "beacon.local_analysis.placement_needs_clarification",
+                return_value=False,
+            ),
+        ):
+            run_local_analysis_job(self.db, job_id, analyzer=self._analyzer)
+
+        self.assertEqual(commit_mock.call_count, 1)
+        self.assertEqual(sweep_mock.call_count, 1)
+
+    def test_job_may_place_is_the_single_authority(self) -> None:
+        """Both call sites read this one answer, so unit-test it directly."""
+        self.assertFalse(job_may_place({"scope_kind": "artifacts"}))
+        for scope_kind in ("all", "visual", "audio", "other", "raw"):
+            with self.subTest(scope_kind=scope_kind):
+                self.assertTrue(job_may_place({"scope_kind": scope_kind}))
+        # A job row written before schema 17 carries no scope kind, and the
+        # placement-free scope did not exist then, so it keeps placing.
+        self.assertTrue(job_may_place({}))
+        self.assertTrue(job_may_place({"scope_kind": None}))
+
+    def test_generated_artifacts_are_never_placed_even_if_enrolled(
+        self,
+    ) -> None:
+        """The second layer, independent of the job's scope kind.
+
+        Simulates the exclusion rule failing to catch a cache file: the item
+        becomes a published candidate inside a placement-allowed job, and the
+        per-item guard must still refuse to move it.
+        """
+        job_id = create_local_analysis_job(
+            self.db, model="fixture-model", scope_kind="all"
+        )
+        with connect(self.db) as connection:
+            asset_id, sha256 = connection.execute(
+                "SELECT asset_id,sha256 FROM locations "
+                "JOIN assets ON assets.id=locations.asset_id WHERE path=?",
+                (str(self.cache_render.resolve()),),
+            ).fetchone()
+            connection.execute(
+                """
+                INSERT INTO local_analysis_items(
+                    id,job_id,asset_id,source_sha256,source_path,state
+                ) VALUES ('forced-cache-item', ?, ?, ?, ?, 'pending')
+                """,
+                (job_id, asset_id, sha256, str(self.cache_render.resolve())),
+            )
+
+        with (
+            patch(
+                "beacon.local_analysis._artifact_exclusion_reason",
+                return_value=None,
+            ),
+            patch(
+                "beacon.local_analysis.commit_analyzed_file",
+                return_value=(None, "fixture placement declined"),
+            ) as commit_mock,
+            patch(
+                "beacon.local_analysis.archive_contextual_inbox_companions",
+                return_value=SimpleNamespace(moved=0, skipped=0, failed=0),
+            ),
+            patch(
+                "beacon.local_analysis.placement_needs_clarification",
+                return_value=False,
+            ),
+        ):
+            run_local_analysis_job(self.db, job_id, analyzer=self._analyzer)
+
+        placed = {
+            Path(str(call.kwargs["source_path"])).name
+            for call in commit_mock.call_args_list
+        }
+        self.assertEqual(placed, {"SAMPLE_0001.mov"})
+        self.assertNotIn("SAMPLE_0001_preview.mov", placed)
