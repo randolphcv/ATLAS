@@ -87,16 +87,40 @@ operations.
 Originals are never modified or deleted. Beacon opens them read-only.
 
 Catalog observation is read-only. Managed placement is a separate, audited
-analysis-commit operation. Ambiguous placement requires clarification rather
-than a guess.
+analysis-commit operation. Ambiguous placement is never a guess: the item goes
+to the Unidentified holding zone, where it is a visible, countable pile
+awaiting a rule, rather than waiting in the Inbox where it would be
+indistinguishable from material nobody has looked at yet.
+
+**The Inbox means one thing: not yet looked at.** Nothing a job has reached a
+terminal state on is left there. Every analysed, excluded or failed item moves
+to a final destination or to a holding zone in the same operation, because an
+Inbox that mixes looked-at and not-looked-at material cannot be read by a
+human. Adopted by the owner's decision of 2026-10-20.
 
 Managed moves stay within approved archive roots, re-hash the source, refuse
 silent overwrite, verify destination bytes, and roll back on a failed
 post-move check.
 
+The approved roots are `Library`, `Assets`, `Projects`, and the bounded
+holding zones beneath `<ARCHIVE_ROOT>\Holding`: `Cache` for regenerable
+generated artifacts, `Review` for items whose analysis failed, and
+`Unidentified` for items no placement rule derives a destination for. The
+holding root is resolved from configuration like every other location. A
+holding zone is a managed-placement destination with the same guarantees as
+the other three; it is not a dumping ground, and nothing is ever deleted from
+one.
+
+Regenerable generated artifacts are never placed into `Library`, `Assets` or
+`Projects`, whichever scope enrolled them. They do leave the Inbox, to
+`Holding\Cache`: cache that has been classified has been looked at.
+
 Relative structure beneath the Inbox is preserved verbatim when material is
-placed into the archive. The path of a file below `<INBOX>` is reproduced below
-its archive destination. Placement reorganizes nothing.
+placed into the archive or into a holding zone. The path of a file below
+`<INBOX>` is reproduced below its destination. Placement reorganizes nothing,
+and material that belongs together stays together: an editable project file
+and the camera index beside it follow their media to the same folder rather
+than being separated by class.
 
 Never change third-party storage configuration.
 

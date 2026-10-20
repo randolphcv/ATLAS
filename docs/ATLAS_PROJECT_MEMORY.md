@@ -29,19 +29,29 @@ inspection. No application run was involved.
   ffprobe demuxes it. There is no MXF test coverage. That is a gap, not a
   defect in behavior.
 
+### Inbox-clearing rule
+
+Adopted by the owner's decision of 2026-10-20. The Inbox means one thing: not
+yet looked at. Every item an analysis job reaches a terminal state on leaves
+it in the same operation, to a final destination or to one of three bounded
+holding zones. 0.22.15 delivers the rule. Authored and camera-written files
+follow their media rather than being separated by class; regenerable cache
+leaves the Inbox but does not enter the archive proper.
+
 ### Delivered build
 
 Verified 2026-10-20.
 
-- Beacon 0.22.14 is the live version. The package version, the project
+- Beacon 0.22.15 is the live version. The package version, the project
   metadata version and the version resource stamped into the executable all
-  report 0.22.14, in the numeric form as well as the dotted one, and a test
-  now fails if any of them disagrees. The staging executable the owner
-  launches and the versioned release directory for 0.22.14 are delivered in
-  the same change and hash identically; the previously newest release
-  directory was 0.22.13, and the six directories from 0.22.9 onward are
-  retained. The running desktop process observed during this change was the
-  0.22.13 release copy, not the staging copy, and was left running.
+  report 0.22.15, in the numeric form as well as the dotted one, and a test
+  fails if any of them disagrees. The staging executable the owner launches
+  and the versioned release directory for 0.22.15 are delivered in the same
+  change and hash identically; the previously newest release directory was
+  0.22.14, and the seven directories from 0.22.9 onward are retained. The
+  owner closed the running desktop process before this build, because the
+  staging copy was the running one and Windows will not overwrite a running
+  executable.
 - The version resource is generated at build time and is no longer tracked,
   so the stamp cannot be carried forward from a previous release by a commit
   that forgets it. The build refuses to package if the resource it just wrote
