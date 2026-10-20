@@ -47,7 +47,7 @@ PILOT_DESK_THREADS: tuple[Mapping[str, object], ...] = (
     },
     {
         "seed_key": "pilot-20260723:portrait-context",
-        "subject": "Who and what should I remember for “Us.JPG”?",
+        "subject": "Who and what should I remember for “SAMPLE_0001.JPG”?",
         "kind": "clarification",
         "priority": "normal",
         "requires_approval": False,
@@ -62,22 +62,22 @@ PILOT_DESK_THREADS: tuple[Mapping[str, object], ...] = (
     },
     {
         "seed_key": "pilot-20260723:branded-video-context",
-        "subject": "Confirm the Happy Egg Co. video context",
+        "subject": "Confirm the fixture_client_a video context",
         "kind": "clarification",
         "priority": "normal",
         "requires_approval": False,
         "body": (
-            "Optional enrichment — the short video is clearly a Happy Egg Co. "
+            "Optional enrichment — the short video is clearly a fixture_client_a "
             "branded spot, but the client, campaign, usage rights, and filename "
             "shorthand are not verified. What project or client should it belong "
-            "to? Do “Scott N Belinda,” “06,” “R2,” and “V1” identify talent, "
-            "spot number, revision, and version? Please correct any part that "
-            "does not."
+            "to? Do “person_alpha N person_beta,” “00,” “R0,” and “V0” identify "
+            "talent, spot number, revision, and version? Please correct any "
+            "part that does not."
         ),
     },
     {
         "seed_key": "pilot-20260723:audio-context",
-        "subject": "How should I describe “Desert Dividend”?",
+        "subject": "How should I describe “SAMPLE_0002.wav”?",
         "kind": "question",
         "priority": "normal",
         "requires_approval": False,

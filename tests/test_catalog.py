@@ -78,12 +78,12 @@ class CatalogTests(unittest.TestCase):
             self.db,
             asset_id=cataloged.asset_id,
             source_sha256=cataloged.sha256,
-            text="Anna discusses the northern lights during the retreat.",
+            text="person_alpha discusses the fixture landmark during event_alpha.",
             language="en",
             language_probability=0.99,
         )
 
-        results = search_assets(self.db, query="northern lights")
+        results = search_assets(self.db, query="fixture landmark")
 
         self.assertEqual(results["total"], 1)
         self.assertEqual(results["items"][0]["id"], cataloged.asset_id)

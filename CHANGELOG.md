@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.22.11 - 2026-10-19
+
+- The Desk seed threads and the conversation and catalog test fixtures no
+  longer carry deployment names. Shipped application source and test fixtures
+  held real client, personal, place and archive-filename values, which a
+  repository must never record, so each one is replaced with a synthetic value
+  that could not occur in a real archive. The fixtures still prove what they
+  proved before: distinct people remain distinct tokens, the exact-filename
+  retrieval still has a same-suffix neighbour to discriminate against, and the
+  transcript search still matches a multi-word phrase.
+- The packaged executable's copyright attribution now names the business
+  entity rather than an individual. The notice is compiled into the delivered
+  executable's metadata, so the personal name travelled with every build; the
+  entity name is the correct holder and keeps the attribution out of the class
+  of personal data the repository excludes.
+
 ## 0.22.10 - 2026-10-19
 
 - The desktop window no longer freezes while a job runs. A repeating five-second

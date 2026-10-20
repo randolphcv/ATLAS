@@ -140,7 +140,7 @@ class ConversationWorkerTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.db = self.root / "beacon.db"
-        self.source = self.root / "Iceland-waterfall.mov"
+        self.source = self.root / "place_alpha-waterfall.mov"
         self.source.write_bytes(b"synthetic waterfall footage")
         self.asset = catalog_file(
             self.source,
@@ -195,7 +195,7 @@ class ConversationWorkerTests(unittest.TestCase):
         thread_id = create_human_thread(
             self.db,
             subject="Find the waterfall footage",
-            body="Please find my Iceland waterfall clip.",
+            body="Please find my place_alpha waterfall clip.",
         )
         adapter = FakeAdapter()
 
@@ -525,13 +525,13 @@ class ConversationWorkerTests(unittest.TestCase):
         thread_id = create_human_thread(
             self.db,
             subject="Find one exact file",
-            body="Please find Iceland-waterfall.mov.",
+            body="Please find place_alpha-waterfall.mov.",
         )
         adapter = FakeAdapter(
             [
                 AgentAction(
                     "search_catalog",
-                    queries=("Iceland-waterfall.mov",),
+                    queries=("place_alpha-waterfall.mov",),
                     media_type="video",
                     result_limit=1,
                 ),
@@ -775,7 +775,7 @@ class ConversationWorkerTests(unittest.TestCase):
         reply_to_thread(
             self.db,
             thread_id,
-            "That's wrong. I meant only the Iceland waterfall.",
+            "That's wrong. I meant only the place_alpha waterfall.",
         )
         correcting = FakeAdapter(
             [
@@ -804,7 +804,7 @@ class ConversationWorkerTests(unittest.TestCase):
             "What did I mean before?",
         )
         later = FakeAdapter(
-            [AgentAction("respond", message="You meant only Iceland.")]
+            [AgentAction("respond", message="You meant only place_alpha.")]
         )
 
         result = run_worker_once(
@@ -848,33 +848,33 @@ class ConversationWorkerTests(unittest.TestCase):
 
     def test_agent_controls_multi_concept_cooccurrence_search(self) -> None:
         together = self._catalog_named(
-            "connor-and-jules.jpg",
-            title="Connor and Jules together",
-            description="A portrait containing Connor and Jules.",
-            people=["Connor", "Jules"],
+            "person_alpha-and-person_beta.jpg",
+            title="person_alpha and person_beta together",
+            description="A portrait containing person_alpha and person_beta.",
+            people=["person_alpha", "person_beta"],
         )
         self._catalog_named(
-            "connor-only.jpg",
-            title="Connor alone",
-            description="A portrait containing Connor.",
-            people=["Connor"],
+            "person_alpha-only.jpg",
+            title="person_alpha alone",
+            description="A portrait containing person_alpha.",
+            people=["person_alpha"],
         )
         self._catalog_named(
-            "jules-only.jpg",
-            title="Jules alone",
-            description="A portrait containing Jules.",
-            people=["Jules"],
+            "person_beta-only.jpg",
+            title="person_beta alone",
+            description="A portrait containing person_beta.",
+            people=["person_beta"],
         )
         thread_id = create_human_thread(
             self.db,
-            subject="Connor and Jules",
-            body="Find me an image of Connor and Jules.",
+            subject="person_alpha and person_beta",
+            body="Find me an image of person_alpha and person_beta.",
         )
         adapter = FakeAdapter(
             [
                 AgentAction(
                     "search_catalog",
-                    queries=("Connor", "Jules"),
+                    queries=("person_alpha", "person_beta"),
                     match_strategy="all",
                     media_type="photo",
                     result_limit=4,
