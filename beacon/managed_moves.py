@@ -392,12 +392,61 @@ def _settle_candidates(
     ).fetchall()
 
 
+def _settle_plan(rows: list[Any]) -> list[tuple[Any, Path, SettleDecision]]:
+    """The subset of candidates that settle would actually move, and where.
+
+    Shared by the counter and the mover so the number the dialog shows and the
+    work the job does cannot disagree. A count that is computed a second way
+    is a count that drifts.
+    """
+    plan: list[tuple[Any, Path, SettleDecision]] = []
+    for row in rows:
+        source = Path(str(row["path"]))
+        state = str(row["item_state"]) if row["item_state"] else None
+        failed = state == "failed"
+        terminal = (
+            failed
+            or row["excluded_reason"] is not None
+            or bool(row["analysed"])
+            or state == "complete"
+        )
+        if not terminal:
+            continue
+        decision = settle_destination_for(source, failed=failed)
+        if decision.destination_directory is None:
+            continue
+        plan.append((row, source, decision))
+    return plan
+
+
+def count_settleable(
+    db_path: Path,
+    *,
+    path_prefix: str | Path | None = None,
+) -> dict[str, int]:
+    """How many items settle would move under this prefix, and to where.
+
+    Read-only. This is what makes a drain startable: a folder can hold
+    thousands of files that have all been looked at and have nowhere left to
+    be analysed, and the operator still needs to be able to clear it.
+    """
+    with connect(db_path) as connection:
+        migrate(connection)
+        rows = _settle_candidates(connection, path_prefix)
+    counts: dict[str, int] = {"total": 0}
+    for _, _, decision in _settle_plan(rows):
+        counts["total"] += 1
+        counts[decision.outcome] = counts.get(decision.outcome, 0) + 1
+    return counts
+
+
 def settle_inbox_items(
     db_path: Path,
     *,
     path_prefix: str | Path | None = None,
     requested_by: str = "Beacon settle",
     authorization_note: str = "",
+    progress_callback: Any = None,
 ) -> SettleResult:
     """Move every looked-at item out of the Inbox. One item never stops another.
 
@@ -419,8 +468,12 @@ def settle_inbox_items(
     def count(mapping: dict[str, int], key: str) -> None:
         mapping[key] = mapping.get(key, 0) + 1
 
+    plan = _settle_plan(rows)
+    total = len(plan)
+    # Items the plan did not take: not looked at yet, or looked at with no
+    # destination to go to. Counted here rather than inside the move loop so
+    # the loop below is only the work that actually moves something.
     for row in rows:
-        source = Path(str(row["path"]))
         state = str(row["item_state"]) if row["item_state"] else None
         failed = state == "failed"
         terminal = (
@@ -433,10 +486,18 @@ def settle_inbox_items(
             # Not looked at yet. This is the one thing the Inbox is for.
             not_terminal += 1
             continue
-        decision = settle_destination_for(source, failed=failed)
+        decision = settle_destination_for(Path(str(row["path"])), failed=failed)
         if decision.destination_directory is None:
             count(outcomes, decision.outcome)
-            continue
+
+    for index, (row, source, decision) in enumerate(plan, start=1):
+        if progress_callback is not None:
+            # A settle over a large folder runs for hours. Without this the
+            # window showed a blank stage for the whole run and looked hung.
+            try:
+                progress_callback(index, total, decision.outcome)
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("settle progress callback failed")
         if not source.exists():
             count(outcomes, SETTLE_MISSING)
             continue

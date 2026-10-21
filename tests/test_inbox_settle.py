@@ -35,6 +35,7 @@ from beacon.managed_moves import (
     SETTLE_PLACED,
     SETTLE_REVIEW,
     SETTLE_UNIDENTIFIED,
+    count_settleable,
     settle_destination_for,
     settle_inbox_items,
 )
@@ -592,6 +593,128 @@ class InboxSettleTests(unittest.TestCase):
             "a full scan per candidate is what stalled the real drain:\n"
             + joined,
         )
+
+    def test_count_settleable_matches_what_settle_then_moves(self) -> None:
+        """The dialog's number and the job's work must be the same number.
+
+        This is what makes a drain startable: a folder can hold files that
+        have all been looked at, with nothing left to analyse, and the
+        operator still has to be able to clear it. If the count and the move
+        were computed separately they would drift, so both read one plan.
+        """
+        for index, relative in enumerate(
+            (
+                "fixture_client_a/project_alpha/SAMPLE_0020.mov",
+                "fixture_client_a/project_alpha/SAMPLE_0020.xmp",
+                "fixture_client_a/project_alpha/cut.prproj",
+            )
+        ):
+            asset = self._add(relative, b"settleable %d" % index)
+            self._item(
+                asset, self.inbox / relative, state="complete",
+                excluded_reason="fixture exclusion",
+            )
+        # One item not looked at yet: counted by neither.
+        pending = self._add(
+            "fixture_client_a/project_alpha/SAMPLE_0021.mov", b"pending"
+        )
+        self._item(
+            pending,
+            self.inbox / "fixture_client_a/project_alpha/SAMPLE_0021.mov",
+            state="pending",
+        )
+
+        with (
+            patch("beacon.managed_moves.INBOX_ROOT", self.inbox),
+            patch("beacon.managed_moves.PROJECTS_ROOT", self.projects),
+            patch("beacon.managed_moves.CACHE_ROOT", self.cache),
+            patch("beacon.managed_moves.REVIEW_ROOT", self.review),
+            patch("beacon.managed_moves.UNIDENTIFIED_ROOT", self.unidentified),
+        ):
+            counted = count_settleable(self.db)
+        self.assertEqual(counted["total"], 3, "the pending item is not work")
+        self.assertEqual(counted.get("cache"), 1)
+        self.assertEqual(counted.get("placed"), 2)
+
+        result = self._settled()
+        self.assertEqual(
+            result.moved,  # type: ignore[attr-defined]
+            counted["total"],
+            "the count promised exactly what the move delivered",
+        )
+
+    def test_count_settleable_respects_the_folder_prefix(self) -> None:
+        """The old gate counted archive-wide while the job was folder-scoped."""
+        for relative in (
+            "fixture_client_a/project_alpha/SAMPLE_0022.mov",
+            "fixture_client_b/project_beta/SAMPLE_0023.mov",
+        ):
+            asset = self._add(relative, relative.encode())
+            self._item(
+                asset, self.inbox / relative, state="complete",
+                excluded_reason="fixture exclusion",
+            )
+        with (
+            patch("beacon.managed_moves.INBOX_ROOT", self.inbox),
+            patch("beacon.managed_moves.PROJECTS_ROOT", self.projects),
+            patch("beacon.managed_moves.CACHE_ROOT", self.cache),
+            patch("beacon.managed_moves.REVIEW_ROOT", self.review),
+            patch("beacon.managed_moves.UNIDENTIFIED_ROOT", self.unidentified),
+        ):
+            everything = count_settleable(self.db)
+            inside = count_settleable(
+                self.db,
+                path_prefix=self.inbox / "fixture_client_a" / "project_alpha",
+            )
+            outside = count_settleable(
+                self.db, path_prefix=self.inbox / "fixture_client_c"
+            )
+        self.assertEqual(everything["total"], 2)
+        self.assertEqual(inside["total"], 1, "only the scoped folder")
+        self.assertEqual(outside["total"], 0, "a folder with nothing in it")
+
+    def test_settle_reports_progress_for_every_item(self) -> None:
+        """A job that runs for an hour must never show a blank stage again."""
+        relatives = [
+            f"fixture_client_a/project_alpha/SAMPLE_003{index}.mov"
+            for index in range(4)
+        ]
+        for index, relative in enumerate(relatives):
+            asset = self._add(relative, b"progress %d" % index)
+            self._item(
+                asset, self.inbox / relative, state="complete",
+                excluded_reason="fixture exclusion",
+            )
+        seen: list[tuple[int, int, str]] = []
+        result = self._settled(
+            progress_callback=lambda done, total, outcome: seen.append(
+                (done, total, outcome)
+            )
+        )
+        self.assertEqual(result.moved, 4)  # type: ignore[attr-defined]
+        self.assertEqual(
+            [done for done, _, _ in seen],
+            [1, 2, 3, 4],
+            "one report per item, counting up",
+        )
+        self.assertEqual({total for _, total, _ in seen}, {4})
+        self.assertEqual({outcome for _, _, outcome in seen}, {SETTLE_PLACED})
+
+    def test_a_failing_progress_callback_does_not_stop_the_settle(self) -> None:
+        """Reporting is not the work. A broken reporter must not strand files."""
+        relative = "fixture_client_a/project_alpha/SAMPLE_0040.mov"
+        asset = self._add(relative, b"resilient")
+        self._item(
+            asset, self.inbox / relative, state="complete",
+            excluded_reason="fixture exclusion",
+        )
+
+        def broken(done: int, total: int, outcome: str) -> None:
+            raise RuntimeError("fixture reporter failure")
+
+        result = self._settled(progress_callback=broken)
+        self.assertEqual(result.moved, 1)  # type: ignore[attr-defined]
+        self.assertEqual(self._remaining_under_inbox(), [])
 
     def test_project_files_carry_the_class_in_their_reason(self) -> None:
         """Enrolment must produce a reason naming the class, not a bare skip."""
