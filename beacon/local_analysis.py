@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -61,6 +62,11 @@ DEFERRED_DOCUMENT_EXTENSIONS = frozenset({".key"})
 EMPTY_FILE_SHA256 = hashlib.sha256(b"").hexdigest()
 ANALYSIS_SCOPE_KINDS = frozenset(
     {"all", "visual", "audio", "other", "raw", "artifacts"}
+)
+# A job in one of these has finished one way or another and is not waiting on
+# anything. Cancelling one is a no-op rather than an error.
+TERMINAL_JOB_STATES = frozenset(
+    {"complete", "partial", "failed", "cancelled"}
 )
 # A scope that enrols only regenerable cache may never move a file. Analysis
 # normally authorizes placement, so the exception is named here and read from
@@ -774,6 +780,192 @@ def request_local_analysis_cancel(db_path: Path, job_id: str) -> None:
         )
 
 
+def cancel_local_analysis_job(db_path: Path, job_id: str) -> str:
+    """End a job whether or not a worker is still alive to notice.
+
+    ``request_local_analysis_cancel`` sets a flag the run loop checks between
+    items. That is the right mechanism for a running job and no mechanism at
+    all for a paused one: nothing is looping, so the flag is read by nobody
+    and the job sits in a non-terminal state forever. A paused job with no
+    live worker is therefore terminalized here and now.
+
+    Items left pending are released, not deleted. The rows are the record of
+    what the job enrolled, and an item's history outlives the job that
+    enrolled it. Nothing is moved and no managed move is touched.
+
+    Returns "requested" when a live worker will stop cooperatively, or
+    "cancelled" when the job was terminalized directly.
+    """
+    with connect(db_path) as connection:
+        migrate(connection)
+        job = connection.execute(
+            "SELECT state, worker_pid FROM local_analysis_jobs WHERE id=?",
+            (job_id,),
+        ).fetchone()
+        if job is None:
+            raise LookupError("analysis job not found")
+        state = str(job["state"])
+        if state in TERMINAL_JOB_STATES:
+            return state
+        worker_alive = state == "running" and _process_is_alive(
+            job["worker_pid"]
+        )
+        if worker_alive:
+            connection.execute(
+                """
+                UPDATE local_analysis_jobs
+                SET cancel_requested=1,updated_at=? WHERE id=?
+                """,
+                (_utc_now(), job_id),
+            )
+            return "requested"
+        released = connection.execute(
+            """
+            UPDATE local_analysis_items SET state='pending',started_at=NULL
+            WHERE job_id=? AND state='running'
+            """,
+            (job_id,),
+        ).rowcount
+        pending = connection.execute(
+            "SELECT COUNT(*) AS n FROM local_analysis_items "
+            "WHERE job_id=? AND state='pending'",
+            (job_id,),
+        ).fetchone()["n"]
+        now = _utc_now()
+        connection.execute(
+            """
+            UPDATE local_analysis_jobs
+            SET state='cancelled',cancel_requested=0,current_asset_id=NULL,
+                current_stage=NULL,current_stage_updated_at=?,
+                worker_pid=NULL,completed_at=?,updated_at=?
+            WHERE id=?
+            """,
+            (now, now, now, job_id),
+        )
+        record_event(
+            connection,
+            kind="local_analysis_job",
+            state="cancelled",
+            message="Analysis job cancelled by the owner with no live worker",
+            details={
+                "job_id": job_id,
+                "previous_state": state,
+                "running_items_released": released,
+                "pending_items_left": pending,
+            },
+        )
+    return "cancelled"
+
+
+def close_local_analysis_job(db_path: Path, job_id: str) -> dict[str, Any]:
+    """Accept a job's outcome as final without retrying or re-enrolling it.
+
+    A job that ends partial has done work worth keeping and work that failed.
+    Leaving it partial means it reads as unfinished forever; retrying it means
+    re-running what already succeeded. Closing records that the owner read the
+    outcome and accepted it, with the counts as they stood.
+
+    Moves nothing, re-enrols nothing, deletes nothing. The retry control skips
+    a closed job, which is what stops a closed outcome being reopened by a
+    later click.
+    """
+    with connect(db_path) as connection:
+        migrate(connection)
+        job = connection.execute(
+            "SELECT state, closed_at FROM local_analysis_jobs WHERE id=?",
+            (job_id,),
+        ).fetchone()
+        if job is None:
+            raise LookupError("analysis job not found")
+        if job["closed_at"]:
+            raise ValueError("this job is already closed")
+        if str(job["state"]) == "running":
+            raise ValueError("stop the analysis before closing the job")
+        counts = _counts(connection, job_id)
+        now = _utc_now()
+        summary = (
+            "Closed by owner: {complete} analysed, {excluded} excluded, "
+            "{failed} failed, {pending} left pending.".format(**counts)
+        )
+        connection.execute(
+            """
+            UPDATE local_analysis_jobs
+            SET state='cancelled',closed_at=?,cancel_requested=0,
+                current_asset_id=NULL,current_stage=NULL,
+                current_stage_updated_at=?,worker_pid=NULL,
+                completed_at=COALESCE(completed_at, ?),updated_at=?,error=?
+            WHERE id=?
+            """,
+            (now, now, now, now, summary, job_id),
+        )
+        record_event(
+            connection,
+            kind="local_analysis_job",
+            state="closed",
+            message=summary,
+            details={"job_id": job_id, "previous_state": str(job["state"]),
+                     **counts},
+        )
+    return {"job_id": job_id, "summary": summary, **counts}
+
+
+def cancellable_local_analysis_jobs(db_path: Path) -> list[dict[str, Any]]:
+    """Jobs the owner can end: anything not already in a terminal state."""
+    with connect(db_path) as connection:
+        migrate(connection)
+        rows = connection.execute(
+            """
+            SELECT id, state, total_items FROM local_analysis_jobs
+            WHERE state NOT IN ('complete','partial','failed','cancelled')
+            ORDER BY created_at
+            """
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def closeable_local_analysis_jobs(db_path: Path) -> list[dict[str, Any]]:
+    """Jobs sitting in partial that the owner has not yet closed."""
+    with connect(db_path) as connection:
+        migrate(connection)
+        rows = connection.execute(
+            """
+            SELECT id, state, total_items FROM local_analysis_jobs
+            WHERE state='partial' AND closed_at IS NULL
+            ORDER BY created_at
+            """
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def cancel_open_local_analysis_jobs(db_path: Path) -> list[dict[str, str]]:
+    """Cancel every job that is not terminal. One item never stops another."""
+    results: list[dict[str, str]] = []
+    for job in cancellable_local_analysis_jobs(db_path):
+        job_id = str(job["id"])
+        try:
+            outcome = cancel_local_analysis_job(db_path, job_id)
+        except Exception as error:  # noqa: BLE001
+            LOGGER.exception("cancelling one job failed")
+            outcome = f"error: {str(error)[:120]}"
+        results.append({"job_id": job_id, "outcome": outcome})
+    return results
+
+
+def close_partial_local_analysis_jobs(db_path: Path) -> list[dict[str, Any]]:
+    """Close every open partial job. One failure never stops the rest."""
+    results: list[dict[str, Any]] = []
+    for job in closeable_local_analysis_jobs(db_path):
+        job_id = str(job["id"])
+        try:
+            results.append(close_local_analysis_job(db_path, job_id))
+        except Exception as error:  # noqa: BLE001
+            LOGGER.exception("closing one job failed")
+            results.append(
+                {"job_id": job_id, "error": str(error)[:120]}
+            )
+    return results
+
+
 def recover_local_analysis_jobs(db_path: Path) -> int:
     with connect(db_path) as connection:
         migrate(connection)
@@ -837,12 +1029,17 @@ def retry_local_analysis_failures(db_path: Path, job_id: str) -> int:
     with connect(db_path) as connection:
         migrate(connection)
         job = connection.execute(
-            "SELECT state FROM local_analysis_jobs WHERE id=?", (job_id,)
+            "SELECT state, closed_at FROM local_analysis_jobs WHERE id=?",
+            (job_id,),
         ).fetchone()
         if job is None:
             raise LookupError("analysis job not found")
         if job["state"] == "running":
             raise ValueError("wait for analysis to stop before retrying failures")
+        if job["closed_at"]:
+            # The owner read this job's outcome and accepted it. Reopening it
+            # on a later click would undo a deliberate decision.
+            raise ValueError("this job was closed by the owner; it is final")
         cursor = connection.execute(
             """
             UPDATE local_analysis_items
@@ -2439,11 +2636,30 @@ def _run_local_analysis_job(
     # is settled to the review zone; it no longer strands its neighbours.
     if may_place:
         _set_job_stage(db_path, job_id, "settling_inbox")
+        # The stage line is the only progress an operator sees, and a settle
+        # over a large folder runs for hours. Writing it per item would be
+        # thousands of needless catalog writes, so it is throttled to a few
+        # seconds: often enough that the window never looks hung, rarely
+        # enough that it costs nothing against the work itself.
+        last_reported = [0.0]
+
+        def report_settle(done: int, total: int, outcome: str) -> None:
+            now = time.monotonic()
+            if done != 1 and done != total and now - last_reported[0] < 3.0:
+                return
+            last_reported[0] = now
+            _set_job_stage(
+                db_path,
+                job_id,
+                f"settling_inbox {done}/{total} -> {outcome}",
+            )
+
         settled = settle_inbox_items(
             db_path,
             path_prefix=scope_path_prefix,
             requested_by="Beacon local analyzer",
             authorization_note=f"analysis_run={run_id}; job={job_id}.",
+            progress_callback=report_settle,
         )
     # An excluded item is work that succeeded: the rule decided it, no model
     # was needed, and the settle step moved it. Reading only "complete" here

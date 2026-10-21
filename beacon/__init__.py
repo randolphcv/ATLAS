@@ -1,3 +1,3 @@
 """Beacon: the read-only librarian for ATLAS."""
 
-__version__ = "0.22.16"
+__version__ = "0.22.17"

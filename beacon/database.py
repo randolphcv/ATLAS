@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 
 @dataclass(frozen=True)
@@ -451,6 +451,31 @@ def migrate(connection: sqlite3.Connection) -> None:
             ALTER TABLE local_analysis_jobs
             ADD COLUMN scope_path_prefix TEXT
             """
+        )
+    # Schema 19. When the owner closes a job whose outcome they accept, the
+    # job is terminal but it is not a failure and it is not an abandonment.
+    # The state column's CHECK constraint has no 'closed' value, and altering
+    # a CHECK in SQLite means rebuilding the table -- which local_analysis_items
+    # holds a foreign key into. Rebuilding a referenced table in a live catalog
+    # to add a label is the wrong trade, so a closed job takes the existing
+    # terminal 'cancelled' state and this column records that the owner closed
+    # it deliberately, with the reason in error. Closed is therefore
+    # queryable as closed_at IS NOT NULL, and retry skips exactly that set.
+    if "closed_at" not in columns:
+        connection.execute(
+            "ALTER TABLE local_analysis_jobs ADD COLUMN closed_at TEXT"
+        )
+    location_columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(locations)")
+    }
+    # Schema 19. A catalog row whose file is no longer on disk. Verification
+    # marks it rather than deleting it: the row is evidence that the file was
+    # once observed, and an absent file may be a disconnected volume rather
+    # than a deletion. Cleared again when the file is seen, so the mark never
+    # outlives the condition.
+    if "missing_at" not in location_columns:
+        connection.execute(
+            "ALTER TABLE locations ADD COLUMN missing_at TEXT"
         )
     item_columns = {
         row[1]

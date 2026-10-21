@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+## 0.22.17 - 2026-10-21
+
+- A job that has stopped can now be ended, and a job whose outcome the owner
+  accepts can be closed. Cancellation set a flag the run loop reads between
+  items, which does nothing for a paused job because nothing is looping: the
+  flag was read by nobody and the job stayed non-terminal indefinitely. One
+  such job carried no folder prefix, so resuming it would have settled the
+  whole Inbox rather than one folder. A paused job with no live worker is now
+  ended outright, its running items released back to pending and none of its
+  rows deleted, while a job with a live worker still stops cooperatively
+  between items rather than being interrupted mid-move. Closing a partial job
+  records that the owner read the outcome and accepted it, with the counts as
+  they stood; it re-enrols nothing, retries nothing and moves nothing, and the
+  retry control refuses a closed job so a later click cannot reopen a
+  deliberate decision.
+- The control that starts a job is no longer blind to half of what a job
+  does. It was enabled on the count of items available to analyse, computed
+  without the folder prefix, which was the wrong number twice over: it
+  described the whole archive while the job it created was folder-scoped, and
+  it ignored settling entirely. A folder holding thousands of looked-at files
+  with nothing left to analyse therefore reported no work and could not be
+  cleared at all, which is exactly the state a stranded Inbox ends up in. The
+  dialog now names both kinds of work for the chosen folder, as items to
+  analyse and items to settle, and starts when either is non-zero. The count
+  and the work the job then does are read from one shared plan, so the number
+  shown cannot drift from the number moved. Reopening the dialog also no
+  longer discards a folder the operator has typed; resetting the scope mode
+  away from whole-catalog analysis is deliberate and remains.
+- Settling reports progress. A settle over a large folder runs for hours, and
+  the window showed a single unchanging stage line for the whole run, which is
+  indistinguishable from a hung application. The stage now carries how many
+  items have moved of how many, and which kind of destination the current one
+  is going to, throttled to a few seconds so that reporting costs nothing
+  against the work itself. A reporting failure is logged and never stops the
+  settle: reporting is not the work.
+- A catalog row whose file is no longer on disk can be marked as missing
+  through the application rather than by hand. Verification marks the row and
+  never deletes it, because the row is the evidence that the file was once
+  observed and an absent file may mean a disconnected volume rather than a
+  deletion; a mark is cleared again when the file is seen. Verification checks
+  the direct children of a path and does not descend unless asked, which is
+  deliberate: a recursive sweep of a folder that is being written to would
+  examine files mid-copy, find them absent, and record wrong state about files
+  that are arriving perfectly well.
+
 ## 0.22.16 - 2026-10-20
 
 - Settling the Inbox no longer scans the whole analysis-item history once per

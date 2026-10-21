@@ -43,6 +43,7 @@ from .desk import (
 from .desktop_models import DictListModel
 from .managed_moves import (
     MoveResult,
+    count_settleable,
     move_cataloged_file,
     recover_interrupted_managed_moves,
 )
@@ -71,6 +72,11 @@ from .local_analysis import (
     local_runtime_status,
     normalized_scope_path_prefix,
     recover_local_analysis_jobs,
+    cancel_open_local_analysis_jobs,
+    cancellable_local_analysis_jobs,
+    close_partial_local_analysis_jobs,
+    closeable_local_analysis_jobs,
+    normalized_scope_path_prefix,
     request_local_analysis_cancel,
     retry_local_analysis_failures,
     run_local_analysis_job,
@@ -1738,13 +1744,23 @@ class DesktopController(QObject):
             "analysisStageActive": bool(
                 latest_job and latest_job.get("current_stage")
             ),
+            # Cancellation is offered for any job that has not finished, not
+            # only a running one. A paused job is precisely the case that
+            # needed ending and could not be ended.
             "analysisCanCancel": bool(
                 latest_job and latest_job.get("state") == "running"
+            ),
+            "openJobCount": len(
+                cancellable_local_analysis_jobs(self.settings.db_path)
+            ),
+            "partialJobCount": len(
+                closeable_local_analysis_jobs(self.settings.db_path)
             ),
             "analysisCanRetry": bool(
                 latest_job
                 and analysis_failed > 0
                 and latest_job.get("state") != "running"
+                and not latest_job.get("closed_at")
             ),
             "runtimeAvailable": runtime.available,
             "runtimeLabel": (
@@ -1966,6 +1982,121 @@ class DesktopController(QObject):
             "Local analysis cancellation requested; Beacon will stop between assets.",
             "working",
         )
+
+    @Slot()
+    def cancelOpenAnalysisJobs(self) -> None:
+        """End every job that is not terminal, paused ones included.
+
+        The cancel above sets a flag the run loop reads between items, which
+        does nothing for a paused job: nothing is looping. A paused job with
+        no live worker therefore sat non-terminal indefinitely, and one such
+        job carried no scope prefix, so resuming it would have settled the
+        whole Inbox.
+        """
+        if self._busy:
+            self._set_status("Wait for the current operation to finish.", "working")
+            return
+        try:
+            results = cancel_open_local_analysis_jobs(self.settings.db_path)
+        except Exception as error:  # noqa: BLE001
+            LOGGER.exception("cancelling open analysis jobs failed")
+            self._set_status(f"Could not cancel jobs: {error}", "error")
+            return
+        if not results:
+            self._set_status("No open analysis job to cancel.", "working")
+        else:
+            cancelled = sum(
+                1 for row in results if row["outcome"] == "cancelled"
+            )
+            requested = sum(
+                1 for row in results if row["outcome"] == "requested"
+            )
+            parts = []
+            if cancelled:
+                parts.append(f"{cancelled:,} ended")
+            if requested:
+                parts.append(f"{requested:,} asked to stop between assets")
+            self._set_status(
+                "Analysis jobs: " + ", ".join(parts) + ".", "success"
+            )
+        self.refreshAnalysisReadiness()
+
+    @Slot()
+    def closePartialAnalysisJobs(self) -> None:
+        """Accept the outcome of every partial job as final.
+
+        A partial job reads as unfinished forever. Closing records that the
+        owner read the outcome and accepted it, with the counts as they stood.
+        It re-enrols nothing, retries nothing and moves nothing, and the retry
+        control then skips the closed job.
+        """
+        if self._busy:
+            self._set_status("Wait for the current operation to finish.", "working")
+            return
+        try:
+            results = close_partial_local_analysis_jobs(self.settings.db_path)
+        except Exception as error:  # noqa: BLE001
+            LOGGER.exception("closing partial analysis jobs failed")
+            self._set_status(f"Could not close jobs: {error}", "error")
+            return
+        failures = [row for row in results if "error" in row]
+        closed = len(results) - len(failures)
+        if not results:
+            self._set_status("No partial analysis job to close.", "working")
+        elif failures:
+            self._set_status(
+                f"Closed {closed:,} job(s); {len(failures):,} could not be "
+                "closed.",
+                "error",
+            )
+        else:
+            self._set_status(
+                f"Closed {closed:,} partial analysis job"
+                + ("" if closed == 1 else "s")
+                + ".",
+                "success",
+            )
+        self.refreshAnalysisReadiness()
+
+    @Slot(str, result="QVariant")
+    def scopeWorkFor(self, path_prefix: str) -> dict[str, Any]:
+        """What a job over this prefix would actually do, cheaply.
+
+        The Start control used to be gated on the count of items available to
+        analyse, computed without the folder prefix. That number is the wrong
+        one twice over: it described the whole archive while the job it
+        created was folder-scoped, and it ignored settling entirely, so a
+        folder holding thousands of looked-at files with nothing left to
+        analyse reported zero and could not be cleared at all.
+
+        Kept separate from refreshAnalysisReadiness, which runs four full
+        catalog passes synchronously on the UI thread. This is two indexed
+        queries, so it can be called when the operator types a prefix.
+        """
+        prefix = normalized_scope_path_prefix(path_prefix)
+        try:
+            previews = analysis_scope_previews(
+                self.settings.db_path, path_prefix=prefix
+            )
+            settleable = count_settleable(
+                self.settings.db_path, path_prefix=prefix
+            )
+        except Exception as error:  # noqa: BLE001
+            LOGGER.exception("scope work lookup failed")
+            return {"error": str(error)[:200], "analyse": 0, "settle": 0}
+        per_kind = {
+            kind: int(previews[kind]["assets"]) for kind in previews
+        }
+        return {
+            "prefix": prefix or "",
+            "analyseByKind": per_kind,
+            "analyse": per_kind.get("all", 0),
+            "settle": int(settleable.get("total", 0)),
+            "settleByOutcome": {
+                key: value for key, value in settleable.items()
+                if key != "total"
+            },
+        }
 
     @Slot()
     def retryLocalCatalogAnalysisFailures(self) -> None:

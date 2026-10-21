@@ -622,6 +622,42 @@ ApplicationWindow {
         // stays one click away.
         property string scopeMode: "general"
         property string scopeKind: "visual"
+        // What a job over the chosen prefix would actually do. Two numbers,
+        // because a job does two kinds of work: it analyses what has not been
+        // looked at, and it settles what has. A folder can legitimately have
+        // nothing left to analyse and thousands of files to clear.
+        property var scopeWork: ({ "analyse": 0, "settle": 0 })
+        // The single authority on whether this job would do anything, named
+        // so it can be asserted directly rather than inferred from a button
+        // that is also gated on a model being selected.
+        function hasWorkToDo() {
+            if (scopeMode === "granular")
+                return scopeCount() > 0
+            return (scopeWork.analyse + scopeWork.settle) > 0
+        }
+        function refreshScopeWork() {
+            var work = backend.scopeWorkFor(scopePathPrefix || "")
+            var byKind = work.analyseByKind || {}
+            var analyse = scopeMode === "general"
+                        ? (byKind[scopeKind] || 0)
+                        : (work.analyse || 0)
+            scopeWork = {
+                "analyse": analyse,
+                "settle": work.settle || 0,
+                "settleByOutcome": work.settleByOutcome || {}
+            }
+        }
+        // The prefix is typed a character at a time, and each lookup is two
+        // catalog queries, so the refresh waits for the typing to stop.
+        Timer {
+            id: scopeWorkDebounce
+            interval: 400
+            repeat: false
+            onTriggered: localAnalysisDialog.refreshScopeWork()
+        }
+        onScopePathPrefixChanged: scopeWorkDebounce.restart()
+        onScopeKindChanged: scopeWorkDebounce.restart()
+        onScopeModeChanged: scopeWorkDebounce.restart()
         property string scopePathPrefix: ""
         // Whether the job this dialog would start is allowed to move files.
         // The scope kind is resolved the way the controller resolves it, and
@@ -680,10 +716,15 @@ ApplicationWindow {
             // resetting scopeKind alone would leave the field showing one
             // category while the job ran another.
             localAnalysisScopeKind.currentIndex = 0
-            scopePathPrefix = ""
-            localAnalysisPathPrefix.text = ""
             includeAnalyzedAssets.checked = false
+            // The folder the operator typed is deliberately NOT cleared. The
+            // 0.22.13 reason for resetting the scope mode away from Total is
+            // that a reopened dialog must not sit on whole-catalog analysis
+            // with placement active; blanking a typed folder is no part of
+            // that, and silently discarding it widens the job rather than
+            // narrowing it, which is the opposite of the intent.
             backend.refreshAnalysisReadiness()
+            refreshScopeWork()
         }
         background: Rectangle {
             radius: 12
@@ -771,6 +812,20 @@ ApplicationWindow {
                     visible: localAnalysisDialog.scopeMode === "general"
                              && localAnalysisDialog.scopeKind === "artifacts"
                     text: "Generated cache artifacts are regenerable previews, autosaves and sidecars. They are recorded as excluded."
+                    color: root.muted
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                }
+                Text {
+                    objectName: "localAnalysisWorkNote"
+                    Layout.fillWidth: true
+                    visible: localAnalysisDialog.scopeMode !== "granular"
+                    text: localAnalysisDialog.scopeWork.analyse.toLocaleString()
+                          + " to analyse · "
+                          + localAnalysisDialog.scopeWork.settle.toLocaleString()
+                          + " to settle"
+                          + (localAnalysisDialog.scopePathPrefix
+                             ? " in this folder" : " across the archive")
                     color: root.muted
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap
@@ -974,8 +1029,12 @@ ApplicationWindow {
                     objectName: "startLocalAnalysisButton"
                     text: localAnalysisDialog.scopeMode === "total"
                           ? "Analyze total scope" : "Start local analysis"
+                    // Enabled when the job would do work of either kind. The
+                    // old gate counted only items to analyse, and counted
+                    // them archive-wide, so a folder with thousands of files
+                    // to clear and nothing left to analyse was unstartable.
                     enabled: !backend.busy
-                             && localAnalysisDialog.scopeCount() > 0
+                             && localAnalysisDialog.hasWorkToDo()
                              && (localAnalysisDialog.scopeMode !== "granular"
                                  || backend.analysisReadiness.canAnalyzeSelected === true)
                              && localAnalysisModel.currentText.length > 0
@@ -2681,6 +2740,34 @@ ApplicationWindow {
                                                             visible: backend.analysisReadiness.analysisCanRetry === true
                                                             enabled: visible && !backend.busy
                                                             onClicked: backend.retryLocalCatalogAnalysisFailures()
+                                                        }
+                                                        Item { Layout.fillWidth: true }
+                                                    }
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        visible: (backend.analysisReadiness.openJobCount || 0) > 0
+                                                                 || (backend.analysisReadiness.partialJobCount || 0) > 0
+                                                        PrimaryButton {
+                                                            objectName: "cancelOpenJobsButton"
+                                                            text: "End "
+                                                                  + (backend.analysisReadiness.openJobCount || 0)
+                                                                  + " unfinished job"
+                                                                  + ((backend.analysisReadiness.openJobCount || 0) === 1 ? "" : "s")
+                                                            quiet: true
+                                                            visible: (backend.analysisReadiness.openJobCount || 0) > 0
+                                                            enabled: visible && !backend.busy
+                                                            onClicked: backend.cancelOpenAnalysisJobs()
+                                                        }
+                                                        PrimaryButton {
+                                                            objectName: "closePartialJobsButton"
+                                                            text: "Close "
+                                                                  + (backend.analysisReadiness.partialJobCount || 0)
+                                                                  + " partial job"
+                                                                  + ((backend.analysisReadiness.partialJobCount || 0) === 1 ? "" : "s")
+                                                            quiet: true
+                                                            visible: (backend.analysisReadiness.partialJobCount || 0) > 0
+                                                            enabled: visible && !backend.busy
+                                                            onClicked: backend.closePartialAnalysisJobs()
                                                         }
                                                         Item { Layout.fillWidth: true }
                                                     }

@@ -1447,6 +1447,112 @@ QTimer.singleShot(300, first_opening)
 raise SystemExit(app.exec())
 """)
 
+    def test_a_job_with_only_settling_to_do_is_startable(self) -> None:
+        """The defect: a drain was unstartable once nothing was enrollable.
+
+        The gate counted items available to analyse, and only those. A folder
+        holding thousands of looked-at files with nothing left to analyse
+        reported zero work and the control stayed disabled, which is exactly
+        the state a stranded Inbox ends up in.
+
+        hasWorkToDo is asserted rather than the button's enabled state,
+        because the button is also gated on a local model being selected and
+        this offscreen probe has no runtime to offer one.
+        """
+        self._run_analysis_dialog_probe(r"""
+
+def verify():
+    dialog.setProperty("scopeMode", "general")
+    app.processEvents()
+
+    # Nothing to analyse and nothing to settle: no job worth starting.
+    dialog.setProperty("scopeWork", {"analyse": 0, "settle": 0})
+    app.processEvents()
+    if dialog.hasWorkToDo():
+        app.exit(70)
+        return
+
+    # Nothing to analyse, but files to clear: this must be startable. This is
+    # the case the old gate refused.
+    dialog.setProperty("scopeWork", {"analyse": 0, "settle": 2466})
+    app.processEvents()
+    if not dialog.hasWorkToDo():
+        app.exit(71)
+        return
+
+    # Something to analyse and nothing to clear: startable as before.
+    dialog.setProperty("scopeWork", {"analyse": 7, "settle": 0})
+    app.processEvents()
+    if not dialog.hasWorkToDo():
+        app.exit(72)
+        return
+    app.exit(0)
+
+dialog.open()
+QTimer.singleShot(300, verify)
+raise SystemExit(app.exec())
+""")
+
+    def test_analysis_dialog_names_both_kinds_of_work(self) -> None:
+        """Two numbers, because a job does two kinds of work."""
+        self._run_analysis_dialog_probe(r"""
+
+work = window.findChild(QObject, "localAnalysisWorkNote")
+if work is None:
+    raise SystemExit(32)
+
+def verify():
+    dialog.setProperty("scopeMode", "general")
+    dialog.setProperty("scopeWork", {"analyse": 7, "settle": 2466})
+    app.processEvents()
+    text = str(work.property("text"))
+    if "to analyse" not in text or "to settle" not in text:
+        app.exit(73)
+        return
+    if "7" not in text:
+        app.exit(74)
+        return
+    app.exit(0)
+
+dialog.open()
+QTimer.singleShot(300, verify)
+raise SystemExit(app.exec())
+""")
+
+    def test_analysis_dialog_keeps_a_typed_folder_when_reopened(self) -> None:
+        """Reopening must not silently discard the operator's folder.
+
+        Resetting the scope mode away from Total on reopen is deliberate and
+        stays. Blanking a typed folder is no part of that, and it widens the
+        job rather than narrowing it.
+        """
+        self._run_analysis_dialog_probe(r"""
+
+def first_opening():
+    prefix.setProperty("text", "fixture_inbox\\project_alpha")
+    app.processEvents()
+    dialog.close()
+    QTimer.singleShot(300, reopen)
+
+def reopen():
+    dialog.open()
+    QTimer.singleShot(400, second_opening)
+
+def second_opening():
+    if str(prefix.property("text")) != "fixture_inbox\\project_alpha":
+        app.exit(75)
+        return
+    # The mode reset from 0.22.13 must still happen.
+    if dialog.property("scopeMode") != "general":
+        app.exit(76)
+        return
+    app.exit(0)
+
+dialog.open()
+QTimer.singleShot(300, first_opening)
+raise SystemExit(app.exec())
+""")
+
     def test_analysis_dialog_states_the_placement_consequence_always(
         self,
     ) -> None:
