@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.22.16 - 2026-10-20
+
+- Settling the Inbox no longer scans the whole analysis-item history once per
+  file. The step asks the catalog what terminal state each candidate holds,
+  and the only index on that table led with the job identifier, so the
+  question could not be answered by a seek and fell back to a full scan of
+  every item ever enrolled. On a live catalog that was roughly a hundred
+  million row reads before the first file moved, and a scoped drain sat for
+  eleven minutes looking as though it had stalled. An index leading with the
+  asset identifier and carrying the completion timestamp makes each lookup a
+  seek and serves the ordering without a sort, which takes the catalog to
+  schema 18.
+- The defect was correctness-neutral and invisible to every test that
+  existed, because a full scan of a six-row fixture table is instant. The
+  guard added for it asserts the query plan rather than a duration: a timing
+  assertion would be unreliable on a loaded volume, while the plan names the
+  defect exactly and fails as soon as the index stops covering the lookup.
+
 ## 0.22.15 - 2026-10-20
 
 - The Inbox now means one thing: not yet looked at. Every item an analysis job

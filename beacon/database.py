@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 
 @dataclass(frozen=True)
@@ -376,6 +376,16 @@ def migrate(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_local_analysis_items_job_state
             ON local_analysis_items(job_id, state, asset_id);
+        -- The settle step asks "what terminal state does this asset hold?"
+        -- once per candidate. The index above leads with job_id, so it cannot
+        -- serve that question, and each lookup fell back to a full scan of
+        -- this table: on a 20,374-row table with 2,466 candidates that was
+        -- roughly a hundred million row reads before the first file moved.
+        -- Leading with asset_id makes each lookup a seek, and carrying
+        -- completed_at serves the "latest state for this asset" ordering
+        -- without a sort.
+        CREATE INDEX IF NOT EXISTS idx_local_analysis_items_asset_completed
+            ON local_analysis_items(asset_id, completed_at);
         CREATE TABLE IF NOT EXISTS asset_transcripts (
             id TEXT PRIMARY KEY,
             asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,

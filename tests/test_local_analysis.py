@@ -22,6 +22,7 @@ from beacon.local_analysis import (
     NON_CONTENT_COMPANION_EXTENSIONS,
     _artifact_exclusion_reason,
     _complete_analysis_exclusion,
+    _counts,
     analysis_scope_preview,
     analysis_scope_previews,
     create_local_analysis_job,
@@ -1767,3 +1768,71 @@ class ArtifactsPlacementGuardTests(unittest.TestCase):
         }
         self.assertEqual(placed, {"SAMPLE_0001.mov"})
         self.assertNotIn("SAMPLE_0001_preview.mov", placed)
+
+
+class ExcludedWorkIsSuccessfulWorkTests(unittest.TestCase):
+    """A job that drains an Inbox excludes by rule and calls no model.
+
+    Counting only un-excluded completions made one failure in such a job
+    report as a total failure. That is the ordinary shape of a drain, not a
+    rare one, so the status has to account for excluded work.
+    """
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.db = self.root / "runtime" / "beacon.db"
+        self.project = self.root / "fixture_client_a" / "project_alpha"
+        self.project.mkdir(parents=True)
+        # One item the rule excludes without a model, one the model fails on.
+        self.editable = self.project / "cut.prproj"
+        self.media = self.project / "SAMPLE_0001.mov"
+        for index, source in enumerate((self.editable, self.media)):
+            source.write_bytes(f"synthetic fixture bytes {index}".encode())
+            catalog_file(
+                source,
+                self.db,
+                stability_seconds=0,
+                include_media_probe=False,
+                include_thumbnail_generation=False,
+            )
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    @staticmethod
+    def _failing_analyzer(
+        endpoint: str, model: str, asset: dict[str, object]
+    ) -> dict:
+        raise RuntimeError("fixture model failure")
+
+    def test_an_all_excluded_job_with_one_failure_is_partial(self) -> None:
+        job_id = create_local_analysis_job(
+            self.db, model="fixture-model", scope_kind="all"
+        )
+        with (
+            patch("beacon.local_analysis.commit_analyzed_file"),
+            patch(
+                "beacon.local_analysis.settle_inbox_items",
+                return_value=SimpleNamespace(
+                    attempted=0, moved=0, outcomes={}, skipped_reasons={},
+                    not_terminal=0, removed_directories=0,
+                ),
+            ),
+        ):
+            result = run_local_analysis_job(
+                self.db, job_id, analyzer=self._failing_analyzer
+            )
+
+        with connect(self.db) as connection:
+            final = _counts(connection, job_id)
+        self.assertGreater(final["excluded"], 0, "the project file by rule")
+        self.assertGreater(final["failed"], 0, "the media by model failure")
+        self.assertEqual(
+            final["complete"], 0, "nothing completed without an exclusion"
+        )
+        self.assertEqual(
+            result.state,
+            "partial",
+            "a job that excluded work successfully is partial, not failed",
+        )

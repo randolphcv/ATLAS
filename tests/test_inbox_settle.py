@@ -543,6 +543,56 @@ class InboxSettleTests(unittest.TestCase):
             "a failure is held for review before it is classified as cache",
         )
 
+    def test_settle_looks_up_an_items_state_by_index_not_by_scan(self) -> None:
+        """A correctness-neutral defect that stopped a real drain for minutes.
+
+        Settle asks the catalog for each candidate's terminal state. Before
+        0.22.16 the only index on local_analysis_items led with job_id, so
+        that question fell back to a full table scan, once per candidate. On
+        a 20,374-row table with 2,466 candidates nothing moved for eleven
+        minutes while the query ran, and no fixture-sized test could see it:
+        a scan of six rows is instant.
+
+        So this asserts the plan rather than the timing. A timing assertion
+        would be flaky on a loaded volume; a plan assertion names the defect
+        exactly and fails the moment the index stops covering the lookup.
+        """
+        asset = self._add(
+            "fixture_client_a/project_alpha/SAMPLE_0014.mov", b"plan bytes"
+        )
+        source = self.inbox / "fixture_client_a/project_alpha/SAMPLE_0014.mov"
+        self._item(
+            asset, source, state="complete",
+            excluded_reason="fixture exclusion",
+        )
+        with connect(self.db) as connection:
+            plans = [
+                " ".join(str(part) for part in row)
+                for row in connection.execute(
+                    """
+                    EXPLAIN QUERY PLAN
+                    SELECT (SELECT item.state FROM local_analysis_items item
+                             WHERE item.asset_id = location.asset_id
+                             ORDER BY item.completed_at DESC LIMIT 1)
+                    FROM locations location
+                    WHERE lower(location.path) LIKE lower(?)
+                    """,
+                    (str(self.inbox) + "\\%",),
+                ).fetchall()
+            ]
+        joined = "\n".join(plans)
+        self.assertIn(
+            "idx_local_analysis_items_asset_completed",
+            joined,
+            "the asset_id lookup must use the covering index:\n" + joined,
+        )
+        self.assertNotIn(
+            "SCAN local_analysis_items",
+            joined,
+            "a full scan per candidate is what stalled the real drain:\n"
+            + joined,
+        )
+
     def test_project_files_carry_the_class_in_their_reason(self) -> None:
         """Enrolment must produce a reason naming the class, not a bare skip."""
         reason = _artifact_exclusion_reason(

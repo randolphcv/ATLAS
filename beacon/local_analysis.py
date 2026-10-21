@@ -2445,10 +2445,16 @@ def _run_local_analysis_job(
             requested_by="Beacon local analyzer",
             authorization_note=f"analysis_run={run_id}; job={job_id}.",
         )
+    # An excluded item is work that succeeded: the rule decided it, no model
+    # was needed, and the settle step moved it. Reading only "complete" here
+    # meant a job whose every item was excluded by rule reported as wholly
+    # failed the moment one item failed, which is now the ordinary shape of a
+    # job that drains an Inbox rather than an unusual one.
+    productive = counts["complete"] + counts["excluded"]
     state = (
         "complete"
         if counts["failed"] == 0
-        else ("partial" if counts["complete"] else "failed")
+        else ("partial" if productive else "failed")
     )
     # A settle that could not move something does not fail the analysis: the
     # analysis is done. It makes the job partial so the count is visible and

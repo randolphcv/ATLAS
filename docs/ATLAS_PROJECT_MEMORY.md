@@ -34,9 +34,32 @@ inspection. No application run was involved.
 Adopted by the owner's decision of 2026-10-20. The Inbox means one thing: not
 yet looked at. Every item an analysis job reaches a terminal state on leaves
 it in the same operation, to a final destination or to one of three bounded
-holding zones. 0.22.15 delivers the rule. Authored and camera-written files
-follow their media rather than being separated by class; regenerable cache
-leaves the Inbox but does not enter the archive proper.
+holding zones. 0.22.15 delivers the rule and 0.22.16 makes it perform.
+Authored and camera-written files follow their media rather than being
+separated by class; regenerable cache leaves the Inbox but does not enter the
+archive proper.
+
+One scoped drain has run against live material. Verified 2026-10-20: 2,466
+files left the Inbox in one job, zero remained under the drained prefix, and
+the drained directory tree was removed as empty along with 120 empty
+subdirectories. Managed-move records grew by exactly the predicted count, all
+in the complete state, with zero failures, zero destination-exists skips, zero
+checksum mismatches, and zero rows sourced outside the job's prefix. Every
+move verified destination bytes against the catalogued checksum as part of the
+operation; a spread sample was independently re-hashed afterwards and matched.
+Catalog `integrity_check` returns `ok` with no foreign-key violations. The
+drain was bounded by hashing throughput, not by the catalog: the scope was
+hashed twice, and the moves took about an hour and forty minutes.
+
+Three location rows remain beneath the Inbox root, outside the drained prefix
+and so correctly untouched. They appear to be rows without files on disk and
+are not yet investigated.
+
+A known limitation stands: the analysis dialog gates its start control on the
+count of items available to analyse, which is computed without the folder
+prefix and excludes settleable work. A folder with material to drain but
+nothing left to analyse therefore cannot be drained from the interface. The
+drain recorded above succeeded only because items remained enrollable.
 
 ### Delivered build
 
