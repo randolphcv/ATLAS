@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.22.18 - 2026-10-21
+
+- Verifying catalog rows against disk is now reachable from the application.
+  0.22.17 added the mechanism and its tests and left it unwired, so the action
+  it exists for could not actually be performed: a control nobody can invoke
+  is not a control. The System surface now carries it beside the backup
+  action, with the count of rows currently marked missing shown next to it,
+  and the guard added for this asserts the whole path rather than the
+  function — that the slot is registered on the meta-object, which is what
+  makes it callable from the interface, and that the window carries a control
+  bound to it. A method that is callable from Python and invisible to the
+  interface passes any test of callability, which is exactly how this was
+  missed.
+
 ## 0.22.17 - 2026-10-21
 
 - A job that has stopped can now be ended, and a job whose outcome the owner

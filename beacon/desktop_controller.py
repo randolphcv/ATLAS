@@ -86,9 +86,11 @@ from .repository import (
     asset_detail,
     catalog_summary,
     library_folders,
+    missing_catalog_locations,
     missing_thumbnail_assets,
     recent_events,
     search_assets,
+    verify_catalog_locations,
 )
 from .preview_derivatives import (
     VideoPreviewResult,
@@ -1753,6 +1755,9 @@ class DesktopController(QObject):
             "openJobCount": len(
                 cancellable_local_analysis_jobs(self.settings.db_path)
             ),
+            "missingLocationCount": len(
+                missing_catalog_locations(self.settings.db_path, limit=500)
+            ),
             "partialJobCount": len(
                 closeable_local_analysis_jobs(self.settings.db_path)
             ),
@@ -2057,6 +2062,45 @@ class DesktopController(QObject):
                 "success",
             )
         self.refreshAnalysisReadiness()
+
+    @Slot()
+    def verifyInboxRoot(self) -> None:
+        """Reconcile the catalog rows sitting directly in the Inbox against disk.
+
+        Deliberately non-recursive. A recursive sweep of the Inbox would
+        examine files inside a folder that is mid-transfer, find them absent,
+        and mark them missing -- recording wrong state about files that are
+        arriving perfectly well. The rows this is for sit at the root, so
+        descending buys nothing and risks that.
+
+        Marks, never deletes: a row is the evidence that a file was once
+        observed, and an absent file may be a disconnected volume.
+        """
+        if self._busy:
+            self._set_status("Wait for the current operation to finish.", "working")
+            return
+        try:
+            counts = verify_catalog_locations(
+                self.settings.db_path, inbox_root(), recursive=False
+            )
+        except Exception as error:  # noqa: BLE001
+            LOGGER.exception("verifying the Inbox root failed")
+            self._set_status(f"Could not verify the Inbox: {error}", "error")
+            return
+        self._set_status(
+            "Verified {:,} Inbox row{} against disk: {:,} present, {:,} newly "
+            "marked missing, {:,} mark{} cleared. Nothing was moved or "
+            "deleted.".format(
+                counts["checked"],
+                "" if counts["checked"] == 1 else "s",
+                counts["present"],
+                counts["marked_missing"],
+                counts["mark_cleared"],
+                "" if counts["mark_cleared"] == 1 else "s",
+            ),
+            "success",
+        )
+        self.refresh()
 
     @Slot(str, result="QVariant")
     def scopeWorkFor(self, path_prefix: str) -> dict[str, Any]:

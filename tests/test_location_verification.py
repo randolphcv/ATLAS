@@ -133,5 +133,51 @@ class LocationVerificationTests(unittest.TestCase):
         self.assertEqual(moves, 0)
 
 
+class VerificationIsReachableTests(unittest.TestCase):
+    """A mechanism the owner cannot invoke is not a mechanism.
+
+    This was built with its tests passing and left unwired, so the action it
+    exists for could not be performed. The test asserts the whole path: the
+    controller exposes it as a slot, and the window carries a control bound to
+    that slot.
+    """
+
+    def test_the_controller_exposes_verification_as_a_slot(self) -> None:
+        """Invokable from QML, which means registered on the meta-object.
+
+        Checked through QMetaObject rather than by inspecting the attribute:
+        a plain method is callable from Python and invisible to QML, so
+        callability proves nothing about reachability.
+        """
+        from beacon.desktop_controller import DesktopController
+
+        meta = DesktopController.staticMetaObject
+        names = {
+            bytes(meta.method(index).name()).decode()
+            for index in range(meta.methodCount())
+        }
+        self.assertIn(
+            "verifyInboxRoot",
+            names,
+            "verification must be registered as a slot, or QML cannot call it",
+        )
+
+    def test_the_window_carries_a_control_bound_to_it(self) -> None:
+        qml = (
+            Path(__file__).resolve().parents[1]
+            / "beacon" / "qml" / "Main.qml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "verifyInboxRootButton",
+            qml,
+            "the System surface must carry a verification control",
+        )
+        self.assertIn(
+            "backend.verifyInboxRoot()",
+            qml,
+            "the control must be bound to the controller slot",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

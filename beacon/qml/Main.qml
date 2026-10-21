@@ -4583,6 +4583,27 @@ ApplicationWindow {
                                                     onClicked: backupDialog.open()
                                                 }
                                             }
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Checks the catalog rows sitting directly in the Inbox against disk and marks any whose file is gone. Does not look inside subfolders, moves nothing, deletes nothing."
+                                                          + ((backend.analysisReadiness.missingLocationCount || 0) > 0
+                                                             ? " Currently marked missing: "
+                                                               + backend.analysisReadiness.missingLocationCount
+                                                             : "")
+                                                    color: root.muted
+                                                    font.pixelSize: 9
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                                PrimaryButton {
+                                                    objectName: "verifyInboxRootButton"
+                                                    text: "Verify Inbox root"
+                                                    quiet: true
+                                                    enabled: !backend.busy
+                                                    onClicked: backend.verifyInboxRoot()
+                                                }
+                                            }
                                         }
                                     }
                                 }
