@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .config import archive_root, archive_tier_when_sql
-from .database import connect, migrate
+from .config import (
+    LIKE_ESCAPE,
+    archive_root,
+    archive_tier_when_sql,
+    like_prefix_pattern,
+)
+from .database import connect, migrate, record_event
 from .identity import atlas_uri
 
 RAW_PHOTO_EXTENSIONS = {
@@ -684,6 +691,122 @@ def recent_events(db_path: Path, limit: int = 20) -> list[dict[str, Any]]:
             """
             SELECT id, kind, state, message, asset_id, location_path, created_at
             FROM system_events ORDER BY created_at DESC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def verify_catalog_locations(
+    db_path: Path,
+    root: Path,
+    *,
+    recursive: bool = False,
+) -> dict[str, int]:
+    """Reconcile catalog locations beneath ``root`` against what is on disk.
+
+    A row whose file is absent is marked, never deleted. The row is the
+    evidence that the file was once observed, and an absent file may mean a
+    disconnected volume rather than a deletion; deleting the row would destroy
+    the only record either way. A row whose file is present has any existing
+    mark cleared, so the mark never outlives the condition.
+
+    Moves nothing. Deletes nothing. Reads the filesystem only to ask whether
+    each catalogued path exists.
+
+    ``recursive`` is off by default, and deliberately so. A recursive sweep of
+    a root that is being written to -- an Inbox receiving a transfer -- would
+    examine files mid-copy, find them absent, and mark them missing, writing
+    wrong state about files that are arriving perfectly well. Verifying the
+    direct children of a path is the bounded operation an operator can reason
+    about, and it is the one the owner needs for rows sitting at a root.
+    """
+    root = Path(os.path.abspath(root))
+    pattern, parameters = _location_prefix_sql("path", root, recursive)
+    with connect(db_path) as connection:
+        migrate(connection)
+        rows = connection.execute(
+            f"SELECT id, path, missing_at FROM locations WHERE {pattern}",
+            parameters,
+        ).fetchall()
+        checked = marked = cleared = present = 0
+        now = datetime.now(timezone.utc).isoformat()
+        for row in rows:
+            checked += 1
+            exists = Path(str(row["path"])).is_file()
+            if exists:
+                present += 1
+                if row["missing_at"]:
+                    connection.execute(
+                        "UPDATE locations SET missing_at=NULL WHERE id=?",
+                        (row["id"],),
+                    )
+                    cleared += 1
+                continue
+            if row["missing_at"]:
+                continue
+            connection.execute(
+                "UPDATE locations SET missing_at=? WHERE id=?",
+                (now, row["id"]),
+            )
+            marked += 1
+        counts = {
+            "checked": checked,
+            "present": present,
+            "marked_missing": marked,
+            "mark_cleared": cleared,
+            "recursive": int(recursive),
+        }
+        record_event(
+            connection,
+            kind="location_verification",
+            state="complete",
+            message=(
+                "Verified catalog locations against disk; absent files marked "
+                "missing and nothing deleted"
+            ),
+            details=counts,
+        )
+    return counts
+
+
+def _location_prefix_sql(
+    column: str, root: Path, recursive: bool
+) -> tuple[str, list[Any]]:
+    """Match locations under ``root``, recursively or its direct children only.
+
+    The non-recursive form matches a path that starts with the root and holds
+    no further separator, so a sweep of a root never descends into a folder
+    beneath it.
+    """
+    # The separator is bound as a parameter rather than written as a literal.
+    # A backslash in a SQL string inside an f-string is two levels of escaping
+    # and does not survive every editing path intact; binding it cannot be
+    # mangled, and the query reads the same either way.
+    separator = os.sep
+    prefix = str(root).rstrip("\\/") + separator
+    clause = f"lower({column}) LIKE ? ESCAPE '{LIKE_ESCAPE}'"
+    parameters: list[Any] = [like_prefix_pattern(root)]
+    if recursive:
+        return clause, parameters
+    # A direct child has exactly one segment after the prefix, so the text
+    # following the prefix holds no further separator.
+    clause += f" AND instr(substr({column}, ?), ?) = 0"
+    parameters.extend([len(prefix) + 1, separator])
+    return clause, parameters
+
+
+def missing_catalog_locations(
+    db_path: Path, limit: int = 50
+) -> list[dict[str, Any]]:
+    """Locations currently marked missing, newest mark first."""
+    with connect(db_path) as connection:
+        migrate(connection)
+        rows = connection.execute(
+            """
+            SELECT id, asset_id, path, missing_at FROM locations
+            WHERE missing_at IS NOT NULL
+            ORDER BY missing_at DESC LIMIT ?
             """,
             (limit,),
         ).fetchall()
