@@ -4583,26 +4583,59 @@ ApplicationWindow {
                                                     onClicked: backupDialog.open()
                                                 }
                                             }
-                                            RowLayout {
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    // Its own panel rather than a row inside the
+                                    // backup panel: reconciling the catalog
+                                    // against disk is not recoverability, and
+                                    // that panel is fillHeight with a bottom
+                                    // spacer, so an extra row there overflowed
+                                    // behind the next panel instead of fitting.
+                                    objectName: "verifyInboxPanel"
+                                    Layout.fillWidth: true
+                                    implicitHeight: verifyColumn.implicitHeight + 36
+                                    radius: 10
+                                    color: root.panel
+                                    border.color: root.line
+                                    ColumnLayout {
+                                        id: verifyColumn
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        anchors.margins: 18
+                                        spacing: 10
+                                        PanelTitle {
+                                            eyebrow: "Catalog reconciliation"
+                                            title: "Verify Inbox rows"
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Checks the catalog rows sitting directly in the Inbox against what is on disk and marks any whose file is gone. It does not look inside subfolders, moves nothing, and deletes nothing: a row is the record that a file was once observed, and an absent file may be a disconnected volume rather than a deletion."
+                                            color: root.muted
+                                            font.pixelSize: 11
+                                            lineHeight: 1.35
+                                            wrapMode: Text.WordWrap
+                                        }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Text {
                                                 Layout.fillWidth: true
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: "Checks the catalog rows sitting directly in the Inbox against disk and marks any whose file is gone. Does not look inside subfolders, moves nothing, deletes nothing."
-                                                          + ((backend.analysisReadiness.missingLocationCount || 0) > 0
-                                                             ? " Currently marked missing: "
-                                                               + backend.analysisReadiness.missingLocationCount
-                                                             : "")
-                                                    color: root.muted
-                                                    font.pixelSize: 9
-                                                    wrapMode: Text.WordWrap
-                                                }
-                                                PrimaryButton {
-                                                    objectName: "verifyInboxRootButton"
-                                                    text: "Verify Inbox root"
-                                                    quiet: true
-                                                    enabled: !backend.busy
-                                                    onClicked: backend.verifyInboxRoot()
-                                                }
+                                                text: (backend.analysisReadiness.missingLocationCount || 0) > 0
+                                                      ? "Currently marked missing: "
+                                                        + backend.analysisReadiness.missingLocationCount
+                                                      : "No row is currently marked missing."
+                                                color: (backend.analysisReadiness.missingLocationCount || 0) > 0
+                                                       ? root.brass : root.muted
+                                                font.pixelSize: 9
+                                            }
+                                            PrimaryButton {
+                                                objectName: "verifyInboxRootButton"
+                                                text: "Verify Inbox root"
+                                                quiet: true
+                                                enabled: !backend.busy
+                                                onClicked: backend.verifyInboxRoot()
                                             }
                                         }
                                     }

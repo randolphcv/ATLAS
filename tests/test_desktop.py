@@ -1447,6 +1447,47 @@ QTimer.singleShot(300, first_opening)
 raise SystemExit(app.exec())
 """)
 
+    def test_the_verify_control_fits_inside_its_own_panel(self) -> None:
+        """A control drawn outside its panel is a control nobody can click.
+
+        The first attempt put this row inside the backup panel, which is
+        fillHeight with a bottom spacer: the row had nowhere to go and was
+        drawn past the panel's edge, behind the panel below it. Visible and
+        enabled were both true the whole time, so only geometry catches it.
+        """
+        self._run_analysis_dialog_probe(r"""
+
+panel = window.findChild(QObject, "verifyInboxPanel")
+button = window.findChild(QObject, "verifyInboxRootButton")
+if panel is None or button is None:
+    raise SystemExit(33)
+
+def verify():
+    backend = engine.rootContext().contextProperty("backend")
+    backend.setCurrentView("system")
+    app.processEvents()
+    for _ in range(5):
+        app.processEvents()
+    if not bool(button.property("visible")):
+        app.exit(80)
+        return
+    if float(button.property("height")) <= 0:
+        app.exit(81)
+        return
+    bottom = button.mapToItem(panel, 0, float(button.property("height")))
+    if bottom.y() > float(panel.property("height")) + 0.5:
+        app.exit(82)
+        return
+    right = button.mapToItem(panel, float(button.property("width")), 0)
+    if right.x() > float(panel.property("width")) + 0.5:
+        app.exit(83)
+        return
+    app.exit(0)
+
+QTimer.singleShot(400, verify)
+raise SystemExit(app.exec())
+""")
+
     def test_a_job_with_only_settling_to_do_is_startable(self) -> None:
         """The defect: a drain was unstartable once nothing was enrollable.
 

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.22.19 - 2026-10-21
+
+- The verification control is now inside a panel of its own and no longer
+  drawn outside the one it was added to. 0.22.18 put it as an extra row in
+  the backup panel, which is sized to fill its row and already ends with a
+  spacer that pushes its button to the bottom edge: the new row had nowhere
+  to go and was painted past the panel's border, behind the panel below it.
+  It was visible and enabled the whole time, which is why nothing short of
+  geometry would have caught it. Reconciling the catalog against disk is also
+  not recoverability, so the separate panel reads better than the row did.
+  The guard added for it asserts that the control's edges fall inside its
+  panel's bounds, which fails as soon as the panel cannot hold it.
+
 ## 0.22.18 - 2026-10-21
 
 - Verifying catalog rows against disk is now reachable from the application.
