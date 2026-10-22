@@ -17,6 +17,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from beacon.catalog import catalog_file
 from beacon.database import connect
@@ -172,10 +173,119 @@ class VerificationIsReachableTests(unittest.TestCase):
             qml,
             "the System surface must carry a verification control",
         )
-        self.assertIn(
-            "backend.verifyInboxRoot()",
-            qml,
+        self.assertTrue(
+            "backend.verifyInboxRoot(" in qml,
             "the control must be bound to the controller slot",
+        )
+
+
+class VerificationReachesSubfoldersTests(unittest.TestCase):
+    """The control must be able to reach a stale row at any depth.
+
+    The function could always recurse; the control could not ask it to, and
+    passed False unconditionally. So a stale row one directory down was
+    unreachable from the application however many times it was clicked, and
+    the Inbox row count -- which AGENTS.md section 6 now makes load-bearing,
+    since the Inbox means "not yet looked at" -- stayed wrong.
+
+    Tested through the controller rather than the function, because the
+    function was never the broken part.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from PySide6.QtCore import QCoreApplication
+
+        cls.qt_app = QCoreApplication.instance() or QCoreApplication([])
+
+    def setUp(self) -> None:
+        from beacon.desktop_controller import DesktopController, DesktopSettings
+
+        self.temp = TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.db = self.root / "runtime" / "beacon.db"
+        self.inbox = self.root / "Inbox"
+        self.inbox.mkdir()
+        self.at_root = self._stale("stale_at_the_root.txt")
+        self.in_subfolder = self._stale(
+            "fixture_client_a/project_alpha/SAMPLE_0001.txt"
+        )
+        self.controller = DesktopController(
+            DesktopSettings(self.db, self.root / "runtime" / "backups")
+        )
+        self._patch = patch(
+            "beacon.desktop_controller.inbox_root", lambda: self.inbox
+        )
+        self._patch.start()
+
+    def tearDown(self) -> None:
+        self._patch.stop()
+        self.controller.shutdown()
+        self.controller.deleteLater()
+        self.temp.cleanup()
+
+    def _stale(self, relative: str) -> Path:
+        source = self.inbox / relative
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(relative.encode())
+        catalog_file(
+            source,
+            self.db,
+            stability_seconds=0,
+            include_media_probe=False,
+            include_thumbnail_generation=False,
+        )
+        source.unlink()
+        return source
+
+    def _marked(self) -> set[str]:
+        return {
+            Path(row["path"]).name
+            for row in missing_catalog_locations(self.db)
+        }
+
+    def test_the_root_only_pass_leaves_a_subfolder_row_alone(self) -> None:
+        """The default stays non-recursive; that is the safe one."""
+        self.controller.verifyInboxRoot(False)
+        self.assertEqual(self._marked(), {"stale_at_the_root.txt"})
+
+    def test_asking_it_to_recurse_reaches_the_subfolder_row(self) -> None:
+        """The defect: this row could not be reached from the application."""
+        self.controller.verifyInboxRoot(True)
+        self.assertEqual(
+            self._marked(),
+            {"stale_at_the_root.txt", "SAMPLE_0001.txt"},
+            "a stale row below the root must be reachable from the control",
+        )
+
+    def test_recursing_still_deletes_no_row(self) -> None:
+        with connect(self.db) as connection:
+            before = connection.execute(
+                "SELECT COUNT(*) AS n FROM locations"
+            ).fetchone()["n"]
+        self.controller.verifyInboxRoot(True)
+        with connect(self.db) as connection:
+            after = connection.execute(
+                "SELECT COUNT(*) AS n FROM locations"
+            ).fetchone()["n"]
+        self.assertEqual(after, before, "marking is never deleting")
+
+    def test_the_control_offers_the_choice_rather_than_deciding_it(self) -> None:
+        """Off by default, and the window must carry the switch."""
+        qml = (
+            Path(__file__).resolve().parents[1]
+            / "beacon" / "qml" / "Main.qml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("verifyRecursivelyCheck", qml)
+        self.assertIn(
+            "backend.verifyInboxRoot(",
+            qml,
+            "the control must pass the operator's choice through",
+        )
+        self.assertIn(
+            "checked: false",
+            qml,
+            "descending must be opt-in, not the default",
         )
 
 

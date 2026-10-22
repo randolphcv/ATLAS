@@ -4650,10 +4650,36 @@ ApplicationWindow {
                                             }
                                             PrimaryButton {
                                                 objectName: "verifyInboxRootButton"
-                                                text: "Verify Inbox root"
+                                                text: verifyRecursively.checked
+                                                      ? "Verify Inbox tree"
+                                                      : "Verify Inbox root"
                                                 quiet: true
                                                 enabled: !backend.busy
-                                                onClicked: backend.verifyInboxRoot()
+                                                onClicked: backend.verifyInboxRoot(
+                                                    verifyRecursively.checked)
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            CheckBox {
+                                                id: verifyRecursively
+                                                objectName: "verifyRecursivelyCheck"
+                                                // Off by default. Descending
+                                                // while a transfer is in
+                                                // flight marks arriving files
+                                                // as missing, and only the
+                                                // operator knows whether one
+                                                // is running.
+                                                checked: false
+                                                text: "Include subfolders"
+                                                font.pixelSize: 10
+                                            }
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: "Leave this off while anything is copying into the Inbox: a file that has not finished arriving looks absent and would be marked missing."
+                                                color: root.muted
+                                                font.pixelSize: 9
+                                                wrapMode: Text.WordWrap
                                             }
                                         }
                                     }

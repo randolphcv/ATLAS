@@ -2063,15 +2063,17 @@ class DesktopController(QObject):
             )
         self.refreshAnalysisReadiness()
 
-    @Slot()
-    def verifyInboxRoot(self) -> None:
-        """Reconcile the catalog rows sitting directly in the Inbox against disk.
+    @Slot(bool)
+    def verifyInboxRoot(self, recursive: bool = False) -> None:
+        """Reconcile catalog rows beneath the Inbox against what is on disk.
 
-        Deliberately non-recursive. A recursive sweep of the Inbox would
-        examine files inside a folder that is mid-transfer, find them absent,
-        and mark them missing -- recording wrong state about files that are
-        arriving perfectly well. The rows this is for sit at the root, so
-        descending buys nothing and risks that.
+        Descending is opt-in rather than the default, and deliberately so. A
+        recursive sweep examines files inside a folder that may be receiving a
+        transfer, finds them absent because they have not finished copying,
+        and marks them missing -- recording wrong state about files that are
+        arriving perfectly well. The operator knows whether a transfer is in
+        flight and the code does not, so the choice is theirs to make each
+        time rather than one this decides on their behalf.
 
         Marks, never deletes: a row is the evidence that a file was once
         observed, and an absent file may be a disconnected volume.
@@ -2081,18 +2083,19 @@ class DesktopController(QObject):
             return
         try:
             counts = verify_catalog_locations(
-                self.settings.db_path, inbox_root(), recursive=False
+                self.settings.db_path, inbox_root(), recursive=bool(recursive)
             )
         except Exception as error:  # noqa: BLE001
             LOGGER.exception("verifying the Inbox root failed")
             self._set_status(f"Could not verify the Inbox: {error}", "error")
             return
         self._set_status(
-            "Verified {:,} Inbox row{} against disk: {:,} present, {:,} newly "
-            "marked missing, {:,} mark{} cleared. Nothing was moved or "
+            "Verified {:,} Inbox row{} against disk{}: {:,} present, {:,} "
+            "newly marked missing, {:,} mark{} cleared. Nothing was moved or "
             "deleted.".format(
                 counts["checked"],
                 "" if counts["checked"] == 1 else "s",
+                " including subfolders" if recursive else " at the root only",
                 counts["present"],
                 counts["marked_missing"],
                 counts["mark_cleared"],

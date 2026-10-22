@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.22.21 - 2026-10-21
+
+- Verification can now reach a stale catalog row at any depth beneath the
+  Inbox, not only one sitting directly in it. The underlying check could
+  always descend; the control could not ask it to and passed the
+  non-recursive answer unconditionally, so a row one directory down was
+  unreachable from the application however many times it was clicked. That
+  left the Inbox row count reading three when the true answer was zero, and
+  the count is load-bearing now that the Inbox means one thing: material
+  nobody has looked at.
+- Descending is offered as a choice rather than made the default. A recursive
+  sweep examines files inside a folder that may be receiving a transfer,
+  finds them absent because they have not finished copying, and marks them
+  missing — recording wrong state about files that are arriving perfectly
+  well. The operator knows whether a transfer is in flight and the code does
+  not, so the switch sits beside the control, defaults to off, and says what
+  turning it on risks. The guard added for this exercises the control rather
+  than the check beneath it, because the check was never the broken part.
+
 ## 0.22.20 - 2026-10-21
 
 - Every figure the analysis dialog shows now describes the folder the job
