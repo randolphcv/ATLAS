@@ -2,6 +2,76 @@
 
 ## Unreleased
 
+## 0.22.22 - 2026-10-22
+
+- A catalog row that location verification has marked missing is no longer
+  enrolled for analysis and no longer planned for a settle move. The row
+  points at a file that is not on disk, so both operations were buying a
+  guaranteed failure: the job failed the item, the settle could not move it,
+  and a job that had done all of its real work reported `partial` because of
+  rows whose only fault was that someone had already established the file was
+  gone. Settling requires zero failed items, so those rows also held the
+  Inbox open. The filter is applied per location rather than per asset, so an
+  asset with one marked location and one present one still enrols and still
+  drains, and it sits in the same query the dialog's counts come from, so the
+  figure the operator reads is the work the job will do.
+- Starting an analysis with the folder field blank now takes a deliberate
+  confirmation. A blank folder means the whole archive, which is a legitimate
+  job and occasionally the right one, but it is never what an operator means
+  by accident: one such job enrolled 73 catalog-wide items when 31 newly
+  transferred files were expected, and the two sets did not overlap at all, so
+  nothing the operator was waiting for was in it. The dialog's summary line
+  now says which of the two it would run, the start control stays disabled
+  until either a folder is typed or the whole-archive box is ticked, and the
+  tick is cleared when the dialog reopens, because it is permission for the
+  job being started now rather than a standing setting a later job inherits.
+  A granular analysis sweeps nothing and needs no gate.
+- A response the local model's generation budget cut off mid-value is now
+  repaired and reused rather than discarded. The request carries a schema with
+  a length limit on every prose field and the runtime does not enforce those
+  limits, so a model that rambles inside one string is stopped by the token
+  budget and nothing else, and the response ends inside an unterminated
+  string. That is what `Unterminated string starting at: line 1 column 1114`
+  had been recording, three times across separate jobs, without ever saying
+  so. The runtime reports that it stopped for length and Beacon was throwing
+  that answer away; it is now read, and the response is cut back to its last
+  complete member, closed, and validated on exactly the path a generated
+  response takes. The partial value is dropped whole rather than truncated
+  into a field, and the correction is written into the item's provenance.
+  Repairing costs no generation and does not consume one of the three
+  attempts, and the generation that follows a cut-off asks for a short answer
+  instead of replaying the truncated text, which grew the prompt against the
+  same budget and made each later response likelier to be cut off than the one
+  before it. The fix is the repair and the brevity, not a bigger number: the
+  first request's budget is unchanged and is sized for a full, realistic
+  answer, because budgeting for the schema's absolute maximum would make every
+  ordinary call several times more expensive to generate for a case no useful
+  response reaches. The restrained re-request is given slightly more room than
+  the first, which is the one place a limit moved at all.
+- `beacon-desktop.log` now records what analysis does. It recorded
+  application start, stop and cataloging and nothing else: measured across a
+  whole log file during an eight-hour stall, `Traceback 0, ERROR 0, timeout 0,
+  model 0, llama 0, retry 0, attempt 0`. The entire diagnosis had to be
+  reconstructed from the catalog, and the log could not even say when the job
+  had come back from being paused. Job creation, start, pause, resume and
+  finish are now logged with their counts, every item's outcome with its
+  reason class and duration, and every model attempt with its number and
+  failure class. Each value is structural — extension, size class, reason
+  class, count, duration, job id — and no path, filename or model output is
+  written, so the log says what happened without recording which files it
+  happened to.
+- An item's recorded error now names a reason rather than a location. One
+  failure was written as a bare deployment path and nothing else, because the
+  missing-source check raised its error with the path as the whole message
+  where its sibling checks all carry prose. That was two faults at once: the
+  audit trail read as a path with no explanation, and a deployment path landed
+  in a field that is shown to the owner. Error fields now hold a reason class,
+  the extension and a size class, keeping the exception's own prose when it
+  carries no location, so the truncation detail that made one diagnosis
+  possible survives. Every string passes a redaction that removes path-shaped
+  tokens whatever composed them, because exception text is written by the
+  operating system and by the local model and is not Beacon's to trust.
+
 ## 0.22.21 - 2026-10-21
 
 - Verification can now reach a stale catalog row at any depth beneath the
