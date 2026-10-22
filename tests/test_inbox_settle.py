@@ -29,6 +29,7 @@ from beacon.local_analysis import (
     _artifact_exclusion_reason,
     _resolve_item_source,
 )
+from beacon.local_analysis import create_local_analysis_job
 from beacon.managed_moves import (
     SETTLE_CACHE,
     SETTLE_DESTINATION_EXISTS,
@@ -40,6 +41,7 @@ from beacon.managed_moves import (
     settle_inbox_items,
 )
 from beacon.metadata import set_policy
+from beacon.repository import verify_catalog_locations
 
 FIXTURE_JOB = "fixture-settle-job"
 
@@ -724,6 +726,160 @@ class InboxSettleTests(unittest.TestCase):
         self.assertIsNotNone(reason)
         assert reason is not None
         self.assertIn("project file", reason.casefold())
+
+    def test_a_row_marked_missing_enrols_nowhere_and_settles_nowhere(
+        self,
+    ) -> None:
+        """Marking is operational, not decorative: enrol 1, settle 1, fail 0.
+
+        A location verification has marked missing has no file behind it. It
+        used to enrol anyway, fail on a source that is not there, and then
+        reach the settle with nothing to move -- so the job reported `partial`
+        over an item that was never work. The mark is read by both halves now,
+        and the row itself is left exactly as verification wrote it.
+        """
+        present_relative = "fixture_client_a/project_alpha/SAMPLE_0050.mov"
+        missing_relative = "fixture_client_a/project_alpha/SAMPLE_0051.mov"
+        folder = self.inbox / "fixture_client_a" / "project_alpha"
+        present = self._add(present_relative, b"present bytes")
+        absent_asset = self._add(missing_relative, b"absent bytes")
+        absent_path = self.inbox / missing_relative
+
+        # Terminal in the catalog the way an earlier job would have left them:
+        # the present file looked at and excluded, the absent one failed.
+        self._item(
+            present,
+            self.inbox / present_relative,
+            state="complete",
+            excluded_reason="fixture exclusion",
+        )
+        self._item(
+            absent_asset,
+            absent_path,
+            state="failed",
+            error="fixture failure",
+        )
+
+        # Mark through the real verification path rather than by hand, so the
+        # test exercises the same column the operator's control writes.
+        absent_path.unlink()
+        counts = verify_catalog_locations(self.db, folder)
+        self.assertEqual(counts["marked_missing"], 1)
+
+        job_id = create_local_analysis_job(
+            self.db,
+            model="fixture-model",
+            path_prefix=str(folder.resolve()),
+        )
+        with connect(self.db) as connection:
+            total_items = connection.execute(
+                "SELECT total_items FROM local_analysis_jobs WHERE id=?",
+                (job_id,),
+            ).fetchone()["total_items"]
+            enrolled = [
+                str(row["source_path"]).casefold()
+                for row in connection.execute(
+                    "SELECT source_path FROM local_analysis_items "
+                    "WHERE job_id=?",
+                    (job_id,),
+                )
+            ]
+        self.assertEqual(total_items, 1, "the marked row must not enrol")
+        self.assertEqual(
+            enrolled,
+            [str((self.inbox / present_relative).resolve()).casefold()],
+            "only the present file enrols",
+        )
+
+        with (
+            patch("beacon.managed_moves.INBOX_ROOT", self.inbox),
+            patch("beacon.managed_moves.PROJECTS_ROOT", self.projects),
+            patch("beacon.managed_moves.CACHE_ROOT", self.cache),
+            patch("beacon.managed_moves.REVIEW_ROOT", self.review),
+            patch("beacon.managed_moves.UNIDENTIFIED_ROOT", self.unidentified),
+        ):
+            counted = count_settleable(self.db)
+        self.assertEqual(
+            counted["total"],
+            1,
+            "the counter must not promise a move it cannot make",
+        )
+
+        result = self._settled()
+        self.assertEqual(result.moved, 1)  # type: ignore[attr-defined]
+        self.assertEqual(result.attempted, 1)  # type: ignore[attr-defined]
+        self.assertEqual(
+            result.outcomes,  # type: ignore[attr-defined]
+            {SETTLE_PLACED: 1},
+            "a marked row is not an outcome of any kind, least of all missing",
+        )
+        self.assertEqual(
+            result.skipped_reasons,  # type: ignore[attr-defined]
+            {},
+            "nothing was skipped, so nothing counts as a failure",
+        )
+        self.assertEqual(result.not_terminal, 0)  # type: ignore[attr-defined]
+
+        # The row is left as verification wrote it, and no move was recorded
+        # against it.
+        with connect(self.db) as connection:
+            row = connection.execute(
+                "SELECT path, missing_at FROM locations WHERE asset_id=?",
+                (absent_asset.asset_id,),  # type: ignore[attr-defined]
+            ).fetchone()
+            moved_sources = {
+                str(move["source_path"]).casefold()
+                for move in connection.execute(
+                    "SELECT source_path FROM managed_moves"
+                )
+            }
+        self.assertEqual(str(row["path"]), str(absent_path))
+        self.assertIsNotNone(row["missing_at"])
+        self.assertNotIn(str(absent_path).casefold(), moved_sources)
+
+    def test_an_asset_still_present_elsewhere_keeps_enrolling(self) -> None:
+        """One marked location of several does not withdraw the asset.
+
+        The naive predicate excludes the asset when any of its locations is
+        marked, which would quietly drop material that is still on disk. The
+        filter is per location: the asset enrols through the location that is
+        still there, and the enrolled source path is that one.
+        """
+        payload = b"the same bytes in two places"
+        first_relative = "fixture_client_a/project_alpha/SAMPLE_0060.mov"
+        second_relative = "fixture_client_a/project_beta/SAMPLE_0060.mov"
+        self._add(first_relative, payload)
+        asset = self._add(second_relative, payload)
+        first_path = self.inbox / first_relative
+        second_path = self.inbox / second_relative
+
+        # Same content at two paths is one asset with two locations.
+        with connect(self.db) as connection:
+            locations = connection.execute(
+                "SELECT COUNT(*) AS n FROM locations WHERE asset_id=?",
+                (asset.asset_id,),  # type: ignore[attr-defined]
+            ).fetchone()["n"]
+        self.assertEqual(locations, 2, "fixture must be one asset, two rows")
+
+        first_path.unlink()
+        counts = verify_catalog_locations(self.db, first_path.parent)
+        self.assertEqual(counts["marked_missing"], 1)
+
+        job_id = create_local_analysis_job(self.db, model="fixture-model")
+        with connect(self.db) as connection:
+            enrolled = [
+                str(row["source_path"]).casefold()
+                for row in connection.execute(
+                    "SELECT source_path FROM local_analysis_items "
+                    "WHERE job_id=? AND asset_id=?",
+                    (job_id, asset.asset_id),  # type: ignore[attr-defined]
+                )
+            ]
+        self.assertEqual(
+            enrolled,
+            [str(second_path.resolve()).casefold()],
+            "the asset enrols once, through the location that still exists",
+        )
 
 
 if __name__ == "__main__":

@@ -359,6 +359,13 @@ def _settle_candidates(
     folder and nothing else. The state is read from the catalog rather than
     from this job's item rows, because material stranded by an earlier job is
     exactly what has to drain.
+
+    A row verification has marked missing is not a candidate: there is no file
+    to move, so planning one produced a guaranteed failure that made the job
+    report `partial` for no useful reason. Excluded here rather than in the
+    plan so the counter and the mover drop it together, and per location
+    rather than per asset, because another location of the same asset may
+    still be present and still has to drain.
     """
     parameters: list[Any] = [str(INBOX_ROOT) + "\\%"]
     prefix_predicate = "1"
@@ -385,6 +392,7 @@ def _settle_candidates(
                ) AS analysed
         FROM locations location
         WHERE lower(location.path) LIKE lower(?)
+          AND location.missing_at IS NULL
           AND ({prefix_predicate})
         ORDER BY length(location.path), location.path COLLATE NOCASE
         """,

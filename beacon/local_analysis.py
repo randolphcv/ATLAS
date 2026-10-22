@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import analysis_log
 from .analysis import import_analysis_manifest, validate_analysis_result
 from .catalog import sha256_file
 from .config import (
@@ -184,6 +185,13 @@ def _analysis_scope_rows(
         WHERE lower(locations.path) NOT LIKE '%.ds_store'
           AND lower(locations.path) NOT LIKE '%\\desktop.ini'
           AND lower(locations.path) NOT LIKE '%\\thumbs.db'
+          -- A location verification has marked missing has no file to read,
+          -- so enrolling it buys a guaranteed failure. Filtered per location
+          -- rather than per asset: an asset with one marked location and one
+          -- present one is still present, still enrols, and MIN() above then
+          -- picks a path that exists. In SQL so the dialog's count and the
+          -- job's work are the same number.
+          AND locations.missing_at IS NULL
           AND ({scope_predicate})
           AND ({prefix_predicate})
           AND (? OR NOT EXISTS (
@@ -329,6 +337,147 @@ PAYLOAD_TEXT_LIMITS = {
 PAYLOAD_TAG_LIMIT = 100
 PAYLOAD_TAG_ENTRY_LIMIT = 300
 
+# How many tokens the local model may spend on one response. Named because it
+# is the only thing bounding the length of a string: the request carries a JSON
+# schema with maxLength on every prose field, but the runtime's grammar does not
+# enforce length, so a model that starts rambling inside a string is stopped by
+# this budget and nothing else. When it stops there, the response ends mid-string
+# and is not parseable JSON.
+#
+# Sized for the realistic case rather than the schema's worst case. A response
+# that answers the prompt in full -- 100 tags, every stock_metadata array
+# populated, a long description -- measures about 8,000 characters, near 2,700
+# tokens. The schema's absolute maximum is about 67,700 characters, near 22,600
+# tokens, but budgeting for that would make every ordinary call several times
+# more expensive to generate for a case no useful response reaches. This budget
+# is roughly three times the realistic need; a response still cut off at it is
+# a runaway string rather than a long answer, and is handled by repairing the
+# response and re-requesting under a length restraint instead of by a bigger
+# number.
+LOCAL_RESPONSE_TOKEN_BUDGET = 8_192
+# The restrained re-request after a cut-off asks for a short answer, so it needs
+# less room, not more. It gets a little more anyway: the failure being corrected
+# is a response that ran out of room.
+LOCAL_RESPONSE_TOKEN_BUDGET_RETRY = 12_288
+# Generation attempts, not validation passes. Repairing a cut-off response costs
+# no generation and does not consume one of these.
+LOCAL_RESPONSE_ATTEMPTS = 3
+# Reserved payload key. The analyzer records a correction it made to the model's
+# own output here; _normalize_payload lifts it into the item's provenance notes
+# and removes it, so it never reaches the saved payload.
+ANALYSIS_CORRECTION_KEY = "beacon_correction_notes"
+
+
+def _cut_off_reason(response: dict[str, Any]) -> str | None:
+    """Why the runtime stopped generating, in structural form.
+
+    The local runtime reports this itself and Beacon previously discarded it,
+    which is why a cut-off response was recorded for four months as an
+    unexplained JSON error. Returns None unless the runtime says it stopped
+    because it ran out of room. Carries no model output, only counts and the
+    runtime's own reason code, so it is safe for an error field and for the
+    audit trail.
+    """
+    if str(response.get("done_reason") or "") != "length":
+        return None
+    produced = response.get("eval_count")
+    counted = f"{produced} token(s)" if isinstance(produced, int) else "its budget"
+    return (
+        f"the local runtime stopped at {counted} because it reached the "
+        "generation budget, so the response is cut off rather than complete"
+    )
+
+
+def _scan_json_structure(
+    text: str,
+) -> tuple[bool, tuple[str, ...], tuple[int, tuple[str, ...]] | None]:
+    """One pass over a JSON document, for deciding how it ended.
+
+    Returns whether the text ended inside a string, the containers still open
+    at the end, and the last offset at which the text sat between complete
+    members together with the container stack as it was there. Cutting at that
+    offset and closing that stack yields valid JSON holding only the values
+    that finished.
+    """
+    cut: tuple[int, tuple[str, ...]] | None = None
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            stack.append(char)
+        elif char in "}]":
+            if not stack:
+                return False, (), None
+            stack.pop()
+            cut = (index + 1, tuple(stack))
+        elif char == ",":
+            # Cut before the comma: what precedes it is a complete member.
+            cut = (index, tuple(stack))
+    return in_string, tuple(stack), cut
+
+
+def _ended_mid_string(text: str) -> bool:
+    """Whether the text stops inside an unterminated string.
+
+    Unambiguous evidence that generation was cut off rather than that the model
+    emitted something malformed: a model that produces bad JSON of its own
+    accord still closes its quotes. This is the signature of every truncation
+    recorded against this failure class.
+    """
+    in_string, _, _ = _scan_json_structure(text)
+    return in_string
+
+
+def _repair_truncated_json(text: str) -> tuple[dict[str, Any] | None, str | None]:
+    """Salvage a response the generation budget cut off mid-value.
+
+    AGENTS.md section 10 degrades rather than losing an item: an over-long list
+    entry is dropped whole and the valid entries are kept. A cut-off response is
+    the same situation discovered a step earlier -- every field before the cut is
+    intact and only the value the budget landed in is partial -- so the partial
+    value is dropped whole and the structure closed around what completed.
+
+    Returns the salvaged object and a note describing the correction, or
+    (None, None) when nothing parseable survives. Never raises: this is data
+    handling.
+    """
+    in_string, open_at_end, cut = _scan_json_structure(text)
+    if cut is None:
+        # Nothing completed, so there is nothing to keep.
+        return None, None
+    if not in_string and not open_at_end:
+        # Structurally balanced: the text was not cut off, and whatever is
+        # wrong with it is not something a repair should paper over.
+        return None, None
+    cut_at, open_containers = cut
+    closers = "".join(
+        "}" if opener == "{" else "]" for opener in reversed(open_containers)
+    )
+    try:
+        value = json.loads(text[:cut_at] + closers)
+    except (json.JSONDecodeError, ValueError):
+        return None, None
+    if not isinstance(value, dict):
+        return None, None
+    note = (
+        f"The local model's response was cut off after {len(text)} characters, "
+        f"mid-value. Beacon kept the {len(value)} field(s) that completed, "
+        f"dropped the {len(text) - cut_at} character(s) of partial value whole "
+        "rather than truncating them into a field, and closed the structure."
+    )
+    return value, note
+
 
 def _payload_limit_violations(payload: object) -> list[str]:
     """Limit breaches the durable importer would reject. Retryable, not fatal."""
@@ -405,6 +554,14 @@ def _normalize_payload(payload: object) -> tuple[dict[str, Any], str | None]:
         raise ValueError("local model payload must be an object")
     result = dict(payload)
     notes: list[str] = []
+    # A correction the analyzer already made to the model's own output. Recorded
+    # with the rest of the normalizations and removed, so the saved payload
+    # carries the analysis and the provenance carries what was done to it.
+    carried = result.pop(ANALYSIS_CORRECTION_KEY, None)
+    if isinstance(carried, list):
+        notes.extend(str(note) for note in carried if str(note).strip())
+    elif isinstance(carried, str) and carried.strip():
+        notes.append(carried.strip())
     suggestion = result.get("organization_suggestion")
     if isinstance(suggestion, str) and not suggestion.strip():
         result["organization_suggestion"] = (
@@ -593,6 +750,12 @@ def create_local_analysis_job(
                 not in PLACEMENT_FREE_SCOPE_KINDS,
             },
         )
+    analysis_log.job_created(
+        job_id,
+        total_items=len(rows),
+        scope_kind=scope_kind,
+        scoped_to_folder=prefix is not None,
+    )
     return job_id
 
 
@@ -714,6 +877,14 @@ def create_selected_local_analysis_job(
                 "scope_kind": "selected_content_repair",
             },
         )
+    # A granular job names its assets explicitly, so it is confined by
+    # construction rather than by a folder prefix.
+    analysis_log.job_created(
+        job_id,
+        total_items=len(rows),
+        scope_kind="selected_content_repair",
+        scoped_to_folder=True,
+    )
     return job_id
 
 
@@ -990,6 +1161,14 @@ def recover_local_analysis_jobs(db_path: Path) -> int:
                 """,
                 (_utc_now(), _utc_now(), row["id"]),
             )
+            # The transition that cost eight hours of wall clock and left no
+            # trace: a job whose worker died is recovered to paused, and
+            # paused is never resumed on launch.
+            analysis_log.job_paused(
+                str(row["id"]),
+                pending=_counts(connection, str(row["id"]))["pending"],
+                reason="worker released",
+            )
         return len(abandoned)
 
 
@@ -1059,6 +1238,11 @@ def retry_local_analysis_failures(db_path: Path, job_id: str) -> int:
             WHERE id=?
             """,
             (_utc_now(), _utc_now(), POLICY_VERSION, job_id),
+        )
+        analysis_log.job_paused(
+            job_id,
+            pending=_counts(connection, job_id)["pending"],
+            reason="failures returned to pending",
         )
         return int(cursor.rowcount)
 
@@ -1337,8 +1521,14 @@ def _record_finalization_failure(
                 WHERE job_id=? AND asset_id=?
                 """,
                 (
-                    "Result published but finalization failed: "
-                    f"{str(error)[:1900]}",
+                    # The source is not in hand here -- this is keyed by
+                    # asset -- so the extension and size class report
+                    # unknown rather than being guessed. The guarantee that
+                    # matters is the same one: no path in an error field.
+                    analysis_log.structural_error(
+                        error,
+                        prefix="Result published but finalization failed:",
+                    ),
                     job_id,
                     asset_id,
                 ),
@@ -1574,63 +1764,104 @@ def _default_analyzer(
     last_error: Exception | None = None
     last_rejected_output: str | None = None
     limited_result: dict[str, Any] | None = None
+    # A response repaired after a cut-off is validated on the same path as a
+    # generated one, so it has to clear the same bar. Repairing costs no
+    # generation and does not consume one of the attempts.
+    salvaged: dict[str, Any] | None = None
+    token_budget = LOCAL_RESPONSE_TOKEN_BUDGET
+    # Set once a response has been cut off. The retry after one must differ in
+    # the direction of the failure: ask for a shorter answer with more room,
+    # and stop handing the truncated text back, because replaying it grows the
+    # prompt against the same budget and makes the next response likelier to be
+    # cut off than the one before it.
+    restrain_length = False
+    generations = 0
+    # Counted so the recorded reason names the failure class rather than
+    # ending on whichever validation error came last. Structural: a count of
+    # attempts, no model output.
+    cut_off_count = 0
     try:
-        for attempt in range(1, 4):
-            retry_note = ""
-            if last_error is not None:
-                retry_note = (
-                    "\nA previous response was rejected: "
-                    f"{str(last_error)[:500]}. Re-observe the supplied content "
-                    "and return a complete schema-valid JSON object using the "
-                    "required_evidence_mode. Abstract, dark, blurred, defocused, "
-                    "or textural imagery is still visual content when decodable. "
-                    "A spectrogram is audio-derived evidence. Do not substitute "
-                    "technical metadata."
-                )
-            messages: list[dict[str, Any]] = [
-                {
-                    "role": "system",
-                    "content": prompt + retry_note,
-                },
-                message,
-            ]
-            if last_rejected_output is not None:
-                messages.extend(
-                    [
-                        {
-                            "role": "assistant",
-                            "content": last_rejected_output[-8_000:],
-                        },
-                        {
-                            "role": "user",
-                            "content": (
-                                "That response was rejected. Correct your own "
-                                "output using the supplied content evidence and "
-                                "return one complete schema-valid JSON object."
-                            ),
-                        },
-                    ]
-                )
-            try:
-                response = _request_json(
-                    endpoint,
-                    "/api/chat",
+        while salvaged is not None or generations < LOCAL_RESPONSE_ATTEMPTS:
+            from_repair = salvaged is not None
+            pass_started_at = time.perf_counter()
+            if salvaged is not None:
+                response = {"message": {"content": _canonical_json(salvaged)}}
+                salvaged = None
+            else:
+                generations += 1
+                attempt = generations
+                retry_note = ""
+                if last_error is not None:
+                    retry_note = (
+                        "\nA previous response was rejected: "
+                        f"{str(last_error)[:500]}. Re-observe the supplied content "
+                        "and return a complete schema-valid JSON object using the "
+                        "required_evidence_mode. Abstract, dark, blurred, defocused, "
+                        "or textural imagery is still visual content when decodable. "
+                        "A spectrogram is audio-derived evidence. Do not substitute "
+                        "technical metadata."
+                    )
+                if restrain_length:
+                    retry_note += (
+                        "\nThat response was cut off before it finished because "
+                        "it was too long. Answer briefly this time: at most two "
+                        "sentences of description, at most twenty tags, at most "
+                        "three short entries in each stock_metadata list, and no "
+                        "sentence-length tags. A short complete object is usable; "
+                        "a long unfinished one is not."
+                    )
+                messages: list[dict[str, Any]] = [
                     {
-                        "model": model,
-                        "messages": messages,
-                        "format": schema,
-                        "stream": False,
-                        "options": {
-                            "temperature": 0 if attempt == 1 else 0.1,
-                            "num_ctx": 32768,
-                            "num_predict": 4096,
-                        },
+                        "role": "system",
+                        "content": prompt + retry_note,
                     },
-                    timeout=600,
-                )
-            except (ConnectionError, ValueError) as error:
-                last_error = error
-                continue
+                    message,
+                ]
+                if last_rejected_output is not None:
+                    messages.extend(
+                        [
+                            {
+                                "role": "assistant",
+                                "content": last_rejected_output[-8_000:],
+                            },
+                            {
+                                "role": "user",
+                                "content": (
+                                    "That response was rejected. Correct your own "
+                                    "output using the supplied content evidence and "
+                                    "return one complete schema-valid JSON object."
+                                ),
+                            },
+                        ]
+                    )
+                try:
+                    response = _request_json(
+                        endpoint,
+                        "/api/chat",
+                        {
+                            "model": model,
+                            "messages": messages,
+                            "format": schema,
+                            "stream": False,
+                            "options": {
+                                "temperature": 0 if attempt == 1 else 0.1,
+                                "num_ctx": 32768,
+                                "num_predict": token_budget,
+                            },
+                        },
+                        timeout=600,
+                    )
+                except (ConnectionError, ValueError) as error:
+                    last_error = error
+                    analysis_log.model_attempt(
+                        asset.get("job_id"),
+                        attempt=attempt,
+                        attempts_allowed=LOCAL_RESPONSE_ATTEMPTS,
+                        source=asset.get("source_path"),
+                        failure=error,
+                        duration_seconds=time.perf_counter() - pass_started_at,
+                    )
+                    continue
             try:
                 response_message = response.get("message")
                 if (
@@ -1691,15 +1922,89 @@ def _default_analyzer(
                     # full generation buys nothing: keep the analysis and let
                     # the shared degrade policy correct and record the field.
                     limited_result = result
+                    analysis_log.model_attempt(
+                        asset.get("job_id"),
+                        attempt=attempt,
+                        attempts_allowed=LOCAL_RESPONSE_ATTEMPTS,
+                        source=asset.get("source_path"),
+                        repaired=from_repair,
+                        duration_seconds=time.perf_counter() - pass_started_at,
+                    )
                     break
+                analysis_log.model_attempt(
+                    asset.get("job_id"),
+                    attempt=attempt,
+                    attempts_allowed=LOCAL_RESPONSE_ATTEMPTS,
+                    source=asset.get("source_path"),
+                    repaired=from_repair,
+                    duration_seconds=time.perf_counter() - pass_started_at,
+                )
                 return result
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
                 last_error = error
+                # Logged here rather than at each of this handler's exits, so
+                # every path records the attempt once. The failure class comes
+                # from _cut_off_reason when the runtime says it ran out of
+                # room, so this line and the item's error field name one cause
+                # in one vocabulary; otherwise it comes from the exception.
+                analysis_log.model_attempt(
+                    asset.get("job_id"),
+                    attempt=attempt,
+                    attempts_allowed=LOCAL_RESPONSE_ATTEMPTS,
+                    source=asset.get("source_path"),
+                    failure=_cut_off_reason(response) or error,
+                    repaired=from_repair,
+                    duration_seconds=time.perf_counter() - pass_started_at,
+                )
+                rejected = None
                 if (
                     isinstance(response_message, dict)
                     and isinstance(response_message.get("content"), str)
                 ):
-                    last_rejected_output = response_message["content"]
+                    rejected = response_message["content"]
+                    # Beacon's own repair is not the model's output and is never
+                    # handed back to it as though it were.
+                    if not from_repair:
+                        last_rejected_output = rejected
+                if not isinstance(error, json.JSONDecodeError) or rejected is None:
+                    continue
+                # Undecodable JSON. Say why, if the runtime said why, instead of
+                # recording a decoder offset that reads as a mystery.
+                cut_off = _cut_off_reason(response)
+                if cut_off is not None:
+                    last_error = ValueError(f"{cut_off}; {error}")
+                if cut_off is None and not _ended_mid_string(rejected):
+                    # Malformed of the model's own accord rather than cut off.
+                    # Handing it back for correction is the right move there and
+                    # already works, so nothing changes for that case.
+                    continue
+                # Set before the repair is attempted, not after: if the repair
+                # produces something that then fails validation, the generation
+                # after it must still be the restrained one. Replaying a cut-off
+                # response is dropped: it grows the prompt against the same
+                # budget, which is what made every later attempt likelier to be
+                # cut off than the first.
+                restrain_length = True
+                token_budget = LOCAL_RESPONSE_TOKEN_BUDGET_RETRY
+                last_rejected_output = None
+                cut_off_count += 1
+                repaired, repair_note = _repair_truncated_json(rejected)
+                if repaired is not None:
+                    if "confidence" not in repaired:
+                        # The cut landed before the model stated a confidence.
+                        # Degrade rather than lose the item, and never inflate:
+                        # a salvaged analysis is a low-confidence one.
+                        repaired["confidence"] = 0.3
+                        repair_note = (
+                            f"{repair_note} The model's confidence value did not "
+                            "survive the cut-off, so Beacon recorded a reduced "
+                            "confidence of 0.3."
+                        )
+                    notes = [note for note in (cut_off, repair_note) if note]
+                    repaired[ANALYSIS_CORRECTION_KEY] = notes
+                    salvaged = repaired
+                    # Validated next pass. Nothing is kept unless it clears the
+                    # same checks a generated response clears.
     finally:
         shutil.rmtree(temporary_root, ignore_errors=True)
     if limited_result is not None:
@@ -1711,9 +2016,19 @@ def _default_analyzer(
             "keeping the analysis and degrading the over-long fields"
         )
         return limited_result
+    detail = f"{last_error}"
+    if cut_off_count:
+        # The cause, not just the last symptom. A response cut off at the
+        # generation budget is a distinct failure class from a response the
+        # model simply got wrong, and the recorded reason has to say which one
+        # happened or the next person reads a decoder offset and guesses.
+        detail += (
+            "; the response was cut off at the generation budget on "
+            f"{cut_off_count} of {generations} attempt(s)"
+        )
     raise ValueError(
         "local model failed content validation after three attempts: "
-        f"{last_error}"
+        f"{detail}"
     )
 
 
@@ -2104,6 +2419,22 @@ def _run_local_analysis_job(
             """,
             (_utc_now(), _utc_now(), os.getpid(), _utc_now(), job_id),
         )
+        # Resuming is its own event, not a second start. Eight of the stall's
+        # eight hours were paused time, and the log could not say when the job
+        # came back; that moment had to be inferred from item timestamps and
+        # could not be attributed at all.
+        started_counts = _counts(connection, job_id)
+        announce = (
+            analysis_log.job_resumed
+            if job["state"] == "paused"
+            else analysis_log.job_started
+        )
+        announce(
+            job_id,
+            pending=started_counts["pending"],
+            total_items=int(job["total_items"] or 0),
+        )
+    job_started_at = time.perf_counter()
 
     while True:
         with connect(db_path) as connection:
@@ -2122,6 +2453,15 @@ def _run_local_analysis_job(
                     (_utc_now(), _utc_now(), job_id),
                 )
                 counts = _counts(connection, job_id)
+                analysis_log.job_finished(
+                    job_id,
+                    state="cancelled",
+                    complete=counts["complete"],
+                    failed=counts["failed"],
+                    excluded=counts["excluded"],
+                    pending=counts["pending"],
+                    duration_seconds=time.perf_counter() - job_started_at,
+                )
                 return LocalAnalysisRunResult(
                     job_id,
                     "cancelled",
@@ -2138,6 +2478,7 @@ def _run_local_analysis_job(
             if item_row is None:
                 break
             item = dict(item_row)
+            item_started_at = time.perf_counter()
             asset = connection.execute(
                 """
                 SELECT assets.size_bytes,assets.media_metadata_json,
@@ -2183,6 +2524,15 @@ def _run_local_analysis_job(
                 str(item["id"]),
                 exclusion_reason,
             )
+            # Decided by extension and folder before the checksum is read, so
+            # the asset row is not in hand and the size class is unknown here.
+            analysis_log.item_excluded(
+                job_id,
+                source=item["source_path"],
+                reason=exclusion_reason,
+                size_bytes=asset["size_bytes"] if asset else None,
+                duration_seconds=time.perf_counter() - item_started_at,
+            )
             if progress_callback:
                 progress_callback()
             continue
@@ -2194,7 +2544,17 @@ def _run_local_analysis_job(
                 raise ValueError(f"catalog checksum changed for {item['asset_id']}")
             source = item_source
             if not source.exists():
-                raise FileNotFoundError(str(source))
+                # Prose, like every sibling check here. Raised with the bare
+                # path, this wrote a deployment path into the item's error
+                # field as the whole of the recorded reason: an audit trail
+                # that read as a location rather than an explanation. The
+                # path is not lost -- it is resolved and reported in
+                # structural form where the failure is recorded.
+                raise FileNotFoundError(
+                    "the enrolled source is not on disk at the path it was "
+                    "cataloged from, nor at any location the catalog holds "
+                    "for it"
+                )
             if sha256_file(source) != item["source_sha256"]:
                 raise ValueError("source bytes changed since cataloging")
             exclusion_reason = _artifact_exclusion_reason(
@@ -2207,6 +2567,13 @@ def _run_local_analysis_job(
                     db_path,
                     str(item["id"]),
                     exclusion_reason,
+                )
+                analysis_log.item_excluded(
+                    job_id,
+                    source=item["source_path"],
+                    reason=exclusion_reason,
+                    size_bytes=asset["size_bytes"],
+                    duration_seconds=time.perf_counter() - item_started_at,
                 )
                 if progress_callback:
                     progress_callback()
@@ -2304,7 +2671,23 @@ def _run_local_analysis_job(
                     """,
                     (_canonical_json(candidate), _utc_now(), item["id"]),
                 )
+            analysis_log.item_complete(
+                job_id,
+                source=item["source_path"],
+                size_bytes=asset["size_bytes"] if asset else None,
+                duration_seconds=time.perf_counter() - item_started_at,
+            )
         except Exception as error:
+            # The error field records a reason class, the extension and a
+            # size class. It held str(error), which for the missing-source
+            # check was a deployment path and nothing else: the path reached
+            # a field the owner is shown, and the audit trail said where
+            # rather than why.
+            recorded = analysis_log.structural_error(
+                error,
+                source=item["source_path"],
+                size_bytes=asset["size_bytes"] if asset else None,
+            )
             with connect(db_path) as connection:
                 connection.execute(
                     """
@@ -2313,7 +2696,7 @@ def _run_local_analysis_job(
                         completed_at=?
                     WHERE id=?
                     """,
-                    (str(error)[:2000], _utc_now(), item["id"]),
+                    (recorded, _utc_now(), item["id"]),
                 )
                 if stop_on_item_error:
                     connection.execute(
@@ -2325,12 +2708,19 @@ def _run_local_analysis_job(
                         WHERE id=?
                         """,
                         (
-                            str(error)[:2000],
+                            recorded,
                             _utc_now(),
                             _utc_now(),
                             job_id,
                         ),
                     )
+            analysis_log.item_failed(
+                job_id,
+                error=error,
+                source=item["source_path"],
+                size_bytes=asset["size_bytes"] if asset else None,
+                duration_seconds=time.perf_counter() - item_started_at,
+            )
             if stop_on_item_error:
                 raise
         if progress_callback:
@@ -2409,10 +2799,21 @@ def _run_local_analysis_job(
                     WHERE id=?
                     """,
                     (
-                        "Completed result rejected before publication: "
-                        f"{str(error)[:1900]}",
+                        analysis_log.structural_error(
+                            error,
+                            source=row["source_path"],
+                            prefix=(
+                                "Completed result rejected before "
+                                "publication:"
+                            ),
+                        ),
                         row["id"],
                     ),
+                )
+                analysis_log.item_failed(
+                    job_id,
+                    error=error,
+                    source=row["source_path"],
                 )
                 continue
             connection.execute(
@@ -2728,6 +3129,15 @@ def _run_local_analysis_job(
                 **counts,
             },
         )
+    analysis_log.job_finished(
+        job_id,
+        state=state,
+        complete=counts["complete"],
+        failed=counts["failed"],
+        excluded=counts["excluded"],
+        pending=counts["pending"],
+        duration_seconds=time.perf_counter() - job_started_at,
+    )
     return LocalAnalysisRunResult(
         job_id,
         state,
@@ -2745,7 +3155,12 @@ def _terminalize_analysis_failure(
     error: Exception,
 ) -> None:
     """Never leave a failed worker impersonating a live analysis job."""
-    message = f"Analysis finalization failed: {str(error)[:1900]}"
+    # The job's error field is shown to the owner like an item's, so it is
+    # redacted on the same terms. Finalization raises from the move and
+    # publication paths, whose messages carry locations.
+    message = (
+        f"Analysis finalization failed: {analysis_log.redact(error)}"[:1900]
+    )
     with connect(db_path) as connection:
         migrate(connection)
         job = connection.execute(
@@ -2790,6 +3205,15 @@ def _terminalize_analysis_failure(
             state=state,
             message=message,
             details={"job_id": job_id, "analysis_run_id": run_id},
+        )
+        counts = _counts(connection, job_id)
+        analysis_log.job_finished(
+            job_id,
+            state=state,
+            complete=counts["complete"],
+            failed=counts["failed"],
+            excluded=counts["excluded"],
+            pending=counts["pending"],
         )
 
 
