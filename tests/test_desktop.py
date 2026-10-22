@@ -1562,6 +1562,145 @@ QTimer.singleShot(300, start)
 raise SystemExit(app.exec())
 """)
 
+    def test_a_blank_folder_cannot_start_until_it_is_confirmed(self) -> None:
+        """A whole-archive job is a decision, so the control must demand it.
+
+        A blank folder sweeps everything. That is how a job enrolled 73
+        catalog-wide items while the operator believed he was processing 31
+        new files, with no overlap between the two sets at all.
+
+        Asserted on `startLocalAnalysisButton.enabled`, not on a helper
+        function, and in every mode that offers the folder field including
+        the default one. Both of the last two defects here were working
+        functions behind unreachable controls -- a scope dropdown that only
+        appeared in a non-default mode in 0.22.12, and a recursive flag the
+        control passed as False unconditionally in 0.22.21. Each had a
+        passing test for a function the UI could not reach, so the gate is
+        proven through the button or it is not proven.
+        """
+        self._run_analysis_dialog_probe(r"""
+
+start = window.findChild(QObject, "startLocalAnalysisButton")
+confirm = window.findChild(QObject, "analysisWholeArchiveConfirm")
+combo = window.findChild(QObject, "localAnalysisModel")
+work = window.findChild(QObject, "localAnalysisWorkNote")
+if start is None or confirm is None or combo is None or work is None:
+    raise SystemExit(60)
+
+folder = str(Path(sys.argv[1]).parent)
+# mode, kind, folder text, ticked, expected enabled, exit code
+CASES = [
+    ("general", "other", "", False, False, 61),
+    ("general", "other", "", True, True, 62),
+    ("general", "other", "   ", False, False, 63),
+    ("general", "other", folder, False, True, 64),
+    ("total", "all", "", False, False, 65),
+    ("total", "all", "", True, True, 66),
+    ("total", "all", "   ", False, False, 67),
+    ("total", "all", folder, False, True, 68),
+]
+at = {"case": 0}
+
+
+def opened():
+    # The combo is filled from whatever models the operator has installed,
+    # which is neither synthetic nor deterministic. A fixture entry makes the
+    # folder gate the only thing left deciding the button.
+    combo.setProperty("model", ["fixture-model"])
+    app.processEvents()
+    if str(combo.property("currentText")) != "fixture-model":
+        app.exit(69)
+        return
+    if not bool(confirm.property("visible")):
+        app.exit(71)
+        return
+    run_case()
+
+
+def run_case():
+    if at["case"] >= len(CASES):
+        app.exit(0)
+        return
+    mode, kind, text, ticked, _, _ = CASES[at["case"]]
+    dialog.setProperty("scopeMode", mode)
+    dialog.setProperty("scopeKind", kind)
+    prefix.setProperty("text", text)
+    confirm.setProperty("checked", ticked)
+    app.processEvents()
+    QTimer.singleShot(1300, evaluate)
+
+
+def evaluate():
+    mode, kind, text, ticked, expected, code = CASES[at["case"]]
+    enabled = bool(start.property("enabled"))
+    note = str(work.property("text"))
+    print("mode=%-8s folder=%-28r ticked=%-5s enabled=%s expected=%s"
+          % (mode, text, ticked, enabled, expected))
+    print("    note:", note)
+    if enabled is not expected:
+        app.exit(code)
+        return
+    if ticked and not text.strip():
+        # Ticked means the whole archive, and the count line has to say so
+        # rather than leave the operator to infer it from a blank field.
+        if "whole archive" not in note.lower():
+            app.exit(72)
+            return
+    at["case"] += 1
+    run_case()
+
+
+dialog.open()
+QTimer.singleShot(400, opened)
+raise SystemExit(app.exec())
+""")
+
+    def test_the_whole_archive_confirmation_does_not_outlive_the_dialog(
+        self,
+    ) -> None:
+        """One job's confirmation, not a standing permission.
+
+        A tick that survived a reopening would make the next job archive-wide
+        by inheritance, which is the defect this control exists to prevent
+        wearing a different hat. The typed folder is deliberately kept across
+        openings; this is cleared, because keeping it widens the next job.
+        """
+        self._run_analysis_dialog_probe(r"""
+
+confirm = window.findChild(QObject, "analysisWholeArchiveConfirm")
+if confirm is None:
+    raise SystemExit(60)
+
+
+def first_opening():
+    prefix.setProperty("text", "")
+    confirm.setProperty("checked", True)
+    app.processEvents()
+    if not bool(confirm.property("checked")):
+        app.exit(75)
+        return
+    dialog.close()
+    QTimer.singleShot(300, reopen)
+
+
+def reopen():
+    dialog.open()
+    QTimer.singleShot(500, second_opening)
+
+
+def second_opening():
+    print("ticked after reopening:", confirm.property("checked"))
+    if bool(confirm.property("checked")):
+        app.exit(76)
+        return
+    app.exit(0)
+
+
+dialog.open()
+QTimer.singleShot(400, first_opening)
+raise SystemExit(app.exec())
+""")
+
     def test_the_verify_control_fits_inside_its_own_panel(self) -> None:
         """A control drawn outside its panel is a control nobody can click.
 

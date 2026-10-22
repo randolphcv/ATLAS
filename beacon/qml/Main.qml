@@ -637,6 +637,21 @@ ApplicationWindow {
                 return scopeCount() > 0
             return (scopeWork.analyse + scopeWork.settle) > 0
         }
+        // A blank folder means the whole archive. That is a legitimate job and
+        // sometimes the right one, but it is never what the operator meant by
+        // accident: a blank field once swept the catalog for 73 items when 31
+        // new files were expected, and the two sets did not overlap at all. So
+        // the blank is confirmed deliberately rather than assumed from an empty
+        // field. Trimmed the way the backend normalizes the prefix, so a field
+        // holding only spaces is the blank it will actually become. Granular
+        // analyses one selected asset and sweeps nothing, so it needs no gate.
+        function scopeIsConfirmed() {
+            if (scopeMode === "granular")
+                return true
+            if (scopePathPrefix.trim().length > 0)
+                return true
+            return wholeArchiveConfirmed.checked
+        }
         function refreshScopeWork() {
             var work = backend.scopeWorkFor(scopePathPrefix || "")
             var byKind = work.analyseByKind || {}
@@ -733,6 +748,12 @@ ApplicationWindow {
             // category while the job ran another.
             localAnalysisScopeKind.currentIndex = 0
             includeAnalyzedAssets.checked = false
+            // A whole-archive confirmation is for the job the operator is
+            // starting now, never a standing permission a later opening
+            // inherits. The typed folder below is deliberately kept; this
+            // is cleared for the opposite reason -- keeping it would widen
+            // the next job rather than narrow it.
+            wholeArchiveConfirmed.checked = false
             // The folder the operator typed is deliberately NOT cleared. The
             // 0.22.13 reason for resetting the scope mode away from Total is
             // that a reopened dialog must not sit on whole-catalog analysis
@@ -840,8 +861,11 @@ ApplicationWindow {
                           + " to analyse · "
                           + localAnalysisDialog.scopeWork.settle.toLocaleString()
                           + " to settle"
-                          + (localAnalysisDialog.scopePathPrefix
-                             ? " in this folder" : " across the archive")
+                          + (localAnalysisDialog.scopePathPrefix.trim().length > 0
+                             ? " in this folder"
+                             : (wholeArchiveConfirmed.checked
+                                ? " across the whole archive, every folder"
+                                : " across the whole archive — tick \"Whole archive (no folder)\" to run that"))
                     color: root.muted
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap
@@ -876,6 +900,18 @@ ApplicationWindow {
                         placeholderText: "Optional: confine to a folder, blank for the whole archive"
                         onTextChanged: localAnalysisDialog.scopePathPrefix = text
                     }
+                }
+                CheckBox {
+                    id: wholeArchiveConfirmed
+                    objectName: "analysisWholeArchiveConfirm"
+                    text: "Whole archive (no folder)"
+                    checked: false
+                    // Shown wherever the folder field is, and only useful while
+                    // that field is blank: with a folder typed the job is
+                    // already confined and needs no confirmation.
+                    visible: localAnalysisDialog.scopeMode !== "granular"
+                    enabled: !backend.busy
+                             && localAnalysisDialog.scopePathPrefix.trim().length === 0
                 }
                 Rectangle {
                     Layout.fillWidth: true
@@ -1053,6 +1089,7 @@ ApplicationWindow {
                     // to clear and nothing left to analyse was unstartable.
                     enabled: !backend.busy
                              && localAnalysisDialog.hasWorkToDo()
+                             && localAnalysisDialog.scopeIsConfirmed()
                              && (localAnalysisDialog.scopeMode !== "granular"
                                  || backend.analysisReadiness.canAnalyzeSelected === true)
                              && localAnalysisModel.currentText.length > 0
