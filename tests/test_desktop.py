@@ -1447,6 +1447,121 @@ QTimer.singleShot(300, first_opening)
 raise SystemExit(app.exec())
 """)
 
+    def test_typing_a_folder_updates_the_work_counts(self) -> None:
+        """The counts must follow the folder field without reopening.
+
+        The numbers are the whole point of the field: an operator types a
+        folder to find out what a job over it would do. If they only refresh
+        when the dialog is reopened, the field silently reports the previous
+        folder's answer, which is worse than reporting nothing.
+        """
+        self._run_analysis_dialog_probe(r"""
+
+work = window.findChild(QObject, "localAnalysisWorkNote")
+if work is None:
+    raise SystemExit(34)
+# Asserted on the rendered text, not on the backing property: a property var
+# holding a JS object does not come back subscriptable through property(),
+# and the note is what the operator actually reads anyway.
+seen = {}
+
+def start():
+    dialog.setProperty("scopeMode", "general")
+    dialog.setProperty("scopeKind", "other")
+    prefix.setProperty("text", "")
+    app.processEvents()
+    QTimer.singleShot(1200, after_blank)
+
+def after_blank():
+    seen["blank"] = str(work.property("text"))
+    # A folder the catalog holds nothing under: the note must change.
+    prefix.setProperty("text", "nowhere_fixture_folder")
+    app.processEvents()
+    QTimer.singleShot(1200, after_prefix)
+
+def numbers(text):
+    # The note's folder suffix binds straight to the prefix property, so the
+    # text changes the moment the field is touched whether or not the counts
+    # refreshed. Only the digits prove a refresh happened.
+    import re
+    return [int(value.replace(",", "")) for value in
+            re.findall(r"([\d,]+) to ", text)]
+
+def after_prefix():
+    seen["scoped"] = str(work.property("text"))
+    print("blank note :", seen["blank"])
+    print("scoped note:", seen["scoped"])
+    blank = numbers(seen["blank"])
+    scoped = numbers(seen["scoped"])
+    print("blank numbers :", blank)
+    print("scoped numbers:", scoped)
+    if len(blank) != 2 or len(scoped) != 2:
+        app.exit(90)
+        return
+    if blank[0] <= 0:
+        # The fixture holds one 'other' asset, so the unscoped count must see it.
+        app.exit(91)
+        return
+    if scoped != [0, 0]:
+        # A folder the catalog holds nothing under must report nothing.
+        app.exit(92)
+        return
+    app.exit(0)
+
+dialog.open()
+QTimer.singleShot(300, start)
+raise SystemExit(app.exec())
+""")
+
+    def test_the_metric_cards_follow_the_folder_too(self) -> None:
+        """Every number the dialog shows must describe the same job.
+
+        The folder-scoped line was added above four metric cards that kept
+        reporting archive-wide figures, so the dialog showed a correct number
+        and a stale one together and the operator read the large one. A number
+        that describes a different scope than the job being started is worse
+        than no number.
+        """
+        self._run_analysis_dialog_probe(r"""
+
+cards = {
+    "assets": window.findChild(QObject, "localAnalysisAssetsCard"),
+    "other": window.findChild(QObject, "localAnalysisOtherCard"),
+}
+if any(card is None for card in cards.values()):
+    raise SystemExit(35)
+seen = {}
+
+def start():
+    dialog.setProperty("scopeMode", "general")
+    dialog.setProperty("scopeKind", "other")
+    prefix.setProperty("text", "")
+    app.processEvents()
+    QTimer.singleShot(1200, after_blank)
+
+def after_blank():
+    seen["blank"] = str(cards["assets"].property("value"))
+    prefix.setProperty("text", "nowhere_fixture_folder")
+    app.processEvents()
+    QTimer.singleShot(1200, after_prefix)
+
+def after_prefix():
+    seen["scoped"] = str(cards["assets"].property("value"))
+    print("card blank :", seen["blank"])
+    print("card scoped:", seen["scoped"])
+    if seen["blank"].strip() in ("", "0"):
+        app.exit(95)
+        return
+    if seen["scoped"].strip() != "0":
+        app.exit(96)
+        return
+    app.exit(0)
+
+dialog.open()
+QTimer.singleShot(300, start)
+raise SystemExit(app.exec())
+""")
+
     def test_the_verify_control_fits_inside_its_own_panel(self) -> None:
         """A control drawn outside its panel is a control nobody can click.
 

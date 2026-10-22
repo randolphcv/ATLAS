@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.22.20 - 2026-10-21
+
+- Every figure the analysis dialog shows now describes the folder the job
+  would run over. 0.22.17 made the start control and a summary line respect
+  the chosen folder and left the four metric cards above them reporting
+  archive-wide numbers, so the dialog showed a correct figure and a stale one
+  side by side. The large cards are what an operator reads, so the dialog
+  effectively still answered a question nobody asked: a number describing a
+  different scope than the job being started is worse than no number at all.
+  The scoped figures are published under the same keys the archive-wide ones
+  use, so the cards read them without a second code path, and the expensive
+  include-analyzed pass is computed only when a folder is set — bounded by a
+  folder it is cheap, while over the whole archive it materialises every asset
+  and is far too slow to sit behind a keystroke.
+
 ## 0.22.19 - 2026-10-21
 
 - The verification control is now inside a panel of its own and no longer

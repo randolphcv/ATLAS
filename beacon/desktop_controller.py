@@ -2131,10 +2131,46 @@ class DesktopController(QObject):
         per_kind = {
             kind: int(previews[kind]["assets"]) for kind in previews
         }
+        # The dialog's metric cards read the same keys the archive-wide
+        # readiness publishes, so the scoped figures are published under those
+        # same keys and the cards need no second code path. Without this the
+        # cards kept showing archive-wide numbers beside a folder-scoped line,
+        # which is how a correct number and a stale one came to sit together.
+        scoped_kinds: dict[str, dict[str, Any]] = {}
+        if prefix:
+            # Only ever computed for a folder. The include-analyzed pass over
+            # the whole archive materialises every asset and is far too slow
+            # to sit behind a keystroke; bounded by a folder it is cheap.
+            try:
+                full = analysis_scope_previews(
+                    self.settings.db_path,
+                    include_analyzed=True,
+                    path_prefix=prefix,
+                )
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("scoped include-analyzed lookup failed")
+                full = {}
+            for kind, scoped in previews.items():
+                whole = full.get(kind, {})
+                scoped_kinds[kind] = {
+                    **scoped,
+                    "assetsLabel": f"{int(scoped['assets']):,}",
+                    "bytesLabel": format_bytes(int(scoped["bytes"])),
+                    "visualLabel": f"{int(scoped['visual']):,}",
+                    "audioLabel": f"{int(scoped['audio']):,}",
+                    "otherLabel": f"{int(scoped['other']):,}",
+                    "allAssets": int(whole.get("assets", 0)),
+                    "allAssetsLabel": f"{int(whole.get('assets', 0)):,}",
+                    "allBytesLabel": format_bytes(int(whole.get("bytes", 0))),
+                    "allVisualLabel": f"{int(whole.get('visual', 0)):,}",
+                    "allAudioLabel": f"{int(whole.get('audio', 0)):,}",
+                    "allOtherLabel": f"{int(whole.get('other', 0)):,}",
+                }
         return {
             "prefix": prefix or "",
             "analyseByKind": per_kind,
             "analyse": per_kind.get("all", 0),
+            "scopedByKind": scoped_kinds,
             "settle": int(settleable.get("total", 0)),
             "settleByOutcome": {
                 key: value for key, value in settleable.items()

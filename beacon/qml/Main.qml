@@ -626,7 +626,9 @@ ApplicationWindow {
         // because a job does two kinds of work: it analyses what has not been
         // looked at, and it settles what has. A folder can legitimately have
         // nothing left to analyse and thousands of files to clear.
-        property var scopeWork: ({ "analyse": 0, "settle": 0 })
+        property var scopeWork: ({
+            "analyse": 0, "settle": 0, "scopedByKind": {}
+        })
         // The single authority on whether this job would do anything, named
         // so it can be asserted directly rather than inferred from a button
         // that is also gated on a model being selected.
@@ -644,7 +646,8 @@ ApplicationWindow {
             scopeWork = {
                 "analyse": analyse,
                 "settle": work.settle || 0,
-                "settleByOutcome": work.settleByOutcome || {}
+                "settleByOutcome": work.settleByOutcome || {},
+                "scopedByKind": work.scopedByKind || {}
             }
         }
         // The prefix is typed a character at a time, and each lookup is two
@@ -674,14 +677,27 @@ ApplicationWindow {
             var placementFree = readiness.placementFreeScopeKinds || []
             return placementFree.indexOf(resolvedScopeKind()) < 0
         }
+        // The figures for the chosen folder, or null when no folder is set.
+        // The metric cards and the gate both read this first so that a
+        // folder-scoped job is never described by archive-wide numbers.
+        function scopedForKind() {
+            if (!scopePathPrefix || scopeMode === "granular")
+                return null
+            var byKind = scopeWork.scopedByKind || {}
+            var kind = scopeMode === "general" ? scopeKind : "all"
+            return byKind[kind] || null
+        }
         function scopeValue(key) {
             var readiness = backend.analysisReadiness || {}
-            var scoped = readiness
-            if (scopeMode === "granular")
-                scoped = readiness.selectedScope || {}
-            else if (scopeMode === "general") {
-                var scopes = readiness.generalScopes || {}
-                scoped = scopes[scopeKind] || {}
+            var scoped = scopedForKind()
+            if (scoped === null) {
+                scoped = readiness
+                if (scopeMode === "granular")
+                    scoped = readiness.selectedScope || {}
+                else if (scopeMode === "general") {
+                    var scopes = readiness.generalScopes || {}
+                    scoped = scopes[scopeKind] || {}
+                }
             }
             if (includeAnalyzedAssets.checked && scopeMode !== "granular") {
                 var allKey = "all" + key.charAt(0).toUpperCase()
@@ -936,6 +952,7 @@ ApplicationWindow {
                                  ? "Selected"
                                  : includeAnalyzedAssets.checked
                                    ? "Reanalysis scope" : "Unanalyzed"
+                        objectName: "localAnalysisAssetsCard"
                         value: localAnalysisDialog.scopeValue("assetsLabel")
                         note: localAnalysisDialog.scopeValue("bytesLabel")
                         accentColor: root.atlasBright
@@ -957,6 +974,7 @@ ApplicationWindow {
                     MetricCard {
                         Layout.fillWidth: true
                         eyebrow: "Other"
+                        objectName: "localAnalysisOtherCard"
                         value: localAnalysisDialog.scopeValue("otherLabel")
                         note: "Bounded context"
                         accentColor: root.brass
